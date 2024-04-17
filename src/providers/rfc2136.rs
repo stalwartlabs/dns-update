@@ -27,6 +27,7 @@ use hickory_client::udp::UdpClientConnection;
 
 use crate::{DnsRecord, Error, IntoFqdn};
 
+#[derive(Clone)]
 pub struct Rfc2136Provider {
     addr: SocketAddr,
     is_tcp: bool,

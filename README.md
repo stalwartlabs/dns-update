@@ -6,7 +6,7 @@
 [![crates.io](https://img.shields.io/crates/l/dns-update)](http://www.apache.org/licenses/LICENSE-2.0)
 
 _dns-update_ is an **Dynamic DNS update library** for Rust that supports updating DNS records using the [RFC 2136](https://datatracker.ietf.org/doc/html/rfc2136) protocol
-and different cloud provider APIs such as [Cloudflare](https://www.cloudflare.com/).It was designed to be simple and easy to use, while providing a high level of flexibility
+and different cloud provider APIs such as [Cloudflare](https://www.cloudflare.com/). It was designed to be simple and easy to use, while providing a high level of flexibility
  and performance. 
  
 ## Limitations

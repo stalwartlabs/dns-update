@@ -83,6 +83,13 @@ impl HttpClientBuilder {
         }
         self
     }
+
+    pub fn with_timeout(mut self, timeout: Option<Duration>) -> Self {
+        if let Some(timeout) = timeout {
+            self.timeout = timeout;
+        }
+        self
+    }
 }
 
 impl HttpClient {

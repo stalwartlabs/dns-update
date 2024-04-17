@@ -9,13 +9,17 @@
  * except according to those terms.
  */
 
-use std::net::{Ipv4Addr, Ipv6Addr};
+use std::{
+    net::{Ipv4Addr, Ipv6Addr},
+    time::Duration,
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{http::HttpClientBuilder, DnsRecord, Error, IntoFqdn};
 
+#[derive(Clone)]
 pub struct CloudflareProvider {
     client: HttpClientBuilder,
 }
@@ -85,6 +89,7 @@ impl CloudflareProvider {
     pub(crate) fn new(
         secret: impl AsRef<str>,
         email: Option<impl AsRef<str>>,
+        timeout: Option<Duration>,
     ) -> crate::Result<Self> {
         let client = if let Some(email) = email {
             HttpClientBuilder::default()
@@ -93,7 +98,8 @@ impl CloudflareProvider {
         } else {
             HttpClientBuilder::default()
                 .with_header("Authorization", format!("Bearer {}", secret.as_ref()))
-        };
+        }
+        .with_timeout(timeout);
 
         Ok(Self { client })
     }

@@ -1,4 +1,5 @@
 #![doc = include_str!("../README.md")]
+use core::fmt;
 /*
  * Copyright Stalwart Labs Ltd. See the COPYING
  * file at the top-level directory of this distribution.
@@ -11,7 +12,10 @@
  */
 use std::{
     borrow::Cow,
+    fmt::{Display, Formatter},
     net::{Ipv4Addr, Ipv6Addr},
+    str::FromStr,
+    time::Duration,
 };
 
 use hickory_client::proto::rr::dnssec::{KeyPair, Private};
@@ -85,6 +89,8 @@ pub enum Algorithm {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Clone)]
 pub enum DnsUpdater {
     Rfc2136(Rfc2136Provider),
     Cloudflare(CloudflareProvider),
@@ -132,9 +138,10 @@ impl DnsUpdater {
     pub fn new_cloudflare(
         secret: impl AsRef<str>,
         email: Option<impl AsRef<str>>,
+        timeout: Option<Duration>,
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::Cloudflare(CloudflareProvider::new(
-            secret, email,
+            secret, email, timeout,
         )?))
     }
 
@@ -221,6 +228,41 @@ impl<'x> IntoFqdn<'x> for String {
             Cow::Owned(name.to_string())
         } else {
             Cow::Owned(self)
+        }
+    }
+}
+
+impl FromStr for TsigAlgorithm {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::prelude::v1::Result<Self, Self::Err> {
+        match s {
+            "hmac-md5" => Ok(TsigAlgorithm::HmacMd5),
+            "gss" => Ok(TsigAlgorithm::Gss),
+            "hmac-sha1" => Ok(TsigAlgorithm::HmacSha1),
+            "hmac-sha224" => Ok(TsigAlgorithm::HmacSha224),
+            "hmac-sha256" => Ok(TsigAlgorithm::HmacSha256),
+            "hmac-sha256-128" => Ok(TsigAlgorithm::HmacSha256_128),
+            "hmac-sha384" => Ok(TsigAlgorithm::HmacSha384),
+            "hmac-sha384-192" => Ok(TsigAlgorithm::HmacSha384_192),
+            "hmac-sha512" => Ok(TsigAlgorithm::HmacSha512),
+            "hmac-sha512-256" => Ok(TsigAlgorithm::HmacSha512_256),
+            _ => Err(()),
+        }
+    }
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Protocol(e) => write!(f, "Protocol error: {}", e),
+            Error::Parse(e) => write!(f, "Parse error: {}", e),
+            Error::Client(e) => write!(f, "Client error: {}", e),
+            Error::Response(e) => write!(f, "Response error: {}", e),
+            Error::Api(e) => write!(f, "API error: {}", e),
+            Error::Serialize(e) => write!(f, "Serialize error: {}", e),
+            Error::Unauthorized => write!(f, "Unauthorized"),
+            Error::NotFound => write!(f, "Not found"),
         }
     }
 }
