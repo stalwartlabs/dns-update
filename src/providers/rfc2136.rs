@@ -29,22 +29,27 @@ use crate::{DnsRecord, Error, IntoFqdn};
 
 #[derive(Clone)]
 pub struct Rfc2136Provider {
-    addr: SocketAddr,
-    is_tcp: bool,
+    addr: DnsAddress,
     signer: Arc<Signer>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DnsAddress {
+    Tcp(SocketAddr),
+    Udp(SocketAddr),
 }
 
 impl Rfc2136Provider {
     pub(crate) fn new_tsig(
-        url: impl AsRef<str>,
+        addr: impl TryInto<DnsAddress>,
         key_name: impl AsRef<str>,
         key: impl Into<Vec<u8>>,
         algorithm: TsigAlgorithm,
     ) -> crate::Result<Self> {
-        let (host, is_tcp) = parse_url(url);
         Ok(Rfc2136Provider {
-            addr: host.parse()?,
-            is_tcp,
+            addr: addr
+                .try_into()
+                .map_err(|_| Error::Parse("Invalid address".to_string()))?,
             signer: Arc::new(Signer::from(TSigner::new(
                 key.into(),
                 algorithm,
@@ -55,13 +60,12 @@ impl Rfc2136Provider {
     }
 
     pub(crate) fn new_sig0(
-        url: impl AsRef<str>,
+        addr: impl TryInto<DnsAddress>,
         signer_name: impl AsRef<str>,
         key: KeyPair<Private>,
         public_key: impl Into<Vec<u8>>,
         algorithm: Algorithm,
     ) -> crate::Result<Self> {
-        let (host, is_tcp) = parse_url(url);
         let sig0key = KEY::new(
             Default::default(),
             Default::default(),
@@ -74,23 +78,27 @@ impl Rfc2136Provider {
         let signer = SigSigner::sig0(sig0key, key, Name::from_str_relaxed(signer_name.as_ref())?);
 
         Ok(Rfc2136Provider {
-            addr: host.parse()?,
-            is_tcp,
+            addr: addr
+                .try_into()
+                .map_err(|_| Error::Parse("Invalid address".to_string()))?,
             signer: Arc::new(Signer::from(signer)),
         })
     }
 
     async fn connect(&self) -> crate::Result<AsyncClient> {
-        if !self.is_tcp {
-            let conn = UdpClientConnection::new(self.addr)?.new_stream(Some(self.signer.clone()));
-            let (client, bg) = AsyncClient::connect(conn).await?;
-            tokio::spawn(bg);
-            Ok(client)
-        } else {
-            let conn = TcpClientConnection::new(self.addr)?.new_stream(Some(self.signer.clone()));
-            let (client, bg) = AsyncClient::connect(conn).await?;
-            tokio::spawn(bg);
-            Ok(client)
+        match &self.addr {
+            DnsAddress::Udp(addr) => {
+                let conn = UdpClientConnection::new(*addr)?.new_stream(Some(self.signer.clone()));
+                let (client, bg) = AsyncClient::connect(conn).await?;
+                tokio::spawn(bg);
+                Ok(client)
+            }
+            DnsAddress::Tcp(addr) => {
+                let conn = TcpClientConnection::new(*addr)?.new_stream(Some(self.signer.clone()));
+                let (client, bg) = AsyncClient::connect(conn).await?;
+                tokio::spawn(bg);
+                Ok(client)
+            }
         }
     }
 
@@ -205,22 +213,57 @@ fn convert_record(record: DnsRecord) -> crate::Result<(RecordType, RData)> {
     })
 }
 
-fn parse_url(url: impl AsRef<str>) -> (String, bool) {
-    let url = url.as_ref();
-    let (host, is_tcp) = if let Some(host) = url.strip_prefix("udp://") {
-        (host, false)
-    } else if let Some(host) = url.strip_prefix("tcp://") {
-        (host, true)
-    } else {
-        (url, false)
-    };
-    let (host, port) = if let Some((host, port)) = host.split_once(':') {
-        (host, port)
-    } else {
-        (host, "53")
-    };
+impl TryFrom<&str> for DnsAddress {
+    type Error = ();
 
-    (format!("{host}:{port}"), is_tcp)
+    fn try_from(url: &str) -> Result<Self, Self::Error> {
+        let (host, is_tcp) = if let Some(host) = url.strip_prefix("udp://") {
+            (host, false)
+        } else if let Some(host) = url.strip_prefix("tcp://") {
+            (host, true)
+        } else {
+            (url, false)
+        };
+        let (host, port) = if let Some(host) = host.strip_prefix('[') {
+            let (host, maybe_port) = host.rsplit_once(']').ok_or(())?;
+
+            (
+                host,
+                maybe_port
+                    .rsplit_once(':')
+                    .map(|(_, port)| port)
+                    .unwrap_or("53"),
+            )
+        } else if let Some((host, port)) = host.rsplit_once(':') {
+            (host, port)
+        } else {
+            (host, "53")
+        };
+
+        let addr = SocketAddr::new(host.parse().map_err(|_| ())?, port.parse().map_err(|_| ())?);
+
+        if is_tcp {
+            Ok(DnsAddress::Tcp(addr))
+        } else {
+            Ok(DnsAddress::Udp(addr))
+        }
+    }
+}
+
+impl TryFrom<&String> for DnsAddress {
+    type Error = ();
+
+    fn try_from(url: &String) -> Result<Self, Self::Error> {
+        DnsAddress::try_from(url.as_str())
+    }
+}
+
+impl TryFrom<String> for DnsAddress {
+    type Error = ();
+
+    fn try_from(url: String) -> Result<Self, Self::Error> {
+        DnsAddress::try_from(url.as_str())
+    }
 }
 
 impl From<crate::TsigAlgorithm> for TsigAlgorithm {

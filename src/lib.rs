@@ -19,7 +19,10 @@ use std::{
 };
 
 use hickory_client::proto::rr::dnssec::{KeyPair, Private};
-use providers::{cloudflare::CloudflareProvider, rfc2136::Rfc2136Provider};
+use providers::{
+    cloudflare::CloudflareProvider,
+    rfc2136::{DnsAddress, Rfc2136Provider},
+};
 
 pub mod http;
 pub mod providers;
@@ -104,13 +107,13 @@ pub trait IntoFqdn<'x> {
 impl DnsUpdater {
     /// Create a new DNS updater using the RFC 2136 protocol and TSIG authentication.
     pub fn new_rfc2136_tsig(
-        url: impl AsRef<str>,
+        addr: impl TryInto<DnsAddress>,
         key_name: impl AsRef<str>,
         key: impl Into<Vec<u8>>,
         algorithm: TsigAlgorithm,
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::Rfc2136(Rfc2136Provider::new_tsig(
-            url,
+            addr,
             key_name,
             key,
             algorithm.into(),
@@ -119,14 +122,14 @@ impl DnsUpdater {
 
     /// Create a new DNS updater using the RFC 2136 protocol and SIG(0) authentication.
     pub fn new_rfc2136_sig0(
-        url: impl AsRef<str>,
+        addr: impl TryInto<DnsAddress>,
         signer_name: impl AsRef<str>,
         key: KeyPair<Private>,
         public_key: impl Into<Vec<u8>>,
         algorithm: Algorithm,
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::Rfc2136(Rfc2136Provider::new_sig0(
-            url,
+            addr,
             signer_name,
             key,
             public_key,
