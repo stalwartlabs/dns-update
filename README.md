@@ -12,7 +12,7 @@ and different cloud provider APIs such as [Cloudflare](https://www.cloudflare.co
 ## Limitations
  
 - Currently the library is `async` only.
-- Besides RFC 2136, it only supports Cloudflare's API. 
+- Besides RFC 2136, it only supports Cloudflare's and Gandi's API. 
 
 ## PRs Welcome
 
@@ -46,6 +46,30 @@ Using Cloudflare's API:
 
 ```rust
         // Create a new Cloudflare client
+        let client =
+            DnsUpdater::new_cloudflare("<API_TOKEN>", None::<String>)
+                .unwrap();
+
+        // Create a new TXT record
+        c.create(
+            "test._domainkey.example.org",
+            DnsRecord::TXT {
+                content: "v=DKIM1; k=rsa; h=sha256; p=test".to_string(),
+            },
+            300,
+            "example.org",
+        )
+        .await
+        .unwrap();
+
+        // Delete the record
+        c.delete("test._domainkey.example.org", "example.org").await.unwrap();
+```
+
+Using Gandi's API:
+
+```rust
+        // Create a new Gandi client
         let client =
             DnsUpdater::new_cloudflare("<API_TOKEN>", None::<String>)
                 .unwrap();
