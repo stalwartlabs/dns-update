@@ -27,7 +27,7 @@ Using RFC2136 with TSIG:
         let client = Rfc2136Provider::new_tsig("tcp://127.0.0.1:53", "<KEY_NAME>", STANDARD.decode("<TSIG_KEY>").unwrap(), TsigAlgorithm::HmacSha512).unwrap();
 
         // Create a new TXT record
-        c.create(
+        client.create(
             "test._domainkey.example.org",
             DnsRecord::TXT {
                 content: "v=DKIM1; k=rsa; h=sha256; p=test".to_string(),
@@ -39,7 +39,7 @@ Using RFC2136 with TSIG:
         .unwrap();
 
         // Delete the record
-        c.delete("test._domainkey.example.org", "example.org").await.unwrap();
+        client.delete("test._domainkey.example.org", "example.org").await.unwrap();
 ```
 
 Using Cloudflare's API:
@@ -47,11 +47,11 @@ Using Cloudflare's API:
 ```rust
         // Create a new Cloudflare client
         let client =
-            DnsUpdater::new_cloudflare("<API_TOKEN>", None::<String>)
+            DnsUpdater::new_cloudflare("<API_TOKEN>", None::<String>, Some(Duration::from_secs(60)))
                 .unwrap();
 
         // Create a new TXT record
-        c.create(
+        client.create(
             "test._domainkey.example.org",
             DnsRecord::TXT {
                 content: "v=DKIM1; k=rsa; h=sha256; p=test".to_string(),
@@ -63,7 +63,7 @@ Using Cloudflare's API:
         .unwrap();
 
         // Delete the record
-        c.delete("test._domainkey.example.org", "example.org").await.unwrap();
+        client.delete("test._domainkey.example.org", "example.org").await.unwrap();
 ```
 
 ## License
