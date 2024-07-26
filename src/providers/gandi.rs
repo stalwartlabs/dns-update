@@ -48,6 +48,14 @@ pub struct CreateDnsRecordParams<'a> {
     pub content: DnsContent,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct DnsRecordCreationRequest {
+    pub rrset_name: String,
+    pub rrset_type: String,
+    pub rrset_ttl: u32,
+    pub rrset_values: Vec<String>,
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct UpdateDnsRecordParams<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -88,18 +96,11 @@ pub struct ApiError {
 impl GandiProvider {
     pub(crate) fn new(
         secret: impl AsRef<str>,
-        email: Option<impl AsRef<str>>,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
-        let client = if let Some(email) = email {
-            HttpClientBuilder::default()
-                .with_header("X-Auth-Email", email.as_ref())
-                .with_header("X-Auth-Key", secret.as_ref())
-        } else {
-            HttpClientBuilder::default()
-                .with_header("Authorization", format!("Bearer {}", secret.as_ref()))
-        }
-        .with_timeout(timeout);
+        let client = HttpClientBuilder::default()
+            .with_header("Authorization", format!("Bearer {}", secret.as_ref()))
+            .with_timeout(timeout);
 
         Ok(Self { client })
     }
@@ -108,7 +109,7 @@ impl GandiProvider {
         let origin = origin.into_name();
         self.client
             .get(format!(
-                "https://api.cloudflare.com/client/v4/zones?{}",
+                "https://api.cloudflare.com/client/v4/zoness?{}",
                 Query::name(origin.as_ref()).serialize()
             ))
             .send::<ApiResult<Vec<IdMap>>>()
@@ -153,17 +154,17 @@ impl GandiProvider {
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        let origin = origin.into_name();
         self.client
             .post(format!(
-                "https://api.cloudflare.com/client/v4/zones/{}/dns_records",
-                self.obtain_zone_id(origin).await?
+                "https://api.gandi.net/v5/livedns/domains/{}/records",
+                origin
             ))
-            .with_body(CreateDnsRecordParams {
-                ttl: ttl.into(),
-                priority: record.priority(),
-                proxied: false.into(),
-                name: name.into_name().as_ref(),
-                content: record.into(),
+            .with_body(DnsRecordCreationRequest {
+                rrset_name: "test".to_string(),
+                rrset_type: "A".to_string(),
+                rrset_ttl: 3600,
+                rrset_values: vec!["192.0.2.1".into()],
             })?
             .send::<ApiResult<Value>>()
             .await

@@ -153,11 +153,10 @@ impl DnsUpdater {
     /// Create a new DNS updater using the Gandi API.
     pub fn new_gandi(
         secret: impl AsRef<str>,
-        email: Option<impl AsRef<str>>,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::Gandi(GandiProvider::new(
-            secret, email, timeout,
+            secret, timeout,
         )?))
     }
 
