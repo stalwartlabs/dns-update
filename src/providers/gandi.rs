@@ -35,25 +35,25 @@ pub struct Query {
     name: String,
 }
 
-#[derive(Serialize, Clone, Debug)]
-pub struct CreateDnsRecordParams<'a> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub priority: Option<u16>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub proxied: Option<bool>,
-    pub name: &'a str,
-    #[serde(flatten)]
-    pub content: DnsContent,
-}
+// pub struct CreateDnsRecordParams<'a> {
+//     #[serde(skip_serializing_if = "Option::is_none")]
+//     pub ttl: Option<u32>,
+//     #[serde(skip_serializing_if = "Option::is_none")]
+//     pub priority: Option<u16>,
+//     #[serde(skip_serializing_if = "Option::is_none")]
+//     pub proxied: Option<bool>,
+//     pub name: &'a str,
+//     #[serde(flatten)]
+//     pub content: DnsContent,
+// }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct DnsRecordCreationRequest {
-    pub rrset_name: String,
-    pub rrset_type: String,
-    pub rrset_ttl: u32,
+struct CreateDnsRecordParams<'a> {
+    pub rrset_name: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rrset_ttl: Option<u32>,
     pub rrset_values: Vec<String>,
+    pub rrset_type: String,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -155,15 +155,16 @@ impl GandiProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         let origin = origin.into_name();
+        let name = name.into_name();
         self.client
             .post(format!(
                 "https://api.gandi.net/v5/livedns/domains/{}/records",
                 origin
             ))
-            .with_body(DnsRecordCreationRequest {
-                rrset_name: "test".to_string(),
+            .with_body(CreateDnsRecordParams {
+                rrset_name: name.as_ref(),
                 rrset_type: "A".to_string(),
-                rrset_ttl: 3600,
+                rrset_ttl: ttl.into(),
                 rrset_values: vec!["192.0.2.1".into()],
             })?
             .send::<ApiResult<Value>>()
