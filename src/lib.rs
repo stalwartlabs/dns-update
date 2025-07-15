@@ -22,6 +22,7 @@ use hickory_client::proto::rr::dnssec::{KeyPair, Private};
 use providers::{
     cloudflare::CloudflareProvider,
     gandi::GandiProvider,
+    digitalocean::DigitalOceanProvider,
     rfc2136::{DnsAddress, Rfc2136Provider},
 };
 
@@ -99,6 +100,7 @@ pub enum DnsUpdater {
     Rfc2136(Rfc2136Provider),
     Cloudflare(CloudflareProvider),
     Gandi(GandiProvider),
+    DigitalOcean(DigitalOceanProvider),
 }
 
 pub trait IntoFqdn<'x> {
@@ -160,6 +162,16 @@ impl DnsUpdater {
         )?))
     }
 
+    /// Create a new DNS updater using the Cloudflare API.
+    pub fn new_digitalocean(
+        auth_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::DigitalOcean(DigitalOceanProvider::new(
+            auth_token, timeout,
+        )))
+    }
+
     /// Create a new DNS record.
     pub async fn create(
         &self,
@@ -172,6 +184,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Gandi(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -187,6 +200,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Gandi(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -200,6 +214,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.delete(name, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.delete(name, origin).await,
             DnsUpdater::Gandi(provider) => provider.delete(name, origin).await,
+            DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin).await,
         }
     }
 }
