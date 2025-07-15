@@ -1,3 +1,7 @@
+dns-update 0.1.3
+================================
+- Add Gandi provider.
+
 dns-update 0.1.2
 ================================
 - Fixed parsing IPv6 addresses.

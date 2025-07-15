@@ -21,6 +21,7 @@ use std::{
 use hickory_client::proto::rr::dnssec::{KeyPair, Private};
 use providers::{
     cloudflare::CloudflareProvider,
+    gandi::GandiProvider,
     rfc2136::{DnsAddress, Rfc2136Provider},
 };
 
@@ -97,6 +98,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum DnsUpdater {
     Rfc2136(Rfc2136Provider),
     Cloudflare(CloudflareProvider),
+    Gandi(GandiProvider),
 }
 
 pub trait IntoFqdn<'x> {
@@ -148,6 +150,16 @@ impl DnsUpdater {
         )?))
     }
 
+    /// Create a new DNS updater using the Gandi API.
+    pub fn new_gandi(
+        secret: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Gandi(GandiProvider::new(
+            secret, timeout,
+        )?))
+    }
+
     /// Create a new DNS record.
     pub async fn create(
         &self,
@@ -159,6 +171,7 @@ impl DnsUpdater {
         match self {
             DnsUpdater::Rfc2136(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Gandi(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -173,6 +186,7 @@ impl DnsUpdater {
         match self {
             DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Gandi(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -185,6 +199,7 @@ impl DnsUpdater {
         match self {
             DnsUpdater::Rfc2136(provider) => provider.delete(name, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.delete(name, origin).await,
+            DnsUpdater::Gandi(provider) => provider.delete(name, origin).await,
         }
     }
 }
