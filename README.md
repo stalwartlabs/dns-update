@@ -12,7 +12,7 @@ and different cloud provider APIs such as [Cloudflare](https://www.cloudflare.co
 ## Limitations
  
 - Currently the library is `async` only.
-- Besides RFC 2136, it only supports Cloudflare's and Gandi's API. 
+- Besides RFC 2136, it only supports Cloudflare's and DigitalOcean's API. 
 
 ## PRs Welcome
 
@@ -42,7 +42,7 @@ Using RFC2136 with TSIG:
         client.delete("test._domainkey.example.org", "example.org").await.unwrap();
 ```
 
-Using Cloudflare's API:
+Using a cloud provider such as Cloudflare:
 
 ```rust
         // Create a new Cloudflare client
@@ -64,30 +64,6 @@ Using Cloudflare's API:
 
         // Delete the record
         client.delete("test._domainkey.example.org", "example.org").await.unwrap();
-```
-
-Using Gandi's API:
-
-```rust
-        // Create a new Gandi client
-        let client =
-            DnsUpdater::new_cloudflare("<API_TOKEN>", None::<String>)
-                .unwrap();
-
-        // Create a new TXT record
-        c.create(
-            "test._domainkey.example.org",
-            DnsRecord::TXT {
-                content: "v=DKIM1; k=rsa; h=sha256; p=test".to_string(),
-            },
-            300,
-            "example.org",
-        )
-        .await
-        .unwrap();
-
-        // Delete the record
-        c.delete("test._domainkey.example.org", "example.org").await.unwrap();
 ```
 
 ## License

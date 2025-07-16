@@ -167,7 +167,6 @@ impl CloudflareProvider {
             })?
             .send::<ApiResult<Value>>()
             .await
-            .map_err(Into::into)
             .map(|_| ())
     }
 
@@ -193,7 +192,6 @@ impl CloudflareProvider {
             })?
             .send::<ApiResult<Value>>()
             .await
-            .map_err(Into::into)
             .map(|_| ())
     }
 
@@ -211,7 +209,6 @@ impl CloudflareProvider {
             ))
             .send::<ApiResult<Value>>()
             .await
-            .map_err(Into::into)
             .map(|_| ())
     }
 }

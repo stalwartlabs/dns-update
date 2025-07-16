@@ -104,13 +104,12 @@ impl DigitalOceanProvider {
                 "https://api.digitalocean.com/v2/domains/{domain}/records",
             ))
             .with_body(UpdateDomainRecord {
-                ttl: ttl.into(),
+                ttl,
                 name: &subdomain,
                 data: record.into(),
             })?
             .send_raw()
             .await
-            .map_err(Into::into)
             .map(|_| ())
     }
 
@@ -131,13 +130,12 @@ impl DigitalOceanProvider {
                 "https://api.digitalocean.com/v2/domains/{domain}/records/{record_id}",
             ))
             .with_body(UpdateDomainRecord {
-                ttl: ttl.into(),
+                ttl,
                 name: &subdomain,
                 data: record.into(),
             })?
             .send_raw()
             .await
-            .map_err(Into::into)
             .map(|_| ())
     }
 
@@ -156,12 +154,11 @@ impl DigitalOceanProvider {
             ))
             .send_raw()
             .await
-            .map_err(Into::into)
             .map(|_| ())
     }
 
     async fn obtain_record_id(&self, name: &str, domain: &str) -> crate::Result<i64> {
-        let subdomain = Self::strip_origin_from_name(&name, &domain);
+        let subdomain = Self::strip_origin_from_name(name, domain);
         self.client
             .get(format!(
                 "https://api.digitalocean.com/v2/domains/{domain}/records?{}",
