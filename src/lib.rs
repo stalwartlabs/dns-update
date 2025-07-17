@@ -24,6 +24,7 @@ use providers::{
     digitalocean::DigitalOceanProvider,
     rfc2136::{DnsAddress, Rfc2136Provider},
 };
+use crate::providers::desec::DesecProvider;
 
 pub mod http;
 pub mod providers;
@@ -100,6 +101,7 @@ pub enum DnsUpdater {
     Rfc2136(Rfc2136Provider),
     Cloudflare(CloudflareProvider),
     DigitalOcean(DigitalOceanProvider),
+    Desec(DesecProvider),
 }
 
 pub trait IntoFqdn<'x> {
@@ -161,6 +163,16 @@ impl DnsUpdater {
         )))
     }
 
+    /// Create a new DNS updater using the Desec.io API.
+    pub fn new_desec(
+        auth_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Desec(DesecProvider::new(
+            auth_token, timeout,
+        )))
+    }
+
     /// Create a new DNS record.
     pub async fn create(
         &self,
@@ -173,6 +185,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -188,6 +201,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,       
         }
     }
 
@@ -201,6 +215,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.delete(name, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.delete(name, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin).await,
+            DnsUpdater::Desec(provider) => provider.delete(name, origin).await,       
         }
     }
 }

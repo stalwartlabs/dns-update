@@ -13,6 +13,7 @@ use crate::DnsRecord;
 
 pub mod cloudflare;
 pub mod digitalocean;
+pub mod desec;
 pub mod rfc2136;
 
 impl DnsRecord {
