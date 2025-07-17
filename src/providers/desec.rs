@@ -10,11 +10,9 @@
  */
 
 use std::{
-    net::{Ipv4Addr, Ipv6Addr},
     time::Duration,
 };
-use hickory_client::rr::{Name, RData, RecordType};
-use hickory_client::rr::rdata::{A, AAAA, CNAME, MX, NS, SRV, TXT};
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -96,8 +94,7 @@ impl DesecProvider {
                     .ok_or_else(|| Error::Api(format!("Zone {} not found", origin.as_ref())))
             })
     }
-
-
+    
     pub(crate) async fn create(
         &self,
         name: impl IntoFqdn<'_>,
@@ -106,7 +103,8 @@ impl DesecProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         let name = name.into_name();
-        let (rr_type, rr_content) = convert_record(record)?;
+        let rr_type = &record.to_string();
+        let rr_content = convert_record(record)?;
         self.client
             .post(format!(
                 "{endpoint}/domains/{name}/rrsets/{subname}/{rtype}",
@@ -134,14 +132,15 @@ impl DesecProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         let name = name.into_name();
-        let (rr_type, rr_content) = convert_record(record)?;
+        let rr_type = &record.to_string();
+        let rr_content = convert_record(record)?;
         self.client
             .patch(format!(
                 "{endpoint}/domains/{name}/rrsets/{subname}/{rtype}",
                 endpoint = DEFAULT_API_ENDPOINT,
                 name = origin.into_name().as_ref(),
                 subname = &name,
-                rtype = rr_type,
+                rtype = &rr_type,
             ))
             .with_body(UpdateDnsRecordParams {
                 subname: &name,
@@ -158,15 +157,17 @@ impl DesecProvider {
         &self,
         name: impl IntoFqdn<'_>,
         origin: impl IntoFqdn<'_>,
+        record: DnsRecord,
     ) -> crate::Result<()> {
-        
+        let name = name.into_name();
+        let rr_type = &record.to_string();
         self.client
             .delete(format!(
                 "{endpoint}/domains/{name}/rrsets/{subname}/{rtype}",
                 endpoint = DEFAULT_API_ENDPOINT,
                 name = origin.into_name().as_ref(),
-                subname = &name,
-                rtype = rr_type,
+                subname = name.as_ref(),
+                rtype = &rr_type,
             ))
             .send::<ApiResult<Value>>()
             .await
@@ -197,41 +198,23 @@ impl Query {
     }
 }
 
-fn convert_record(record: DnsRecord) -> crate::Result<(String, String)> {
+fn convert_record(record: DnsRecord) -> crate::Result<String> {
     Ok(match record {
-        DnsRecord::A { content } => (
-            "A".to_string(),
-            content.to_string()
-        ),
-        DnsRecord::AAAA { content } => (
-            "AAAA".to_string(),
-            content.to_string()
-        ),
-        DnsRecord::CNAME { content } => (
-            "CNAME".to_string(),
-            content
-        ),
-        DnsRecord::NS { content } => (
-            "NS".to_string(),
-            content
-        ),
-        DnsRecord::MX { content, priority } => (
-            "MX".to_string(),
+        DnsRecord::A { content } => content.to_string(),
+        DnsRecord::AAAA { content } => content.to_string(),
+        DnsRecord::CNAME { content } => content,
+        DnsRecord::NS { content } => content,
+        DnsRecord::MX { content, priority } =>
             format!("{priority} {name}",
-                priority = priority,
-                name = content)
-        ),
-        DnsRecord::TXT { content } => (
-            "TXT".to_string(),
-            content
-        ),
-        DnsRecord::SRV { content, priority, weight, port } => (
-            "SRV".to_string(),
+               priority = priority,
+               name = content),
+        DnsRecord::TXT { content } => content,
+        DnsRecord::SRV { content, priority, weight, port } =>
             format!("{priority} {weight} {port} {name}",
                 priority = priority,
                 weight = weight,
                 port = port,
                 name = content)
-        ),
+        ,
     })
 }

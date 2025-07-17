@@ -19,6 +19,8 @@ use std::{
 };
 
 use hickory_client::proto::rr::dnssec::{KeyPair, Private};
+use strum_macros::Display;
+
 use providers::{
     cloudflare::CloudflareProvider,
     digitalocean::DigitalOceanProvider,
@@ -42,6 +44,8 @@ pub enum Error {
 }
 
 /// A DNS record type.
+#[derive(Display)]
+#[strum(serialize_all = "UPPERCASE")]
 pub enum DnsRecord {
     A {
         content: Ipv4Addr,
@@ -201,7 +205,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,       
+            DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -210,12 +214,13 @@ impl DnsUpdater {
         &self,
         name: impl IntoFqdn<'_>,
         origin: impl IntoFqdn<'_>,
+        record: DnsRecord,
     ) -> crate::Result<()> {
         match self {
             DnsUpdater::Rfc2136(provider) => provider.delete(name, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.delete(name, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin).await,
-            DnsUpdater::Desec(provider) => provider.delete(name, origin).await,       
+            DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
         }
     }
 }
