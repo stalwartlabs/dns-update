@@ -171,10 +171,11 @@ impl DnsUpdater {
     /// Create a new DNS updater using the Desec.io API.
     pub fn new_desec(
         auth_token: impl AsRef<str>,
+        endpoint: Option<impl AsRef<str>>,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::Desec(DesecProvider::new(
-            auth_token, timeout,
+            auth_token, endpoint, timeout,
         )))
     }
 

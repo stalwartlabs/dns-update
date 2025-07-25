@@ -16,11 +16,12 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{http::HttpClientBuilder, DnsRecord, Error, IntoFqdn};
+use crate::{http::HttpClientBuilder, DnsRecord, IntoFqdn};
 
 #[derive(Clone)]
 pub struct DesecProvider {
     client: HttpClientBuilder,
+    endpoint: String,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -56,14 +57,19 @@ pub struct ApiError {
     pub message: String,
 }
 
-const DEFAULT_API_ENDPOINT: &str = "https://desec.io/api/v1/";
+const DEFAULT_API_ENDPOINT: &str = "https://desec.io/api/v1";
 
 impl DesecProvider {
-    pub(crate) fn new(auth_token: impl AsRef<str>, timeout: Option<Duration>) -> Self {
+    pub(crate) fn new(auth_token: impl AsRef<str>, endpoint: Option<impl AsRef<str>>, timeout: Option<Duration>) -> Self {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Token {}", auth_token.as_ref()))
             .with_timeout(timeout);
-        Self { client }
+
+        let endpoint = endpoint
+            .map(|e| e.as_ref().to_string())
+            .unwrap_or_else(|| DEFAULT_API_ENDPOINT.to_string());
+
+        Self { client, endpoint }
     }
     
     pub(crate) async fn create(
@@ -79,7 +85,7 @@ impl DesecProvider {
         self.client
             .post(format!(
                 "{endpoint}/domains/{name}/rrsets/{subname}/{rr_type}/",
-                endpoint = DEFAULT_API_ENDPOINT,
+                endpoint = self.endpoint,
                 name = origin.into_name().as_ref(),
                 subname = &name,
                 rr_type = rr_type,
@@ -108,7 +114,7 @@ impl DesecProvider {
         self.client
             .put(format!(
                 "{endpoint}/domains/{name}/rrsets/{subname}/{rr_type}/",
-                endpoint = DEFAULT_API_ENDPOINT,
+                endpoint = self.endpoint,
                 name = origin.into_name().as_ref(),
                 subname = &name,
                 rr_type = &rr_type,
@@ -135,7 +141,7 @@ impl DesecProvider {
         self.client
             .delete(format!(
                 "{endpoint}/domains/{name}/rrsets/{subname}/{rtype}/",
-                endpoint = DEFAULT_API_ENDPOINT,
+                endpoint = self.endpoint,
                 name = origin.into_name().as_ref(),
                 subname = name.as_ref(),
                 rtype = &rr_type,
