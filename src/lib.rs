@@ -41,6 +41,7 @@ pub enum Error {
     Serialize(String),
     Unauthorized,
     NotFound,
+    BadRequest
 }
 
 /// A DNS record type.
@@ -302,6 +303,7 @@ impl Display for Error {
             Error::Serialize(e) => write!(f, "Serialize error: {}", e),
             Error::Unauthorized => write!(f, "Unauthorized"),
             Error::NotFound => write!(f, "Not found"),
+            Error::BadRequest => write!(f, "Bad request"),
         }
     }
 }

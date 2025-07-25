@@ -147,6 +147,7 @@ impl HttpClient {
             200..=299 => response.text().await.map_err(|err| {
                 Error::Api(format!("Failed to read response from {}: {err}", self.url))
             }),
+            400 => Err(Error::BadRequest),
             401 => Err(Error::Unauthorized),
             404 => Err(Error::NotFound),
             code => Err(Error::Api(format!(
