@@ -1,3 +1,7 @@
+dns-update 0.2.0
+================================
+- Add desec.io provider.
+
 dns-update 0.1.3
 ================================
 - Add Gandi provider.
