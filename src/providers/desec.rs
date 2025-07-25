@@ -90,7 +90,7 @@ impl DesecProvider {
                 ttl: Some(ttl),
                 records: vec![rr_content.into()],
             })?
-            .send::<ApiResult<Value>>()
+            .send_with_retry::<ApiResult<Value>>(3)
             .await
             .map(|_| ())
     }
@@ -119,7 +119,7 @@ impl DesecProvider {
                 ttl: Some(ttl),
                 records: vec![rr_content.into()],
             })?
-            .send::<ApiResult<Value>>()
+            .send_with_retry::<ApiResult<Value>>(3)
             .await
             .map(|_| ())
     }
@@ -140,7 +140,7 @@ impl DesecProvider {
                 subname = name.as_ref(),
                 rtype = &rr_type,
             ))
-            .send::<ApiResult<Value>>()
+            .send_with_retry::<ApiResult<Value>>(3)
             .await
             .map(|_| ())
     }
