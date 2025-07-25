@@ -23,21 +23,11 @@ pub struct DesecProvider {
     client: HttpClientBuilder,
 }
 
-#[derive(Deserialize, Debug)]
-pub struct IdMap {
-    pub id: String,
-    pub name: String,
-}
-
-#[derive(Serialize, Debug)]
-pub struct Query {
-    name: String,
-}
-
 #[derive(Serialize, Clone, Debug)]
 pub struct CreateDnsRecordParams<'a> {
     pub subname: &'a str,
-    pub r#type: &'a str,
+    #[serde(rename = "type")]
+    pub rr_type: &'a str,
     pub ttl: Option<u32>,
     #[serde(flatten)]
     pub records: Vec<String>,
@@ -46,7 +36,8 @@ pub struct CreateDnsRecordParams<'a> {
 #[derive(Serialize, Clone, Debug)]
 pub struct UpdateDnsRecordParams<'a> {
     pub subname: &'a str,
-    pub r#type: &'a str,
+    #[serde(rename = "type")]
+    pub rr_type: &'a str,
     pub ttl: Option<u32>,
     #[serde(flatten)]
     pub records: Vec<String>,
@@ -74,26 +65,6 @@ impl DesecProvider {
             .with_timeout(timeout);
         Self { client }
     }
-
-    async fn check_ownership(&self, origin: impl IntoFqdn<'_>) -> crate::Result<String> {
-        let origin = origin.into_name();
-        self.client
-            .get(format!(
-                "{endpoint}/domains/?owns_qname={qname}",
-                endpoint = DEFAULT_API_ENDPOINT,
-                qname = Query::name(origin.as_ref()).serialize()
-            ))
-            .send::<ApiResult<Vec<IdMap>>>()
-            .await
-            .and_then(|r| r.unwrap_response("list zones"))
-            .and_then(|result| {
-                result
-                    .into_iter()
-                    .find(|zone| zone.name == origin.as_ref())
-                    .map(|zone| zone.id)
-                    .ok_or_else(|| Error::Api(format!("Zone {} not found", origin.as_ref())))
-            })
-    }
     
     pub(crate) async fn create(
         &self,
@@ -107,15 +78,15 @@ impl DesecProvider {
         let rr_content = convert_record(record)?;
         self.client
             .post(format!(
-                "{endpoint}/domains/{name}/rrsets/{subname}/{rtype}",
+                "{endpoint}/domains/{name}/rrsets/{subname}/{rr_type}/",
                 endpoint = DEFAULT_API_ENDPOINT,
                 name = origin.into_name().as_ref(),
                 subname = &name,
-                rtype = rr_type,
+                rr_type = rr_type,
             ))
             .with_body(CreateDnsRecordParams {
                 subname: &name,
-                r#type: &rr_type,
+                rr_type: &rr_type,
                 ttl: Some(ttl),
                 records: vec![rr_content.into()],
             })?
@@ -135,16 +106,16 @@ impl DesecProvider {
         let rr_type = &record.to_string();
         let rr_content = convert_record(record)?;
         self.client
-            .patch(format!(
-                "{endpoint}/domains/{name}/rrsets/{subname}/{rtype}",
+            .put(format!(
+                "{endpoint}/domains/{name}/rrsets/{subname}/{rr_type}/",
                 endpoint = DEFAULT_API_ENDPOINT,
                 name = origin.into_name().as_ref(),
                 subname = &name,
-                rtype = &rr_type,
+                rr_type = &rr_type,
             ))
             .with_body(UpdateDnsRecordParams {
                 subname: &name,
-                r#type: &rr_type,
+                rr_type: &rr_type,
                 ttl: Some(ttl),
                 records: vec![rr_content.into()],
             })?
@@ -163,7 +134,7 @@ impl DesecProvider {
         let rr_type = &record.to_string();
         self.client
             .delete(format!(
-                "{endpoint}/domains/{name}/rrsets/{subname}/{rtype}",
+                "{endpoint}/domains/{name}/rrsets/{subname}/{rtype}/",
                 endpoint = DEFAULT_API_ENDPOINT,
                 name = origin.into_name().as_ref(),
                 subname = name.as_ref(),
@@ -172,29 +143,6 @@ impl DesecProvider {
             .send::<ApiResult<Value>>()
             .await
             .map(|_| ())
-    }
-}
-
-impl<T> ApiResult<T> {
-    fn unwrap_response(self, action_name: &str) -> crate::Result<T> {
-        if self.success {
-            Ok(self.result)
-        } else {
-            Err(Error::Api(format!(
-                "Failed to {action_name}: {:?}",
-                self.errors
-            )))
-        }
-    }
-}
-
-impl Query {
-    pub fn name(name: impl Into<String>) -> Self {
-        Self { name: name.into() }
-    }
-
-    pub fn serialize(&self) -> String {
-        serde_urlencoded::to_string(self).unwrap()
     }
 }
 
