@@ -48,6 +48,20 @@ pub enum Error {
 /// A DNS record type.
 #[derive(Display)]
 #[strum(serialize_all = "UPPERCASE")]
+pub enum DnsRecordType {
+    A,
+    AAAA,
+    CNAME,
+    NS,
+    MX,
+    TXT,
+    SRV,
+}
+
+
+/// A DNS record type with a value.
+#[derive(Display)]
+#[strum(serialize_all = "UPPERCASE")]
 pub enum DnsRecord {
     A {
         content: Ipv4Addr,
@@ -217,7 +231,7 @@ impl DnsUpdater {
         &self,
         name: impl IntoFqdn<'_>,
         origin: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        record: DnsRecordType,
     ) -> crate::Result<()> {
         match self {
             DnsUpdater::Rfc2136(provider) => provider.delete(name, origin).await,

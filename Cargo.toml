@@ -23,4 +23,5 @@ strum_macros = "0.27.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
+mockito = "1.2"
 base64 = "0.22"

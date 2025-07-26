@@ -14,7 +14,6 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::{http::HttpClientBuilder, DnsRecord, IntoFqdn, strip_origin_from_name, DnsRecordType};
 
@@ -30,7 +29,6 @@ pub struct CreateDnsRecordParams<'a> {
     #[serde(rename = "type")]
     pub rr_type: &'a str,
     pub ttl: Option<u32>,
-    #[serde(flatten)]
     pub records: Vec<String>,
 }
 
@@ -40,22 +38,25 @@ pub struct UpdateDnsRecordParams<'a> {
     #[serde(rename = "type")]
     pub rr_type: &'a str,
     pub ttl: Option<u32>,
-    #[serde(flatten)]
     pub records: Vec<String>,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-struct ApiResult<T> {
-    errors: Vec<ApiError>,
-    success: bool,
-    result: T,
+#[derive(Deserialize, Debug)]
+pub struct DesecApiResponse {
+    pub created: String,
+    pub domain: String,
+    pub subname: String,
+    pub name: String,
+    pub records: Vec<String>,
+    pub ttl: u32,
+    #[serde(rename = "type")]
+    pub record_type: String,
+    pub touched: String,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-pub struct ApiError {
-    pub code: u16,
-    pub message: String,
-}
+#[derive(Deserialize)]
+struct DesecEmptyResponse {}
+
 
 const DEFAULT_API_ENDPOINT: &str = "https://desec.io/api/v1";
 
@@ -97,9 +98,9 @@ impl DesecProvider {
                 subname: &subdomain,
                 rr_type: &rr_type,
                 ttl: Some(ttl),
-                records: vec![rr_content.into()],
+                records: vec![rr_content],
             })?
-            .send_with_retry::<ApiResult<Value>>(3)
+            .send_with_retry::<DesecApiResponse>(3)
             .await
             .map(|_| ())
     }
@@ -131,7 +132,7 @@ impl DesecProvider {
                 ttl: Some(ttl),
                 records: vec![rr_content.into()],
             })?
-            .send_with_retry::<ApiResult<Value>>(3)
+            .send_with_retry::<DesecApiResponse>(3)
             .await
             .map(|_| ())
     }
@@ -155,7 +156,7 @@ impl DesecProvider {
                 subdomain = &subdomain,
                 rtype = &rr_type.to_string(),
             ))
-            .send_with_retry::<ApiResult<Value>>(3)
+            .send_with_retry::<DesecEmptyResponse>(3)
             .await
             .map(|_| ())
     }
