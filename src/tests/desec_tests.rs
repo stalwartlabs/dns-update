@@ -6,7 +6,8 @@ mod tests {
     use crate::providers::desec::DesecDnsRecordRepresentation;
 
     fn setup_provider(endpoint: &str) -> DesecProvider {
-        DesecProvider::new("test_token", Some(endpoint), Some(Duration::from_secs(1)))
+        DesecProvider::new("test_token", Some(Duration::from_secs(1)))
+            .with_endpoint(endpoint)
     }
 
     #[tokio::test]

@@ -55,20 +55,27 @@ pub struct DesecApiResponse {
 #[derive(Deserialize)]
 struct DesecEmptyResponse {}
 
-
+/// The default endpoint for the desec API.
 const DEFAULT_API_ENDPOINT: &str = "https://desec.io/api/v1";
 
 impl DesecProvider {
-    pub(crate) fn new(auth_token: impl AsRef<str>, endpoint: Option<impl AsRef<str>>, timeout: Option<Duration>) -> Self {
+    pub(crate) fn new(auth_token: impl AsRef<str>, timeout: Option<Duration>) -> Self {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Token {}", auth_token.as_ref()))
             .with_timeout(timeout);
+        
+        Self { 
+            client, 
+            endpoint: DEFAULT_API_ENDPOINT.to_string() 
+        }
+    }
 
-        let endpoint = endpoint
-            .map(|e| e.as_ref().to_string())
-            .unwrap_or_else(|| DEFAULT_API_ENDPOINT.to_string());
-
-        Self { client, endpoint }
+    #[cfg(test)]
+    pub(crate) fn with_endpoint(self, endpoint: impl AsRef<str>) -> Self {
+        Self {
+            endpoint: endpoint.as_ref().to_string(),
+            ..self
+        }
     }
     
     pub(crate) async fn create(
