@@ -19,7 +19,6 @@ use std::{
 };
 
 use hickory_client::proto::rr::dnssec::{KeyPair, Private};
-use strum_macros::Display;
 
 use providers::{
     cloudflare::CloudflareProvider,
@@ -46,8 +45,7 @@ pub enum Error {
 }
 
 /// A DNS record type.
-#[derive(Display)]
-#[strum(serialize_all = "UPPERCASE")]
+#[derive(Debug)]
 pub enum DnsRecordType {
     A,
     AAAA,
@@ -59,8 +57,6 @@ pub enum DnsRecordType {
 }
 
 /// A DNS record type with a value.
-#[derive(Display)]
-#[strum(serialize_all = "UPPERCASE")]
 pub enum DnsRecord {
     A {
         content: Ipv4Addr,
@@ -332,5 +328,11 @@ impl Display for Error {
             Error::NotFound => write!(f, "Not found"),
             Error::BadRequest => write!(f, "Bad request"),
         }
+    }
+}
+
+impl Display for DnsRecordType {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
