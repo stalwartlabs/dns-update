@@ -2,35 +2,41 @@
 mod tests {
     use crate::{providers::desec::DesecProvider, DnsRecord, DnsRecordType, Error};
     use std::time::Duration;
+    use serde_json::json;
     use crate::providers::desec::DesecDnsRecordRepresentation;
 
     fn setup_provider(endpoint: &str) -> DesecProvider {
-        DesecProvider::new("test_token", Some(endpoint),  Some(Duration::from_secs(1)))
+        DesecProvider::new("test_token", Some(endpoint), Some(Duration::from_secs(1)))
     }
 
     #[tokio::test]
     async fn test_create_record_success() {
         let mut server = mockito::Server::new_async().await;
+        let expected_request = json!({
+            "subname": "test",
+            "type": "A",
+            "ttl": 3600,
+            "records": ["1.1.1.1"],
+        });
+
         let mock = server.mock("POST", "/domains/example.com/rrsets/test/A/")
             .with_status(201)
             .with_header("content-type", "application/json")
             .with_header("authorization", "Token test_token")
+            .match_body(mockito::Matcher::Json(expected_request))
             .with_body(
-            r#"{
+                r#"{
                     "created": "2025-07-25T19:18:37.286381Z",
                     "domain": "example.com",
                     "subname": "test",
                     "name": "test.example.com.",
-                    "records": [
-                        "1.1.1.1"
-                    ],
+                    "records": ["1.1.1.1"],
                     "ttl": 3600,
                     "type": "A",
                     "touched": "2025-07-25T19:18:37.292390Z"
                 }"#
             )
             .create();
-
 
         let provider = setup_provider(server.url().as_str());
         let result = provider
@@ -43,25 +49,74 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-       mock.assert();
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_create_mx_record_success() {
+        let mut server = mockito::Server::new_async().await;
+        let expected_request = json!({
+            "subname": "test",
+            "type": "MX",
+            "ttl": 3600,
+            "records": ["10 mail.example.com"],
+        });
+
+        let mock = server.mock("POST", "/domains/example.com/rrsets/test/MX/")
+            .with_status(201)
+            .with_header("content-type", "application/json")
+            .with_header("authorization", "Token test_token")
+            .match_body(mockito::Matcher::Json(expected_request))
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "test",
+                    "name": "test.example.com.",
+                    "records": ["10 mail.example.com"],
+                    "ttl": 3600,
+                    "type": "MX",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .create(
+                "test.example.com",
+                DnsRecord::MX { priority: 10, content: "mail.example.com".to_string() },
+                3600,
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        mock.assert();
     }
 
     #[tokio::test]
     async fn test_create_record_unauthorized() {
         let mut server = mockito::Server::new_async().await;
+        let expected_request = json!({
+            "subname": "test",
+            "type": "A",
+            "ttl": 3600,
+            "records": ["1.1.1.1"],
+        });
+
         let mock = server.mock("POST", "/domains/example.com/rrsets/test/A/")
             .with_status(401)
             .with_header("content-type", "application/json")
             .with_header("authorization", "Token test_token")
-            .with_body(r#"{ "detail": "Invalid token." }"#
-            )
+            .match_body(mockito::Matcher::Json(expected_request))
+            .with_body(r#"{ "detail": "Invalid token." }"#)
             .create();
-
 
         let provider = setup_provider(server.url().as_str());
         let result = provider
             .create(
-                "test",
+                "test.example.com",
                 DnsRecord::A { content: "1.1.1.1".parse().unwrap() },
                 3600,
                 "example.com",
@@ -75,17 +130,23 @@ mod tests {
     #[tokio::test]
     async fn test_update_record_success() {
         let mut server = mockito::Server::new_async().await;
+        let expected_request = json!({
+            "subname": "test",
+            "type": "AAAA",
+            "ttl": 3600,
+            "records": ["2001:db8::1"],
+        });
+
         let mock = server.mock("PUT", "/domains/example.com/rrsets/test/AAAA/")
             .with_status(200)
+            .match_body(mockito::Matcher::Json(expected_request))
             .with_body(
                 r#"{
                     "created": "2025-07-25T19:18:37.286381Z",
                     "domain": "example.com",
                     "subname": "test",
                     "name": "test.example.com.",
-                    "records": [
-                        "2001:db8::1"
-                    ],
+                    "records": ["2001:db8::1"],
                     "ttl": 3600,
                     "type": "AAAA",
                     "touched": "2025-07-25T19:18:37.292390Z"
@@ -106,7 +167,6 @@ mod tests {
         assert!(result.is_ok());
         mock.assert();
     }
-
 
     #[tokio::test]
     async fn test_delete_record_success() {
