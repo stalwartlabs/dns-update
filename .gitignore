@@ -1,3 +1,5 @@
 /target
 _ignore
 Cargo.lock
+
+.idea/

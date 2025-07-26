@@ -144,15 +144,75 @@ impl HttpClient {
             .map_err(|err| Error::Api(format!("Failed to send request to {}: {err}", self.url)))?;
 
         match response.status().as_u16() {
+            204 => serde_json::from_str("{}").map_err(|err| {
+                Error::Serialize(format!("Failed to create empty response: {err}"))
+            }),
             200..=299 => response.text().await.map_err(|err| {
                 Error::Api(format!("Failed to read response from {}: {err}", self.url))
             }),
+            400 => Err(Error::BadRequest),
             401 => Err(Error::Unauthorized),
             404 => Err(Error::NotFound),
             code => Err(Error::Api(format!(
                 "Invalid HTTP response code {code}: {:?}",
                 response.error_for_status()
             ))),
+        }
+    }
+
+    pub async fn send_with_retry<T>(self, max_retries: u32) -> crate::Result<T>
+    where 
+        T: DeserializeOwned,
+    {
+        let mut attempts = 0;
+        let body = self.body;
+        loop {
+            let mut request = reqwest::Client::builder()
+                .timeout(self.timeout)
+                .build()
+                .unwrap_or_default()
+                .request(self.method.clone(), &self.url)
+                .headers(self.headers.clone());
+
+            if let Some(body) = body.as_ref() {
+                request = request.body(body.clone());
+            }
+
+            let response = request
+                .send()
+                .await
+                .map_err(|err| Error::Api(format!("Failed to send request to {}: {err}", self.url)))?;
+
+            return match response.status().as_u16() {
+                204 => serde_json::from_str("{}").map_err(|err| {
+                    Error::Serialize(format!("Failed to create empty response: {err}"))
+                }),
+                200..=299 => {
+                    let text = response.text().await.map_err(|err| {
+                        Error::Api(format!("Failed to read response from {}: {err}", self.url))
+                    })?;
+                    serde_json::from_str(&text).map_err(|err| {
+                        Error::Serialize(format!("Failed to deserialize response: {err}"))
+                    })
+                }
+                429 if attempts < max_retries => {
+                    if let Some(retry_after) = response.headers().get("retry-after") {
+                        if let Ok(seconds) = retry_after.to_str().unwrap_or("0").parse::<u64>() {
+                            tokio::time::sleep(Duration::from_secs(seconds)).await;
+                            attempts += 1;
+                            continue;
+                        }
+                    }
+                    Err(Error::Api("Rate limit exceeded".to_string()))
+                }
+                400 => Err(Error::BadRequest),
+                401 => Err(Error::Unauthorized),
+                404 => Err(Error::NotFound),
+                code => Err(Error::Api(format!(
+                    "Invalid HTTP response code {code}: {:?}",
+                    response.error_for_status()
+                ))),
+            }
         }
     }
 }

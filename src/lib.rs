@@ -19,14 +19,17 @@ use std::{
 };
 
 use hickory_client::proto::rr::dnssec::{KeyPair, Private};
+
 use providers::{
     cloudflare::CloudflareProvider,
+    desec::DesecProvider,
     digitalocean::DigitalOceanProvider,
     rfc2136::{DnsAddress, Rfc2136Provider},
 };
 
 pub mod http;
 pub mod providers;
+pub mod tests;
 
 #[derive(Debug)]
 pub enum Error {
@@ -38,9 +41,22 @@ pub enum Error {
     Serialize(String),
     Unauthorized,
     NotFound,
+    BadRequest,
 }
 
 /// A DNS record type.
+#[derive(Debug)]
+pub enum DnsRecordType {
+    A,
+    AAAA,
+    CNAME,
+    NS,
+    MX,
+    TXT,
+    SRV,
+}
+
+/// A DNS record type with a value.
 pub enum DnsRecord {
     A {
         content: Ipv4Addr,
@@ -100,6 +116,7 @@ pub enum DnsUpdater {
     Rfc2136(Rfc2136Provider),
     Cloudflare(CloudflareProvider),
     DigitalOcean(DigitalOceanProvider),
+    Desec(DesecProvider),
 }
 
 pub trait IntoFqdn<'x> {
@@ -161,6 +178,14 @@ impl DnsUpdater {
         )))
     }
 
+    /// Create a new DNS updater using the Desec.io API.
+    pub fn new_desec(
+        auth_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Desec(DesecProvider::new(auth_token, timeout)))
+    }
+
     /// Create a new DNS record.
     pub async fn create(
         &self,
@@ -173,6 +198,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -188,6 +214,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -196,11 +223,13 @@ impl DnsUpdater {
         &self,
         name: impl IntoFqdn<'_>,
         origin: impl IntoFqdn<'_>,
+        record: DnsRecordType,
     ) -> crate::Result<()> {
         match self {
             DnsUpdater::Rfc2136(provider) => provider.delete(name, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.delete(name, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin).await,
+            DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
         }
     }
 }
@@ -251,6 +280,21 @@ impl<'x> IntoFqdn<'x> for String {
     }
 }
 
+pub fn strip_origin_from_name(name: &str, origin: &str) -> String {
+    let name = name.trim_end_matches('.');
+    let origin = origin.trim_end_matches('.');
+
+    if name == origin {
+        return "@".to_string();
+    }
+
+    if name.ends_with(&format!(".{}", origin)) {
+        name[..name.len() - origin.len() - 1].to_string()
+    } else {
+        name.to_string()
+    }
+}
+
 impl FromStr for TsigAlgorithm {
     type Err = ();
 
@@ -282,6 +326,13 @@ impl Display for Error {
             Error::Serialize(e) => write!(f, "Serialize error: {}", e),
             Error::Unauthorized => write!(f, "Unauthorized"),
             Error::NotFound => write!(f, "Not found"),
+            Error::BadRequest => write!(f, "Bad request"),
         }
+    }
+}
+
+impl Display for DnsRecordType {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
