@@ -20,10 +20,11 @@ mod tests {
             "records": ["1.1.1.1"],
         });
 
-        let mock = server.mock("POST", "/domains/example.com/rrsets/test/A/")
+        let mock = server.mock("POST", "/domains/example.com/rrsets/")
             .with_status(201)
             .with_header("content-type", "application/json")
-            .with_header("authorization", "Token test_token")
+            .match_header("authorization", "Token test_token")
+            .match_header("content-type", "application/json")
             .match_body(mockito::Matcher::Json(expected_request))
             .with_body(
                 r#"{
@@ -63,10 +64,11 @@ mod tests {
             "records": ["10 mail.example.com"],
         });
 
-        let mock = server.mock("POST", "/domains/example.com/rrsets/test/MX/")
+        let mock = server.mock("POST", "/domains/example.com/rrsets/")
             .with_status(201)
             .with_header("content-type", "application/json")
-            .with_header("authorization", "Token test_token")
+            .match_header("authorization", "Token test_token")
+            .match_header("content-type", "application/json")
             .match_body(mockito::Matcher::Json(expected_request))
             .with_body(
                 r#"{
@@ -106,10 +108,11 @@ mod tests {
             "records": ["1.1.1.1"],
         });
 
-        let mock = server.mock("POST", "/domains/example.com/rrsets/test/A/")
+        let mock = server.mock("POST", "/domains/example.com/rrsets/")
             .with_status(401)
             .with_header("content-type", "application/json")
-            .with_header("authorization", "Token test_token")
+            .match_header("authorization", "Token test_token")
+            .match_header("content-type", "application/json")
             .match_body(mockito::Matcher::Json(expected_request))
             .with_body(r#"{ "detail": "Invalid token." }"#)
             .create();
@@ -141,6 +144,7 @@ mod tests {
         let mock = server.mock("PUT", "/domains/example.com/rrsets/test/AAAA/")
             .with_status(200)
             .match_body(mockito::Matcher::Json(expected_request))
+            .match_header("authorization", "Token test_token")
             .with_body(
                 r#"{
                     "created": "2025-07-25T19:18:37.286381Z",
@@ -187,6 +191,56 @@ mod tests {
     
         assert!(result.is_ok());
         mock.assert();
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires desec API Token and domain configuration"]
+    async fn integration_test() {
+        let token = "";        // <-- Fill in your deSEC API token here
+        let origin = "";       // <-- Fill in your domain (e.g., "example.com")
+        let domain = "";       // <-- Fill in your test subdomain (e.g., "test.example.com")
+
+        assert!(!token.is_empty(), "Please configure your deSEC API token in the integration test");
+        assert!(!origin.is_empty(), "Please configure your domain in the integration test");
+        assert!(!domain.is_empty(), "Please configure your test subdomain in the integration test");
+
+
+        let provider = DesecProvider::new(token, Some(Duration::from_secs(30)));
+
+        // check creation
+        let creation_result = provider
+            .create(
+                domain,
+                DnsRecord::A { content: "1.1.1.1".parse().unwrap() },
+                3600,
+                origin
+            )
+            .await;
+
+        assert!(creation_result.is_ok());
+
+       // check modification
+        let update_result = provider
+            .update(
+                domain,
+                DnsRecord::A { content: "2.2.2.2".parse().unwrap() },
+                3600,
+                origin
+            )
+            .await;
+
+        assert!(update_result.is_ok());
+
+        // check deletion
+        let deletion_result = provider
+            .delete(
+                domain,
+                origin,
+                DnsRecordType::A,
+            )
+            .await;
+
+        assert!(deletion_result.is_ok());
     }
 
     #[test]

@@ -92,11 +92,9 @@ impl DesecProvider {
         let desec_record = DesecDnsRecordRepresentation::from(record);
         self.client
             .post(format!(
-                "{endpoint}/domains/{domain}/rrsets/{subdomain}/{rr_type}/",
+                "{endpoint}/domains/{domain}/rrsets/",
                 endpoint = self.endpoint,
-                domain = domain,
-                subdomain = &subdomain,
-                rr_type = &desec_record.record_type,
+                domain = domain
             ))
             .with_body(DnsRecordParams {
                 subname: &subdomain,
@@ -130,7 +128,7 @@ impl DesecProvider {
                 rr_type = &desec_record.record_type,
             ))
             .with_body(DnsRecordParams {
-                subname: &name,
+                subname: &subdomain,
                 rr_type: desec_record.record_type.as_str(),
                 ttl: Some(ttl),
                 records: vec![desec_record.content],
