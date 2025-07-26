@@ -23,10 +23,10 @@ use strum_macros::Display;
 
 use providers::{
     cloudflare::CloudflareProvider,
+    desec::DesecProvider,
     digitalocean::DigitalOceanProvider,
     rfc2136::{DnsAddress, Rfc2136Provider},
 };
-use crate::providers::desec::DesecProvider;
 
 pub mod http;
 pub mod providers;
@@ -42,7 +42,7 @@ pub enum Error {
     Serialize(String),
     Unauthorized,
     NotFound,
-    BadRequest
+    BadRequest,
 }
 
 /// A DNS record type.
@@ -57,7 +57,6 @@ pub enum DnsRecordType {
     TXT,
     SRV,
 }
-
 
 /// A DNS record type with a value.
 #[derive(Display)]
@@ -188,9 +187,7 @@ impl DnsUpdater {
         auth_token: impl AsRef<str>,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Desec(DesecProvider::new(
-            auth_token, timeout
-        )))
+        Ok(DnsUpdater::Desec(DesecProvider::new(auth_token, timeout)))
     }
 
     /// Create a new DNS record.

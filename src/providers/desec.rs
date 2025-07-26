@@ -9,13 +9,11 @@
  * except according to those terms.
  */
 
-use std::{
-    time::Duration,
-};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{http::HttpClientBuilder, DnsRecord, IntoFqdn, strip_origin_from_name, DnsRecordType};
+use crate::{http::HttpClientBuilder, strip_origin_from_name, DnsRecord, DnsRecordType, IntoFqdn};
 
 pub struct DesecDnsRecordRepresentation {
     pub record_type: String,
@@ -63,10 +61,10 @@ impl DesecProvider {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Token {}", auth_token.as_ref()))
             .with_timeout(timeout);
-        
-        Self { 
-            client, 
-            endpoint: DEFAULT_API_ENDPOINT.to_string() 
+
+        Self {
+            client,
+            endpoint: DEFAULT_API_ENDPOINT.to_string(),
         }
     }
 
@@ -77,7 +75,7 @@ impl DesecProvider {
             ..self
         }
     }
-    
+
     pub(crate) async fn create(
         &self,
         name: impl IntoFqdn<'_>,
@@ -163,7 +161,6 @@ impl DesecProvider {
     }
 }
 
-
 /// Converts a DNS record into a representation that can be sent to the desec API.
 impl From<DnsRecord> for DesecDnsRecordRepresentation {
     fn from(record: DnsRecord) -> Self {
@@ -192,7 +189,12 @@ impl From<DnsRecord> for DesecDnsRecordRepresentation {
                 record_type: "TXT".to_string(),
                 content,
             },
-            DnsRecord::SRV { content, priority, weight, port } => DesecDnsRecordRepresentation {
+            DnsRecord::SRV {
+                content,
+                priority,
+                weight,
+                port,
+            } => DesecDnsRecordRepresentation {
                 record_type: "SRV".to_string(),
                 content: format!("{priority} {weight} {port} {content}"),
             },

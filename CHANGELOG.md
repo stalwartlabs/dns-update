@@ -2,7 +2,7 @@ dns-update 0.2.0
 ================================
 - Add desec.io provider.
 - Add retry function to http client
-- Moved `strip_origin_from_name` form `cloudflare` to `lib`
+- Moved `strip_origin_from_name` form `digitalocean` to `lib`
 - Fixed cargo test 
 
 dns-update 0.1.3
