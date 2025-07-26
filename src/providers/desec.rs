@@ -23,6 +23,11 @@ pub struct DesecProvider {
     endpoint: String,
 }
 
+pub struct DesecDnsRecordRepresentation {
+    pub record_type: String,
+    pub content: String,
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct CreateDnsRecordParams<'a> {
     pub subname: &'a str,
@@ -84,21 +89,20 @@ impl DesecProvider {
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain);
 
-        let rr_type = &record.to_string();
-        let rr_content = convert_record(record)?;
+        let desec_record = DesecDnsRecordRepresentation::from(record);
         self.client
             .post(format!(
                 "{endpoint}/domains/{domain}/rrsets/{subdomain}/{rr_type}/",
                 endpoint = self.endpoint,
                 domain = domain,
                 subdomain = &subdomain,
-                rr_type = rr_type,
+                rr_type = &desec_record.record_type,
             ))
             .with_body(CreateDnsRecordParams {
                 subname: &subdomain,
-                rr_type: &rr_type,
+                rr_type: &desec_record.record_type,
                 ttl: Some(ttl),
-                records: vec![rr_content],
+                records: vec![desec_record.content],
             })?
             .send_with_retry::<DesecApiResponse>(3)
             .await
@@ -116,21 +120,20 @@ impl DesecProvider {
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain);
 
-        let rr_type = &record.to_string();
-        let rr_content = convert_record(record)?;
+        let desec_record = DesecDnsRecordRepresentation::from(record);
         self.client
             .put(format!(
                 "{endpoint}/domains/{domain}/rrsets/{subdomain}/{rr_type}/",
                 endpoint = self.endpoint,
                 domain = &domain,
                 subdomain = &subdomain,
-                rr_type = &rr_type,
+                rr_type = &desec_record.record_type,
             ))
             .with_body(UpdateDnsRecordParams {
                 subname: &name,
-                rr_type: &rr_type,
+                rr_type: desec_record.record_type.as_str(),
                 ttl: Some(ttl),
-                records: vec![rr_content.into()],
+                records: vec![desec_record.content],
             })?
             .send_with_retry::<DesecApiResponse>(3)
             .await
@@ -162,23 +165,38 @@ impl DesecProvider {
     }
 }
 
-fn convert_record(record: DnsRecord) -> crate::Result<String> {
-    Ok(match record {
-        DnsRecord::A { content } => content.to_string(),
-        DnsRecord::AAAA { content } => content.to_string(),
-        DnsRecord::CNAME { content } => content,
-        DnsRecord::NS { content } => content,
-        DnsRecord::MX { content, priority } =>
-            format!("{priority} {name}",
-               priority = priority,
-               name = content),
-        DnsRecord::TXT { content } => content,
-        DnsRecord::SRV { content, priority, weight, port } =>
-            format!("{priority} {weight} {port} {name}",
-                priority = priority,
-                weight = weight,
-                port = port,
-                name = content)
-        ,
-    })
+
+impl From<DnsRecord> for DesecDnsRecordRepresentation {
+    fn from(record: DnsRecord) -> Self {
+        match record {
+            DnsRecord::A { content } => DesecDnsRecordRepresentation {
+                record_type: "A".to_string(),
+                content: content.to_string(),
+            },
+            DnsRecord::AAAA { content } => DesecDnsRecordRepresentation {
+                record_type: "AAAA".to_string(),
+                content: content.to_string(),
+            },
+            DnsRecord::CNAME { content } => DesecDnsRecordRepresentation {
+                record_type: "CNAME".to_string(),
+                content,
+            },
+            DnsRecord::NS { content } => DesecDnsRecordRepresentation {
+                record_type: "NS".to_string(),
+                content,
+            },
+            DnsRecord::MX { content, priority } => DesecDnsRecordRepresentation {
+                record_type: "MX".to_string(),
+                content: format!("{priority} {content}"),
+            },
+            DnsRecord::TXT { content } => DesecDnsRecordRepresentation {
+                record_type: "TXT".to_string(),
+                content,
+            },
+            DnsRecord::SRV { content, priority, weight, port } => DesecDnsRecordRepresentation {
+                record_type: "SRV".to_string(),
+                content: format!("{priority} {weight} {port} {content}"),
+            },
+        }
+    }
 }

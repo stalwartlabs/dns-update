@@ -2,6 +2,7 @@
 mod tests {
     use crate::{providers::desec::DesecProvider, DnsRecord, DnsRecordType, Error};
     use std::time::Duration;
+    use crate::providers::desec::DesecDnsRecordRepresentation;
 
     fn setup_provider(endpoint: &str) -> DesecProvider {
         DesecProvider::new("test_token", Some(endpoint),  Some(Duration::from_secs(1)))
@@ -107,49 +108,65 @@ mod tests {
     }
 
 
-#[tokio::test]
-async fn test_delete_record_success() {
-    let mut server = mockito::Server::new_async().await;
-    let mock = server.mock("DELETE", "/domains/example.com/rrsets/test/TXT/")
-        .with_status(204)
-        .create();
+    #[tokio::test]
+    async fn test_delete_record_success() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server.mock("DELETE", "/domains/example.com/rrsets/test/TXT/")
+            .with_status(204)
+            .create();
+    
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .delete(
+                "test",
+                "example.com",
+                DnsRecordType::TXT,
+            )
+            .await;
+    
+        assert!(result.is_ok());
+        mock.assert();
+    }
 
-    let provider = setup_provider(server.url().as_str());
-    let result = provider
-        .delete(
-            "test",
-            "example.com",
-            DnsRecordType::TXT,
-        )
-        .await;
+    #[test]
+    fn test_into_desec_record() {
+        let record = DnsRecord::A {
+            content: "1.1.1.1".parse().unwrap(),
+        };
+        let desec_record: DesecDnsRecordRepresentation = record.into();
+        assert_eq!(desec_record.content, "1.1.1.1");
+        assert_eq!(desec_record.record_type, "A");
 
-    assert!(result.is_ok());
-    mock.assert();
-}
+        let record = DnsRecord::AAAA {
+            content: "2001:db8::1".parse().unwrap(),
+        };
+        let desec_record: DesecDnsRecordRepresentation = record.into();
+        assert_eq!(desec_record.content, "2001:db8::1");
+        assert_eq!(desec_record.record_type, "AAAA");
 
-    /*
-#[test]
-fn test_convert_record() {
-use super::convert_record;
+        let record = DnsRecord::TXT {
+            content: "test".to_string(),
+        };
+        let desec_record: DesecDnsRecordRepresentation = record.into();
+        assert_eq!(desec_record.content, "test");
+        assert_eq!(desec_record.record_type, "TXT");
 
-// Test A record
-let record = DnsRecord::A { content: "192.0.2.1".parse().unwrap() };
-assert_eq!(convert_record(record).unwrap(), "192.0.2.1");
+        let record = DnsRecord::MX {
+            priority: 10,
+            content: "mail.example.com".to_string(),
+        };
+        let desec_record: DesecDnsRecordRepresentation = record.into();
+        assert_eq!(desec_record.content, "10 mail.example.com");
+        assert_eq!(desec_record.record_type, "MX");
 
-// Test MX record
-let record = DnsRecord::MX {
-    content: "mail.example.com".to_string(),
-    priority: 10,
-};
-assert_eq!(convert_record(record).unwrap(), "10 mail.example.com");
-
-// Test SRV record
-let record = DnsRecord::SRV {
-    content: "sip.example.com".to_string(),
-    priority: 10,
-    weight: 20,
-    port: 5060,
-};
-assert_eq!(convert_record(record).unwrap(), "10 20 5060 sip.example.com");
-}*/
+        let record = DnsRecord::SRV {
+            priority: 10,
+            weight: 20,
+            port: 443,
+            content: "sip.example.com".to_string(),
+        };
+        let desec_record: DesecDnsRecordRepresentation = record.into();
+        assert_eq!(desec_record.content, "10 20 443 sip.example.com");
+        assert_eq!(desec_record.record_type, "SRV");
+    }
 }
