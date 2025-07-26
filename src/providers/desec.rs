@@ -16,7 +16,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{http::HttpClientBuilder, DnsRecord, IntoFqdn};
+use crate::{http::HttpClientBuilder, DnsRecord, IntoFqdn, strip_origin_from_name, DnsRecordType};
 
 #[derive(Clone)]
 pub struct DesecProvider {
@@ -80,18 +80,21 @@ impl DesecProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         let name = name.into_name();
+        let domain = origin.into_name();
+        let subdomain = strip_origin_from_name(&name, &domain);
+
         let rr_type = &record.to_string();
         let rr_content = convert_record(record)?;
         self.client
             .post(format!(
-                "{endpoint}/domains/{name}/rrsets/{subname}/{rr_type}/",
+                "{endpoint}/domains/{domain}/rrsets/{subdomain}/{rr_type}/",
                 endpoint = self.endpoint,
-                name = origin.into_name().as_ref(),
-                subname = &name,
+                domain = domain,
+                subdomain = &subdomain,
                 rr_type = rr_type,
             ))
             .with_body(CreateDnsRecordParams {
-                subname: &name,
+                subname: &subdomain,
                 rr_type: &rr_type,
                 ttl: Some(ttl),
                 records: vec![rr_content.into()],
@@ -109,14 +112,17 @@ impl DesecProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         let name = name.into_name();
+        let domain = origin.into_name();
+        let subdomain = strip_origin_from_name(&name, &domain);
+
         let rr_type = &record.to_string();
         let rr_content = convert_record(record)?;
         self.client
             .put(format!(
-                "{endpoint}/domains/{name}/rrsets/{subname}/{rr_type}/",
+                "{endpoint}/domains/{domain}/rrsets/{subdomain}/{rr_type}/",
                 endpoint = self.endpoint,
-                name = origin.into_name().as_ref(),
-                subname = &name,
+                domain = &domain,
+                subdomain = &subdomain,
                 rr_type = &rr_type,
             ))
             .with_body(UpdateDnsRecordParams {
@@ -134,17 +140,20 @@ impl DesecProvider {
         &self,
         name: impl IntoFqdn<'_>,
         origin: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        record_type: DnsRecordType,
     ) -> crate::Result<()> {
         let name = name.into_name();
-        let rr_type = &record.to_string();
+        let domain = origin.into_name();
+        let subdomain = strip_origin_from_name(&name, &domain);
+
+        let rr_type = &record_type.to_string();
         self.client
             .delete(format!(
-                "{endpoint}/domains/{name}/rrsets/{subname}/{rtype}/",
+                "{endpoint}/domains/{domain}/rrsets/{subdomain}/{rtype}/",
                 endpoint = self.endpoint,
-                name = origin.into_name().as_ref(),
-                subname = name.as_ref(),
-                rtype = &rr_type,
+                domain = &domain,
+                subdomain = &subdomain,
+                rtype = &rr_type.to_string(),
             ))
             .send_with_retry::<ApiResult<Value>>(3)
             .await

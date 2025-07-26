@@ -30,6 +30,7 @@ use crate::providers::desec::DesecProvider;
 
 pub mod http;
 pub mod providers;
+pub mod tests;
 
 #[derive(Debug)]
 pub enum Error {
@@ -270,6 +271,21 @@ impl<'x> IntoFqdn<'x> for String {
         } else {
             Cow::Owned(self)
         }
+    }
+}
+
+pub fn strip_origin_from_name(name: &str, origin: &str) -> String {
+    let name = name.trim_end_matches('.');
+    let origin = origin.trim_end_matches('.');
+
+    if name == origin {
+        return "@".to_string();
+    }
+
+    if name.ends_with(&format!(".{}", origin)) {
+        name[..name.len() - origin.len() - 1].to_string()
+    } else {
+        name.to_string()
     }
 }
 

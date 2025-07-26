@@ -14,7 +14,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{http::HttpClientBuilder, DnsRecord, Error, IntoFqdn};
+use crate::{http::HttpClientBuilder, DnsRecord, Error, IntoFqdn, strip_origin_from_name};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
@@ -97,7 +97,7 @@ impl DigitalOceanProvider {
     ) -> crate::Result<()> {
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = Self::strip_origin_from_name(&name, &domain);
+        let subdomain = strip_origin_from_name(&name, &domain);
 
         self.client
             .post(format!(
@@ -122,7 +122,7 @@ impl DigitalOceanProvider {
     ) -> crate::Result<()> {
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = Self::strip_origin_from_name(&name, &domain);
+        let subdomain = strip_origin_from_name(&name, &domain);
         let record_id = self.obtain_record_id(&name, &domain).await?;
 
         self.client
@@ -158,7 +158,7 @@ impl DigitalOceanProvider {
     }
 
     async fn obtain_record_id(&self, name: &str, domain: &str) -> crate::Result<i64> {
-        let subdomain = Self::strip_origin_from_name(name, domain);
+        let subdomain = strip_origin_from_name(name, domain);
         self.client
             .get(format!(
                 "https://api.digitalocean.com/v2/domains/{domain}/records?{}",
@@ -174,21 +174,6 @@ impl DigitalOceanProvider {
                     .map(|record| record.id)
                     .ok_or_else(|| Error::Api(format!("DNS Record {} not found", subdomain)))
             })
-    }
-
-    fn strip_origin_from_name(name: &str, origin: &str) -> String {
-        let name = name.trim_end_matches('.');
-        let origin = origin.trim_end_matches('.');
-
-        if name == origin {
-            return "@".to_string();
-        }
-
-        if name.ends_with(&format!(".{}", origin)) {
-            name[..name.len() - origin.len() - 1].to_string()
-        } else {
-            name.to_string()
-        }
     }
 }
 
@@ -226,30 +211,5 @@ impl From<DnsRecord> for RecordData {
                 port,
             },
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_strip_origin_from_name() {
-        assert_eq!(
-            DigitalOceanProvider::strip_origin_from_name("www.example.com", "example.com"),
-            "www"
-        );
-        assert_eq!(
-            DigitalOceanProvider::strip_origin_from_name("example.com", "example.com"),
-            "@"
-        );
-        assert_eq!(
-            DigitalOceanProvider::strip_origin_from_name("api.v1.example.com", "example.com"),
-            "api.v1"
-        );
-        assert_eq!(
-            DigitalOceanProvider::strip_origin_from_name("example.com", "google.com"),
-            "example.com"
-        );
     }
 }
