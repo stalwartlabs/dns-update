@@ -17,19 +17,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::{http::HttpClientBuilder, DnsRecord, IntoFqdn, strip_origin_from_name, DnsRecordType};
 
+pub struct DesecDnsRecordRepresentation {
+    pub record_type: String,
+    pub content: String,
+}
+
 #[derive(Clone)]
 pub struct DesecProvider {
     client: HttpClientBuilder,
     endpoint: String,
 }
 
-pub struct DesecDnsRecordRepresentation {
-    pub record_type: String,
-    pub content: String,
-}
-
+/// The parameters for creation and modification requests of the desec API.
 #[derive(Serialize, Clone, Debug)]
-pub struct CreateDnsRecordParams<'a> {
+pub struct DnsRecordParams<'a> {
     pub subname: &'a str,
     #[serde(rename = "type")]
     pub rr_type: &'a str,
@@ -37,15 +38,7 @@ pub struct CreateDnsRecordParams<'a> {
     pub records: Vec<String>,
 }
 
-#[derive(Serialize, Clone, Debug)]
-pub struct UpdateDnsRecordParams<'a> {
-    pub subname: &'a str,
-    #[serde(rename = "type")]
-    pub rr_type: &'a str,
-    pub ttl: Option<u32>,
-    pub records: Vec<String>,
-}
-
+/// The response for creation and modification requests of the desec API.
 #[derive(Deserialize, Debug)]
 pub struct DesecApiResponse {
     pub created: String,
@@ -98,7 +91,7 @@ impl DesecProvider {
                 subdomain = &subdomain,
                 rr_type = &desec_record.record_type,
             ))
-            .with_body(CreateDnsRecordParams {
+            .with_body(DnsRecordParams {
                 subname: &subdomain,
                 rr_type: &desec_record.record_type,
                 ttl: Some(ttl),
@@ -129,7 +122,7 @@ impl DesecProvider {
                 subdomain = &subdomain,
                 rr_type = &desec_record.record_type,
             ))
-            .with_body(UpdateDnsRecordParams {
+            .with_body(DnsRecordParams {
                 subname: &name,
                 rr_type: desec_record.record_type.as_str(),
                 ttl: Some(ttl),
@@ -166,6 +159,7 @@ impl DesecProvider {
 }
 
 
+/// Converts a DNS record into a representation that can be sent to the desec API.
 impl From<DnsRecord> for DesecDnsRecordRepresentation {
     fn from(record: DnsRecord) -> Self {
         match record {
