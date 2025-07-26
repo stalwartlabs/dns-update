@@ -144,6 +144,9 @@ impl HttpClient {
             .map_err(|err| Error::Api(format!("Failed to send request to {}: {err}", self.url)))?;
 
         match response.status().as_u16() {
+            204 => serde_json::from_str("{}").map_err(|err| {
+                Error::Serialize(format!("Failed to create empty response: {err}"))
+            }),
             200..=299 => response.text().await.map_err(|err| {
                 Error::Api(format!("Failed to read response from {}: {err}", self.url))
             }),
@@ -181,6 +184,9 @@ impl HttpClient {
                 .map_err(|err| Error::Api(format!("Failed to send request to {}: {err}", self.url)))?;
 
             return match response.status().as_u16() {
+                204 => serde_json::from_str("{}").map_err(|err| {
+                    Error::Serialize(format!("Failed to create empty response: {err}"))
+                }),
                 200..=299 => {
                     let text = response.text().await.map_err(|err| {
                         Error::Api(format!("Failed to read response from {}: {err}", self.url))
