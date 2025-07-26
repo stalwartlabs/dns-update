@@ -22,7 +22,7 @@ PRs to add more providers are welcome. The goal is to support as many providers 
 
 Using RFC2136 with TSIG:
 
-```rust
+```rust,ignore
         // Create a new RFC2136 client
         let client = Rfc2136Provider::new_tsig("tcp://127.0.0.1:53", "<KEY_NAME>", STANDARD.decode("<TSIG_KEY>").unwrap(), TsigAlgorithm::HmacSha512).unwrap();
 
@@ -44,7 +44,7 @@ Using RFC2136 with TSIG:
 
 Using a cloud provider such as Cloudflare:
 
-```rust
+```rust,ignore
         // Create a new Cloudflare client
         let client =
             DnsUpdater::new_cloudflare("<API_TOKEN>", None::<String>, Some(Duration::from_secs(60)))
