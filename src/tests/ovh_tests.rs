@@ -13,7 +13,7 @@
 mod tests {
     use crate::{
         providers::ovh::{OvhEndpoint, OvhProvider, OvhRecordFormat},
-        DnsUpdater, DnsRecord, DnsRecordType, Error,
+        DnsRecord, DnsRecordType, DnsUpdater, Error,
     };
     use serde_json::json;
     use std::time::Duration;
@@ -21,22 +21,41 @@ mod tests {
     fn setup_provider() -> OvhProvider {
         OvhProvider::new(
             "test_app_key",
-            "test_app_secret", 
+            "test_app_secret",
             "test_consumer_key",
             OvhEndpoint::OvhEu,
-            Some(Duration::from_secs(1))
-        ).unwrap()
+            Some(Duration::from_secs(1)),
+        )
+        .unwrap()
     }
 
     #[test]
     fn test_ovh_endpoint_parsing() {
-        assert!(matches!("ovh-eu".parse::<OvhEndpoint>().unwrap(), OvhEndpoint::OvhEu));
-        assert!(matches!("ovh-ca".parse::<OvhEndpoint>().unwrap(), OvhEndpoint::OvhCa));
-        assert!(matches!("kimsufi-eu".parse::<OvhEndpoint>().unwrap(), OvhEndpoint::KimsufiEu));
-        assert!(matches!("kimsufi-ca".parse::<OvhEndpoint>().unwrap(), OvhEndpoint::KimsufiCa));
-        assert!(matches!("soyoustart-eu".parse::<OvhEndpoint>().unwrap(), OvhEndpoint::SoyoustartEu));
-        assert!(matches!("soyoustart-ca".parse::<OvhEndpoint>().unwrap(), OvhEndpoint::SoyoustartCa));
-        
+        assert!(matches!(
+            "ovh-eu".parse::<OvhEndpoint>().unwrap(),
+            OvhEndpoint::OvhEu
+        ));
+        assert!(matches!(
+            "ovh-ca".parse::<OvhEndpoint>().unwrap(),
+            OvhEndpoint::OvhCa
+        ));
+        assert!(matches!(
+            "kimsufi-eu".parse::<OvhEndpoint>().unwrap(),
+            OvhEndpoint::KimsufiEu
+        ));
+        assert!(matches!(
+            "kimsufi-ca".parse::<OvhEndpoint>().unwrap(),
+            OvhEndpoint::KimsufiCa
+        ));
+        assert!(matches!(
+            "soyoustart-eu".parse::<OvhEndpoint>().unwrap(),
+            OvhEndpoint::SoyoustartEu
+        ));
+        assert!(matches!(
+            "soyoustart-ca".parse::<OvhEndpoint>().unwrap(),
+            OvhEndpoint::SoyoustartCa
+        ));
+
         assert!("invalid-endpoint".parse::<OvhEndpoint>().is_err());
     }
 
@@ -49,7 +68,7 @@ mod tests {
             OvhEndpoint::OvhEu,
             Some(Duration::from_secs(30)),
         );
-        
+
         assert!(provider.is_ok());
     }
 
@@ -62,9 +81,9 @@ mod tests {
             OvhEndpoint::OvhEu,
             Some(Duration::from_secs(30)),
         );
-        
+
         assert!(updater.is_ok());
-        
+
         match updater.unwrap() {
             DnsUpdater::Ovh(_) => (),
             _ => panic!("Expected OVH provider"),
@@ -164,7 +183,7 @@ mod tests {
 
         let mut provider = setup_provider();
         provider.endpoint = server.url();
-        
+
         let result = provider
             .create(
                 "test.example.com",
@@ -195,7 +214,10 @@ mod tests {
             .create();
 
         let lookup_mock = server
-            .mock("GET", "/domain/zone/example.com/record?fieldType=A&subDomain=test")
+            .mock(
+                "GET",
+                "/domain/zone/example.com/record?fieldType=A&subDomain=test",
+            )
             .with_status(200)
             .match_header("x-ovh-application", "test_app_key")
             .match_header("x-ovh-consumer", "test_consumer_key")
@@ -225,7 +247,7 @@ mod tests {
 
         let mut provider = setup_provider();
         provider.endpoint = server.url();
-        
+
         let result = provider
             .update(
                 "test.example.com",
@@ -257,7 +279,10 @@ mod tests {
             .create();
 
         let lookup_mock = server
-            .mock("GET", "/domain/zone/example.com/record?fieldType=TXT&subDomain=test")
+            .mock(
+                "GET",
+                "/domain/zone/example.com/record?fieldType=TXT&subDomain=test",
+            )
             .with_status(200)
             .match_header("x-ovh-application", "test_app_key")
             .match_header("x-ovh-consumer", "test_consumer_key")
@@ -282,7 +307,7 @@ mod tests {
 
         let mut provider = setup_provider();
         provider.endpoint = server.url();
-        
+
         let result = provider
             .delete("test.example.com", "example.com", DnsRecordType::TXT)
             .await;
@@ -308,7 +333,7 @@ mod tests {
 
         let mut provider = setup_provider();
         provider.endpoint = server.url();
-        
+
         let result = provider
             .create(
                 "test.example.com",
@@ -337,7 +362,10 @@ mod tests {
             .create();
 
         let lookup_mock = server
-            .mock("GET", "/domain/zone/example.com/record?fieldType=A&subDomain=nonexistent")
+            .mock(
+                "GET",
+                "/domain/zone/example.com/record?fieldType=A&subDomain=nonexistent",
+            )
             .with_status(200)
             .match_header("x-ovh-application", "test_app_key")
             .match_header("x-ovh-consumer", "test_consumer_key")
@@ -346,7 +374,7 @@ mod tests {
 
         let mut provider = setup_provider();
         provider.endpoint = server.url();
-        
+
         let result = provider
             .update(
                 "nonexistent.example.com",
@@ -366,12 +394,12 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires OVH API credentials and domain configuration"]
     async fn integration_test() {
-        let app_key = std::env::var("OVH_APP_KEY").unwrap_or(String::new());
-        let app_secret = std::env::var("OVH_APP_SECRET").unwrap_or(String::new());
-        let consumer_key = std::env::var("OVH_CONSUMER_KEY").unwrap_or(String::new());
-        let endpoint = std::env::var("OVH_ENDPOINT").unwrap_or(String::new());
-        let origin = std::env::var("OVH_ORIGIN").unwrap_or(String::new());
-        let domain = std::env::var("OVH_DOMAIN").unwrap_or(String::new());
+        let app_key = std::env::var("OVH_APP_KEY").unwrap_or_default();
+        let app_secret = std::env::var("OVH_APP_SECRET").unwrap_or_default();
+        let consumer_key = std::env::var("OVH_CONSUMER_KEY").unwrap_or_default();
+        let endpoint = std::env::var("OVH_ENDPOINT").unwrap_or_default();
+        let origin = std::env::var("OVH_ORIGIN").unwrap_or_default();
+        let domain = std::env::var("OVH_DOMAIN").unwrap_or_default();
 
         assert!(
             !app_key.is_empty(),
@@ -404,7 +432,8 @@ mod tests {
             consumer_key,
             endpoint.parse().unwrap(),
             Some(Duration::from_secs(30)),
-        ).unwrap();
+        )
+        .unwrap();
 
         let creation_result = updater
             .create(
@@ -436,5 +465,4 @@ mod tests {
 
         assert!(deletion_result.is_ok());
     }
-
 }

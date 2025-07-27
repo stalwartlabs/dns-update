@@ -1,3 +1,7 @@
+dns-update 0.1.5
+================================
+- Add OVH provider.
+
 dns-update 0.1.4
 ================================
 - Add desec.io provider.

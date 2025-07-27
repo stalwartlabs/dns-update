@@ -9,14 +9,11 @@
  * except according to those terms.
  */
 
-use std::{
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
-
+use crate::{strip_origin_from_name, DnsRecord, Error, IntoFqdn};
+use reqwest::Method;
 use serde::Serialize;
 use sha1::{Digest, Sha1};
-
-use crate::{DnsRecord, Error, IntoFqdn, strip_origin_from_name};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
 pub struct OvhProvider {
@@ -56,7 +53,7 @@ pub enum OvhEndpoint {
     KimsufiEu,
     KimsufiCa,
     SoyoustartEu,
-    SoyoustartCa
+    SoyoustartCa,
 }
 
 impl OvhEndpoint {
@@ -67,7 +64,7 @@ impl OvhEndpoint {
             OvhEndpoint::KimsufiEu => "https://eu.api.kimsufi.com/1.0",
             OvhEndpoint::KimsufiCa => "https://ca.api.kimsufi.com/1.0",
             OvhEndpoint::SoyoustartEu => "https://eu.api.soyoustart.com/1.0",
-            OvhEndpoint::SoyoustartCa => "https://ca.api.soyoustart.com/1.0"
+            OvhEndpoint::SoyoustartCa => "https://ca.api.soyoustart.com/1.0",
         }
     }
 }
@@ -150,17 +147,20 @@ impl OvhProvider {
             "{}+{}+{}+{}+{}+{}",
             self.application_secret, self.consumer_key, method, url, body, timestamp
         );
-        
+
         let mut hasher = Sha1::new();
         hasher.update(data.as_bytes());
         let hash = hasher.finalize();
-        let hex_string = hash.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+        let hex_string = hash
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>();
         format!("$1${}", hex_string)
     }
 
     async fn send_authenticated_request(
         &self,
-        method: &str,
+        method: Method,
         url: &str,
         body: &str,
     ) -> crate::Result<reqwest::Response> {
@@ -169,14 +169,14 @@ impl OvhProvider {
             .map_err(|e| Error::Client(format!("Failed to get timestamp: {}", e)))?
             .as_secs();
 
-        let signature = self.generate_signature(method, url, body, timestamp);
+        let signature = self.generate_signature(method.as_str(), url, body, timestamp);
 
         let client = reqwest::Client::builder()
             .timeout(self.timeout)
             .build()
             .map_err(|e| Error::Client(format!("Failed to create HTTP client: {}", e)))?;
         let mut request = client
-            .request(method.parse().unwrap(), url)
+            .request(method, url)
             .header("X-Ovh-Application", &self.application_key)
             .header("X-Ovh-Consumer", &self.consumer_key)
             .header("X-Ovh-Signature", signature)
@@ -196,9 +196,11 @@ impl OvhProvider {
     async fn get_zone_name(&self, origin: impl IntoFqdn<'_>) -> crate::Result<String> {
         let domain = origin.into_name();
         let domain_name = domain.trim_end_matches('.');
-        
+
         let url = format!("{}/domain/zone/{}", self.endpoint, domain_name);
-        let response = self.send_authenticated_request("GET", &url, "").await?;
+        let response = self
+            .send_authenticated_request(Method::GET, &url, "")
+            .await?;
 
         if response.status().is_success() {
             Ok(domain_name.to_string())
@@ -224,8 +226,10 @@ impl OvhProvider {
             "{}/domain/zone/{}/record?fieldType={}&subDomain={}",
             self.endpoint, zone, record_type, subdomain
         );
-        
-        let response = self.send_authenticated_request("GET", &url, "").await?;
+
+        let response = self
+            .send_authenticated_request(Method::GET, &url, "")
+            .await?;
 
         if !response.status().is_success() {
             return Err(Error::Api(format!(
@@ -234,15 +238,16 @@ impl OvhProvider {
             )));
         }
 
-        let record_ids: Vec<u64> = response
-            .json()
-            .await
-            .map_err(|e| Error::Api(format!("Failed to parse record list: {}", e)))?;
+        let record_ids: Vec<u64> = serde_json::from_slice(
+            response
+                .bytes()
+                .await
+                .map_err(|e| Error::Api(format!("Failed to fetch record list: {}", e)))?
+                .as_ref(),
+        )
+        .map_err(|e| Error::Api(format!("Failed to parse record list: {}", e)))?;
 
-        record_ids
-            .into_iter()
-            .next()
-            .ok_or_else(|| Error::NotFound)
+        record_ids.into_iter().next().ok_or(Error::NotFound)
     }
 
     pub(crate) async fn create(
@@ -275,7 +280,9 @@ impl OvhProvider {
             .map_err(|e| Error::Serialize(format!("Failed to serialize record: {}", e)))?;
 
         let url = format!("{}/domain/zone/{}/record", self.endpoint, zone);
-        let response = self.send_authenticated_request("POST", &url, &body).await?;
+        let response = self
+            .send_authenticated_request(Method::POST, &url, &body)
+            .await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -285,15 +292,20 @@ impl OvhProvider {
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(Error::Api(format!(
                 "Failed to create record: HTTP {} - {}",
-                status,
-                error_text
+                status, error_text
             )));
         }
 
         let url = format!("{}/domain/zone/{}/refresh", self.endpoint, zone);
-        let _response = self.send_authenticated_request("POST", &url, "").await.map_err(|e| {
-            Error::Api(format!("Failed to refresh zone (record created but zone not refreshed): {:?}", e))
-        })?;
+        let _response = self
+            .send_authenticated_request(Method::POST, &url, "")
+            .await
+            .map_err(|e| {
+                Error::Api(format!(
+                    "Failed to refresh zone (record created but zone not refreshed): {:?}",
+                    e
+                ))
+            })?;
 
         Ok(())
     }
@@ -311,15 +323,22 @@ impl OvhProvider {
         let ovh_record: OvhRecordFormat = (&record).into();
         let (field_type, target) = (ovh_record.field_type, ovh_record.target);
 
-        let record_id = self.get_record_id(&zone, name.as_ref(), &field_type).await?;
+        let record_id = self
+            .get_record_id(&zone, name.as_ref(), &field_type)
+            .await?;
 
         let params = UpdateDnsRecordParams { target, ttl };
 
         let body = serde_json::to_string(&params)
             .map_err(|e| Error::Serialize(format!("Failed to serialize record: {}", e)))?;
 
-        let url = format!("{}/domain/zone/{}/record/{}", self.endpoint, zone, record_id);
-        let response = self.send_authenticated_request("PUT", &url, &body).await?;
+        let url = format!(
+            "{}/domain/zone/{}/record/{}",
+            self.endpoint, zone, record_id
+        );
+        let response = self
+            .send_authenticated_request(Method::PUT, &url, &body)
+            .await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -329,15 +348,20 @@ impl OvhProvider {
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(Error::Api(format!(
                 "Failed to update record: HTTP {} - {}",
-                status,
-                error_text
+                status, error_text
             )));
         }
 
         let url = format!("{}/domain/zone/{}/refresh", self.endpoint, zone);
-        let _response = self.send_authenticated_request("POST", &url, "").await.map_err(|e| {
-            Error::Api(format!("Failed to refresh zone (record updated but zone not refreshed): {:?}", e))
-        })?;
+        let _response = self
+            .send_authenticated_request(Method::POST, &url, "")
+            .await
+            .map_err(|e| {
+                Error::Api(format!(
+                    "Failed to refresh zone (record updated but zone not refreshed): {:?}",
+                    e
+                ))
+            })?;
 
         Ok(())
     }
@@ -349,10 +373,17 @@ impl OvhProvider {
         record_type: crate::DnsRecordType,
     ) -> crate::Result<()> {
         let zone = self.get_zone_name(origin).await?;
-        let record_id = self.get_record_id(&zone, name, &record_type.to_string()).await?;
+        let record_id = self
+            .get_record_id(&zone, name, &record_type.to_string())
+            .await?;
 
-        let url = format!("{}/domain/zone/{}/record/{}", self.endpoint, zone, record_id);
-        let response = self.send_authenticated_request("DELETE", &url, "").await?;
+        let url = format!(
+            "{}/domain/zone/{}/record/{}",
+            self.endpoint, zone, record_id
+        );
+        let response = self
+            .send_authenticated_request(Method::DELETE, &url, "")
+            .await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -362,15 +393,20 @@ impl OvhProvider {
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(Error::Api(format!(
                 "Failed to delete record: HTTP {} - {}",
-                status,
-                error_text
+                status, error_text
             )));
         }
 
         let url = format!("{}/domain/zone/{}/refresh", self.endpoint, zone);
-        let _response = self.send_authenticated_request("POST", &url, "").await.map_err(|e| {
-            Error::Api(format!("Failed to refresh zone (record deleted but zone not refreshed): {:?}", e))
-        })?;
+        let _response = self
+            .send_authenticated_request(Method::POST, &url, "")
+            .await
+            .map_err(|e| {
+                Error::Api(format!(
+                    "Failed to refresh zone (record deleted but zone not refreshed): {:?}",
+                    e
+                ))
+            })?;
 
         Ok(())
     }
