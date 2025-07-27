@@ -24,6 +24,7 @@ use providers::{
     cloudflare::CloudflareProvider,
     desec::DesecProvider,
     digitalocean::DigitalOceanProvider,
+    ovh::{OvhProvider, OvhEndpoint},
     rfc2136::{DnsAddress, Rfc2136Provider},
 };
 
@@ -117,6 +118,7 @@ pub enum DnsUpdater {
     Cloudflare(CloudflareProvider),
     DigitalOcean(DigitalOceanProvider),
     Desec(DesecProvider),
+    Ovh(OvhProvider),
 }
 
 pub trait IntoFqdn<'x> {
@@ -186,6 +188,23 @@ impl DnsUpdater {
         Ok(DnsUpdater::Desec(DesecProvider::new(auth_token, timeout)))
     }
 
+    /// Create a new DNS updater using the OVH API.
+    pub fn new_ovh(
+        application_key: impl AsRef<str>,
+        application_secret: impl AsRef<str>,
+        consumer_key: impl AsRef<str>,
+        endpoint: OvhEndpoint,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Ovh(OvhProvider::new(
+            application_key,
+            application_secret,
+            consumer_key,
+            endpoint,
+            timeout,
+        )?))
+    }
+
     /// Create a new DNS record.
     pub async fn create(
         &self,
@@ -199,6 +218,7 @@ impl DnsUpdater {
             DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -215,6 +235,7 @@ impl DnsUpdater {
             DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -230,6 +251,7 @@ impl DnsUpdater {
             DnsUpdater::Cloudflare(provider) => provider.delete(name, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin).await,
             DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
         }
     }
 }
