@@ -1,5 +1,5 @@
 /*
- * Copyright Stalwart Labs Ltd. See the COPYING
+ * Copyright Stalwart Labs LLC See the COPYING
  * file at the top-level directory of this distribution.
  *
  * Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
@@ -14,7 +14,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{http::HttpClientBuilder, DnsRecord, Error, IntoFqdn, strip_origin_from_name};
+use crate::{http::HttpClientBuilder, strip_origin_from_name, DnsRecord, Error, IntoFqdn};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
@@ -164,7 +164,7 @@ impl DigitalOceanProvider {
                 "https://api.digitalocean.com/v2/domains/{domain}/records?{}",
                 Query::name(name).serialize()
             ))
-            .send::<ListDomainRecord>()
+            .send_with_retry::<ListDomainRecord>(3)
             .await
             .and_then(|result| {
                 result

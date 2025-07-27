@@ -1,5 +1,5 @@
 /*
- * Copyright Stalwart Labs Ltd. See the COPYING
+ * Copyright Stalwart Labs LLC See the COPYING
  * file at the top-level directory of this distribution.
  *
  * Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
@@ -144,9 +144,8 @@ impl HttpClient {
             .map_err(|err| Error::Api(format!("Failed to send request to {}: {err}", self.url)))?;
 
         match response.status().as_u16() {
-            204 => serde_json::from_str("{}").map_err(|err| {
-                Error::Serialize(format!("Failed to create empty response: {err}"))
-            }),
+            204 => serde_json::from_str("{}")
+                .map_err(|err| Error::Serialize(format!("Failed to create empty response: {err}"))),
             200..=299 => response.text().await.map_err(|err| {
                 Error::Api(format!("Failed to read response from {}: {err}", self.url))
             }),
@@ -161,7 +160,7 @@ impl HttpClient {
     }
 
     pub async fn send_with_retry<T>(self, max_retries: u32) -> crate::Result<T>
-    where 
+    where
         T: DeserializeOwned,
     {
         let mut attempts = 0;
@@ -178,10 +177,9 @@ impl HttpClient {
                 request = request.body(body.clone());
             }
 
-            let response = request
-                .send()
-                .await
-                .map_err(|err| Error::Api(format!("Failed to send request to {}: {err}", self.url)))?;
+            let response = request.send().await.map_err(|err| {
+                Error::Api(format!("Failed to send request to {}: {err}", self.url))
+            })?;
 
             return match response.status().as_u16() {
                 204 => serde_json::from_str("{}").map_err(|err| {
@@ -212,7 +210,7 @@ impl HttpClient {
                     "Invalid HTTP response code {code}: {:?}",
                     response.error_for_status()
                 ))),
-            }
+            };
         }
     }
 }

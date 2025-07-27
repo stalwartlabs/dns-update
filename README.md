@@ -12,7 +12,7 @@ and different cloud provider APIs such as [Cloudflare](https://www.cloudflare.co
 ## Limitations
  
 - Currently the library is `async` only.
-- Besides RFC 2136, it only supports Cloudflare's and DigitalOcean's API. 
+- Besides RFC 2136, it only supports a few cloud providers API. 
 
 ## PRs Welcome
 
@@ -77,4 +77,4 @@ at your option.
 
 ## Copyright
 
-Copyright (C) 2020-2024, Stalwart Labs Ltd.
+Copyright (C) 2020, Stalwart Labs LLC

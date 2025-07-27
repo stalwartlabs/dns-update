@@ -1,5 +1,5 @@
 /*
- * Copyright Stalwart Labs Ltd. See the COPYING
+ * Copyright Stalwart Labs LLC See the COPYING
  * file at the top-level directory of this distribution.
  *
  * Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
@@ -111,7 +111,7 @@ impl CloudflareProvider {
                 "https://api.cloudflare.com/client/v4/zones?{}",
                 Query::name(origin.as_ref()).serialize()
             ))
-            .send::<ApiResult<Vec<IdMap>>>()
+            .send_with_retry::<ApiResult<Vec<IdMap>>>(3)
             .await
             .and_then(|r| r.unwrap_response("list zones"))
             .and_then(|result| {
@@ -134,7 +134,7 @@ impl CloudflareProvider {
                 "https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?{}",
                 Query::name(name.as_ref()).serialize()
             ))
-            .send::<ApiResult<Vec<IdMap>>>()
+            .send_with_retry::<ApiResult<Vec<IdMap>>>(3)
             .await
             .and_then(|r| r.unwrap_response("list DNS records"))
             .and_then(|result| {
@@ -165,7 +165,7 @@ impl CloudflareProvider {
                 name: name.into_name().as_ref(),
                 content: record.into(),
             })?
-            .send::<ApiResult<Value>>()
+            .send_with_retry::<ApiResult<Value>>(3)
             .await
             .map(|_| ())
     }
@@ -190,7 +190,7 @@ impl CloudflareProvider {
                 name: name.as_ref(),
                 content: record.into(),
             })?
-            .send::<ApiResult<Value>>()
+            .send_with_retry::<ApiResult<Value>>(3)
             .await
             .map(|_| ())
     }
@@ -207,7 +207,7 @@ impl CloudflareProvider {
             .delete(format!(
                 "https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}",
             ))
-            .send::<ApiResult<Value>>()
+            .send_with_retry::<ApiResult<Value>>(3)
             .await
             .map(|_| ())
     }

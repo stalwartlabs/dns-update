@@ -1,4 +1,4 @@
-dns-update 0.2.0
+dns-update 0.1.4
 ================================
 - Add desec.io provider.
 - Add retry function to http client
@@ -7,7 +7,7 @@ dns-update 0.2.0
 
 dns-update 0.1.3
 ================================
-- Add Gandi provider.
+- Add DigitalOcean provider.
 
 dns-update 0.1.2
 ================================
