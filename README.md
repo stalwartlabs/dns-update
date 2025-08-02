@@ -24,7 +24,7 @@ Using RFC2136 with TSIG:
 
 ```rust,ignore
         // Create a new RFC2136 client
-        let client = Rfc2136Provider::new_tsig("tcp://127.0.0.1:53", "<KEY_NAME>", STANDARD.decode("<TSIG_KEY>").unwrap(), TsigAlgorithm::HmacSha512).unwrap();
+        let client = DnsUpdater::new_rfc2136_tsig("tcp://127.0.0.1:53", "<KEY_NAME>", STANDARD.decode("<TSIG_KEY>").unwrap(), TsigAlgorithm::HmacSha512).unwrap();
 
         // Create a new TXT record
         client.create(
