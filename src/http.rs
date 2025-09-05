@@ -12,10 +12,10 @@
 use std::time::Duration;
 
 use reqwest::{
-    header::{HeaderMap, HeaderValue, CONTENT_TYPE},
     Method,
+    header::{CONTENT_TYPE, HeaderMap, HeaderValue},
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::Error;
 
@@ -149,7 +149,12 @@ impl HttpClient {
             200..=299 => response.text().await.map_err(|err| {
                 Error::Api(format!("Failed to read response from {}: {err}", self.url))
             }),
-            400 => Err(Error::BadRequest),
+            400 => {
+                let text = response.text().await.map_err(|err| {
+                    Error::Api(format!("Failed to read response from {}: {err}", self.url))
+                })?;
+                Err(Error::Api(format!("BadRequest {}", text)))
+            }
             401 => Err(Error::Unauthorized),
             404 => Err(Error::NotFound),
             code => Err(Error::Api(format!(
@@ -203,7 +208,12 @@ impl HttpClient {
                     }
                     Err(Error::Api("Rate limit exceeded".to_string()))
                 }
-                400 => Err(Error::BadRequest),
+                400 => {
+                    let text = response.text().await.map_err(|err| {
+                        Error::Api(format!("Failed to read response from {}: {err}", self.url))
+                    })?;
+                    Err(Error::Api(format!("BadRequest {}", text)))
+                }
                 401 => Err(Error::Unauthorized),
                 404 => Err(Error::NotFound),
                 code => Err(Error::Api(format!(
