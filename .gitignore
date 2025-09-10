@@ -3,3 +3,6 @@ _ignore
 Cargo.lock
 
 .idea/
+
+# ignore vscode dir
+**/.vscode
