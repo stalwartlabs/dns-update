@@ -187,7 +187,7 @@ impl From<DnsRecord> for DesecDnsRecordRepresentation {
             },
             DnsRecord::TXT { content } => DesecDnsRecordRepresentation {
                 record_type: "TXT".to_string(),
-                content,
+                content: format!("\"{content}\""),
             },
             DnsRecord::SRV {
                 content,
