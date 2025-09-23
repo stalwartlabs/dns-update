@@ -24,7 +24,7 @@ use providers::{
     cloudflare::CloudflareProvider,
     desec::DesecProvider,
     digitalocean::DigitalOceanProvider,
-    ovh::{OvhProvider, OvhEndpoint},
+    ovh::{OvhEndpoint, OvhProvider},
     rfc2136::{DnsAddress, Rfc2136Provider},
 };
 

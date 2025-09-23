@@ -187,6 +187,9 @@ impl From<DnsRecord> for DesecDnsRecordRepresentation {
             },
             DnsRecord::TXT { content } => DesecDnsRecordRepresentation {
                 record_type: "TXT".to_string(),
+                // desec requires additional JSON quoting around https://desec.readthedocs.io/en/latest/dns/rrsets.html#caveats
+                // the "proper" way to do this is serde_json, but there's no need to overcomplicate things when Stalwart only
+                // uses dns-update internally for letsencrypt certificates, so the following suffices:
                 content: format!("\"{content}\""),
             },
             DnsRecord::SRV {

@@ -12,10 +12,10 @@
 use std::time::Duration;
 
 use reqwest::{
+    header::{HeaderMap, HeaderValue, CONTENT_TYPE},
     Method,
-    header::{CONTENT_TYPE, HeaderMap, HeaderValue},
 };
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 
 use crate::Error;
 
