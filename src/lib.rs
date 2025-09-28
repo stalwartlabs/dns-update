@@ -13,8 +13,11 @@ use core::fmt;
 use std::{
     borrow::Cow,
     fmt::{Display, Formatter},
+    future::Future,
+    hash::{DefaultHasher, Hash, Hasher},
     net::{Ipv4Addr, Ipv6Addr},
     str::FromStr,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -124,6 +127,21 @@ pub enum DnsUpdater {
 pub trait IntoFqdn<'x> {
     fn into_fqdn(self) -> Cow<'x, str>;
     fn into_name(self) -> Cow<'x, str>;
+}
+
+#[derive(Clone, Default)]
+struct CacheKV<T: Clone + Sized + Default + Send>(u64, T);
+
+#[derive(Clone, Default)]
+pub(crate) struct ApiCacheManager<T: Clone + Sized + Default + Send> {
+    rmx: Arc<Mutex<CacheKV<T>>>,
+}
+
+pub(crate) trait ApiCacheFetcher<T>: Hash
+where
+    T: Clone + Sized + Default + Send,
+{
+    fn fetch_api_response(&mut self) -> impl Future<Output = crate::Result<T>> + Send + Sync;
 }
 
 impl DnsUpdater {
@@ -356,5 +374,27 @@ impl Display for Error {
 impl Display for DnsRecordType {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl<T: Clone + Sized + Default + Send> ApiCacheManager<T> {
+    pub async fn get_or_update<F>(&self, fet: &mut F) -> crate::Result<T>
+    where
+        F: ApiCacheFetcher<T> + Send + Sync,
+    {
+        let (mut dfh, mut kv) = (DefaultHasher::default(), CacheKV::<T>::default());
+        fet.hash(&mut dfh);
+        if let Ok(mut guard) = self.rmx.try_lock() {
+            std::mem::swap(&mut kv, &mut *guard);
+        }
+        let (hash, mut value) = (dfh.finish().max(1u64), kv.1);
+        if kv.0 != hash {
+            value = fet.fetch_api_response().await?
+        };
+        if let Ok(mut guard) = self.rmx.try_lock() {
+            kv = CacheKV::<T>(hash, value.clone());
+            std::mem::swap(&mut kv, &mut *guard);
+        }
+        Ok(value)
     }
 }
