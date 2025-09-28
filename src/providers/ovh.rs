@@ -17,6 +17,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
 pub struct OvhProvider {
+    data: OvhData,
+}
+
+#[derive(Clone)]
+pub struct OvhData {
     application_key: String,
     application_secret: String,
     consumer_key: String,
@@ -125,7 +130,15 @@ impl From<&DnsRecord> for OvhRecordFormat {
     }
 }
 
-impl OvhProvider {
+impl OvhData {
+    #[cfg(test)]
+    pub(crate) fn with_endpoint(self, endpoint: impl AsRef<str>) -> Self {
+        Self {
+            endpoint: endpoint.as_ref().to_string(),
+            ..self
+        }
+    }
+
     fn generate_signature(&self, method: &str, url: &str, body: &str, timestamp: u64) -> String {
         let data = format!(
             "{}+{}+{}+{}+{}+{}",
@@ -233,7 +246,9 @@ impl OvhProvider {
 
         record_ids.into_iter().next().ok_or(Error::NotFound)
     }
+}
 
+impl OvhProvider {
     pub(crate) fn new(
         application_key: impl AsRef<str>,
         application_secret: impl AsRef<str>,
@@ -241,13 +256,20 @@ impl OvhProvider {
         endpoint: OvhEndpoint,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
-        Ok(Self {
+        let data = OvhData {
             application_key: application_key.as_ref().to_string(),
             application_secret: application_secret.as_ref().to_string(),
             consumer_key: consumer_key.as_ref().to_string(),
             endpoint: endpoint.api_url().to_string(),
             timeout: timeout.unwrap_or(Duration::from_secs(30)),
-        })
+        };
+        Ok(Self { data })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_endpoint(self, endpoint: impl AsRef<str>) -> Self {
+        let data = self.data.with_endpoint(endpoint);
+        Self { data }
     }
 
     pub(crate) async fn create(
@@ -257,7 +279,7 @@ impl OvhProvider {
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        let zone = self.get_zone_name(origin).await?;
+        let zone = self.data.get_zone_name(origin).await?;
         let name = name.into_name();
         let subdomain = strip_origin_from_name(&name, &zone);
         let subdomain = if subdomain == "@" {
@@ -279,8 +301,9 @@ impl OvhProvider {
         let body = serde_json::to_string(&params)
             .map_err(|e| Error::Serialize(format!("Failed to serialize record: {}", e)))?;
 
-        let url = format!("{}/domain/zone/{}/record", self.endpoint, zone);
+        let url = format!("{}/domain/zone/{}/record", self.data.endpoint, zone);
         let response = self
+            .data
             .send_authenticated_request(Method::POST, &url, &body)
             .await?;
 
@@ -296,8 +319,9 @@ impl OvhProvider {
             )));
         }
 
-        let url = format!("{}/domain/zone/{}/refresh", self.endpoint, zone);
+        let url = format!("{}/domain/zone/{}/refresh", self.data.endpoint, zone);
         let _response = self
+            .data
             .send_authenticated_request(Method::POST, &url, "")
             .await
             .map_err(|e| {
@@ -317,13 +341,14 @@ impl OvhProvider {
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        let zone = self.get_zone_name(origin).await?;
+        let zone = self.data.get_zone_name(origin).await?;
         let name = name.into_name();
 
         let ovh_record: OvhRecordFormat = (&record).into();
         let (field_type, target) = (ovh_record.field_type, ovh_record.target);
 
         let record_id = self
+            .data
             .get_record_id(&zone, name.as_ref(), &field_type)
             .await?;
 
@@ -334,9 +359,10 @@ impl OvhProvider {
 
         let url = format!(
             "{}/domain/zone/{}/record/{}",
-            self.endpoint, zone, record_id
+            self.data.endpoint, zone, record_id
         );
         let response = self
+            .data
             .send_authenticated_request(Method::PUT, &url, &body)
             .await?;
 
@@ -352,8 +378,9 @@ impl OvhProvider {
             )));
         }
 
-        let url = format!("{}/domain/zone/{}/refresh", self.endpoint, zone);
+        let url = format!("{}/domain/zone/{}/refresh", self.data.endpoint, zone);
         let _response = self
+            .data
             .send_authenticated_request(Method::POST, &url, "")
             .await
             .map_err(|e| {
@@ -372,16 +399,18 @@ impl OvhProvider {
         origin: impl IntoFqdn<'_>,
         record_type: crate::DnsRecordType,
     ) -> crate::Result<()> {
-        let zone = self.get_zone_name(origin).await?;
+        let zone = self.data.get_zone_name(origin).await?;
         let record_id = self
+            .data
             .get_record_id(&zone, name, &record_type.to_string())
             .await?;
 
         let url = format!(
             "{}/domain/zone/{}/record/{}",
-            self.endpoint, zone, record_id
+            self.data.endpoint, zone, record_id
         );
         let response = self
+            .data
             .send_authenticated_request(Method::DELETE, &url, "")
             .await?;
 
@@ -397,8 +426,9 @@ impl OvhProvider {
             )));
         }
 
-        let url = format!("{}/domain/zone/{}/refresh", self.endpoint, zone);
+        let url = format!("{}/domain/zone/{}/refresh", self.data.endpoint, zone);
         let _response = self
+            .data
             .send_authenticated_request(Method::POST, &url, "")
             .await
             .map_err(|e| {
