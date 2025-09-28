@@ -9,15 +9,19 @@
  * except according to those terms.
  */
 
-use crate::{strip_origin_from_name, DnsRecord, Error, IntoFqdn};
+use crate::{strip_origin_from_name, ApiCacheFetcher, ApiCacheManager, DnsRecord, Error, IntoFqdn};
 use reqwest::Method;
 use serde::Serialize;
 use sha1::{Digest, Sha1};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    hash::{Hash, Hasher},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 #[derive(Clone)]
 pub struct OvhProvider {
     data: OvhData,
+    record_cache: ApiCacheManager<u64>,
 }
 
 #[derive(Clone)]
@@ -27,6 +31,13 @@ pub struct OvhData {
     consumer_key: String,
     pub(crate) endpoint: String,
     timeout: Duration,
+}
+
+struct OvhRecordFetcher<'a> {
+    data: &'a OvhData,
+    zone: &'a str,
+    name: &'a str,
+    record_type: &'a str,
 }
 
 #[derive(Serialize, Debug)]
@@ -208,23 +219,21 @@ impl OvhData {
             )))
         }
     }
+}
 
-    async fn get_record_id(
-        &self,
-        zone: &str,
-        name: impl IntoFqdn<'_>,
-        record_type: &str,
-    ) -> crate::Result<u64> {
-        let name = name.into_name();
-        let subdomain = strip_origin_from_name(&name, zone);
+impl<'a> ApiCacheFetcher<u64> for OvhRecordFetcher<'a> {
+    async fn fetch_api_response(&mut self) -> crate::Result<u64> {
+        let name = self.name.into_name(); // uses IntoFqdn
+        let subdomain = strip_origin_from_name(&name, self.zone);
         let subdomain = if subdomain == "@" { "" } else { &subdomain };
 
         let url = format!(
             "{}/domain/zone/{}/record?fieldType={}&subDomain={}",
-            self.endpoint, zone, record_type, subdomain
+            self.data.endpoint, self.zone, self.record_type, subdomain
         );
 
         let response = self
+            .data
             .send_authenticated_request(Method::GET, &url, "")
             .await?;
 
@@ -248,6 +257,14 @@ impl OvhData {
     }
 }
 
+impl Hash for OvhRecordFetcher<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.zone.hash(state);
+        self.name.hash(state);
+        self.record_type.hash(state);
+    }
+}
+
 impl OvhProvider {
     pub(crate) fn new(
         application_key: impl AsRef<str>,
@@ -263,13 +280,16 @@ impl OvhProvider {
             endpoint: endpoint.api_url().to_string(),
             timeout: timeout.unwrap_or(Duration::from_secs(30)),
         };
-        Ok(Self { data })
+        Ok(Self {
+            data,
+            record_cache: ApiCacheManager::default(),
+        })
     }
 
     #[cfg(test)]
     pub(crate) fn with_endpoint(self, endpoint: impl AsRef<str>) -> Self {
         let data = self.data.with_endpoint(endpoint);
-        Self { data }
+        Self { data, ..self }
     }
 
     pub(crate) async fn create(
@@ -348,8 +368,13 @@ impl OvhProvider {
         let (field_type, target) = (ovh_record.field_type, ovh_record.target);
 
         let record_id = self
-            .data
-            .get_record_id(&zone, name.as_ref(), &field_type)
+            .record_cache
+            .get_or_update(&mut OvhRecordFetcher {
+                data: &self.data,
+                zone: zone.as_ref(),
+                name: name.as_ref(),
+                record_type: field_type.as_ref(),
+            })
             .await?;
 
         let params = UpdateDnsRecordParams { target, ttl };
@@ -401,8 +426,13 @@ impl OvhProvider {
     ) -> crate::Result<()> {
         let zone = self.data.get_zone_name(origin).await?;
         let record_id = self
-            .data
-            .get_record_id(&zone, name, &record_type.to_string())
+            .record_cache
+            .get_or_update(&mut OvhRecordFetcher {
+                data: &self.data,
+                zone: zone.as_ref(),
+                name: name.into_name().as_ref(),
+                record_type: &record_type.to_string(),
+            })
             .await?;
 
         let url = format!(
