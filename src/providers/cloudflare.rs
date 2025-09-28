@@ -86,24 +86,6 @@ pub struct ApiError {
 }
 
 impl CloudflareProvider {
-    pub(crate) fn new(
-        secret: impl AsRef<str>,
-        email: Option<impl AsRef<str>>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        let client = if let Some(email) = email {
-            HttpClientBuilder::default()
-                .with_header("X-Auth-Email", email.as_ref())
-                .with_header("X-Auth-Key", secret.as_ref())
-        } else {
-            HttpClientBuilder::default()
-                .with_header("Authorization", format!("Bearer {}", secret.as_ref()))
-        }
-        .with_timeout(timeout);
-
-        Ok(Self { client })
-    }
-
     async fn obtain_zone_id(&self, origin: impl IntoFqdn<'_>) -> crate::Result<String> {
         let origin = origin.into_name();
         self.client
@@ -144,6 +126,24 @@ impl CloudflareProvider {
                     .map(|record| record.id)
                     .ok_or_else(|| Error::Api(format!("DNS Record {} not found", name.as_ref())))
             })
+    }
+
+    pub(crate) fn new(
+        secret: impl AsRef<str>,
+        email: Option<impl AsRef<str>>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        let client = if let Some(email) = email {
+            HttpClientBuilder::default()
+                .with_header("X-Auth-Email", email.as_ref())
+                .with_header("X-Auth-Key", secret.as_ref())
+        } else {
+            HttpClientBuilder::default()
+                .with_header("Authorization", format!("Bearer {}", secret.as_ref()))
+        }
+        .with_timeout(timeout);
+
+        Ok(Self { client })
     }
 
     pub(crate) async fn create(

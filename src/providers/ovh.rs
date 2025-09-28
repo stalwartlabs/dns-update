@@ -126,22 +126,6 @@ impl From<&DnsRecord> for OvhRecordFormat {
 }
 
 impl OvhProvider {
-    pub(crate) fn new(
-        application_key: impl AsRef<str>,
-        application_secret: impl AsRef<str>,
-        consumer_key: impl AsRef<str>,
-        endpoint: OvhEndpoint,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        Ok(Self {
-            application_key: application_key.as_ref().to_string(),
-            application_secret: application_secret.as_ref().to_string(),
-            consumer_key: consumer_key.as_ref().to_string(),
-            endpoint: endpoint.api_url().to_string(),
-            timeout: timeout.unwrap_or(Duration::from_secs(30)),
-        })
-    }
-
     fn generate_signature(&self, method: &str, url: &str, body: &str, timestamp: u64) -> String {
         let data = format!(
             "{}+{}+{}+{}+{}+{}",
@@ -248,6 +232,22 @@ impl OvhProvider {
         .map_err(|e| Error::Api(format!("Failed to parse record list: {}", e)))?;
 
         record_ids.into_iter().next().ok_or(Error::NotFound)
+    }
+
+    pub(crate) fn new(
+        application_key: impl AsRef<str>,
+        application_secret: impl AsRef<str>,
+        consumer_key: impl AsRef<str>,
+        endpoint: OvhEndpoint,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(Self {
+            application_key: application_key.as_ref().to_string(),
+            application_secret: application_secret.as_ref().to_string(),
+            consumer_key: consumer_key.as_ref().to_string(),
+            endpoint: endpoint.api_url().to_string(),
+            timeout: timeout.unwrap_or(Duration::from_secs(30)),
+        })
     }
 
     pub(crate) async fn create(
