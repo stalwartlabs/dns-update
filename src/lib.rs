@@ -31,6 +31,8 @@ use providers::{
     rfc2136::{DnsAddress, Rfc2136Provider},
 };
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 pub mod http;
 pub mod providers;
 pub mod tests;
@@ -49,7 +51,7 @@ pub enum Error {
 }
 
 /// A DNS record type.
-#[derive(Debug)]
+#[derive(Debug, Default, Clone, Hash, Eq, PartialEq)]
 pub enum DnsRecordType {
     A,
     AAAA,
@@ -58,6 +60,8 @@ pub enum DnsRecordType {
     MX,
     TXT,
     SRV,
+    #[default]
+    ANY,
 }
 
 /// A DNS record type with a value.
@@ -368,6 +372,83 @@ impl Display for Error {
             Error::NotFound => write!(f, "Not found"),
             Error::BadRequest => write!(f, "Bad request"),
         }
+    }
+}
+
+impl TryFrom<&str> for DnsRecordType {
+    type Error = ();
+
+    fn try_from(i: &str) -> std::result::Result<Self, Self::Error> {
+        match i.to_uppercase().as_str() {
+            "ANY" => Ok(DnsRecordType::ANY),
+            "A" => Ok(DnsRecordType::A),
+            "AAAA" => Ok(DnsRecordType::AAAA),
+            "CNAME" => Ok(DnsRecordType::CNAME),
+            "NS" => Ok(DnsRecordType::NS),
+            "MX" => Ok(DnsRecordType::MX),
+            "TXT" => Ok(DnsRecordType::TXT),
+            "SRV" => Ok(DnsRecordType::SRV),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<String> for DnsRecordType {
+    type Error = ();
+
+    fn try_from(i: String) -> std::result::Result<Self, Self::Error> {
+        DnsRecordType::try_from(i.as_str())
+    }
+}
+
+impl FromStr for DnsRecordType {
+    type Err = ();
+
+    fn from_str(i: &str) -> std::result::Result<Self, Self::Err> {
+        DnsRecordType::try_from(i)
+    }
+}
+
+impl From<DnsRecordType> for &'static str {
+    fn from(v: DnsRecordType) -> &'static str {
+        match v {
+            DnsRecordType::A => "A",
+            DnsRecordType::AAAA => "AAAA",
+            DnsRecordType::CNAME => "CNAME",
+            DnsRecordType::NS => "NS",
+            DnsRecordType::MX => "MX",
+            DnsRecordType::TXT => "TXT",
+            DnsRecordType::SRV => "SRV",
+            DnsRecordType::ANY => "ANY",
+        }
+    }
+}
+
+impl From<DnsRecordType> for String {
+    fn from(v: DnsRecordType) -> String {
+        let s: &'static str = v.into();
+        s.to_string()
+    }
+}
+
+impl<'de> Deserialize<'de> for DnsRecordType {
+    fn deserialize<D>(de: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let v: String = String::deserialize(de)?;
+        let e = format!("Invalid DnsRecordType {}", v);
+        DnsRecordType::try_from(v).map_err(|_d| serde::de::Error::custom(Error::Parse(e)))
+    }
+}
+
+impl Serialize for DnsRecordType {
+    fn serialize<S>(&self, se: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s: &'static str = self.clone().into();
+        se.serialize_str(s)
     }
 }
 
