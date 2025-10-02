@@ -37,7 +37,7 @@ pub mod http;
 pub mod providers;
 pub mod tests;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
     Protocol(String),
     Parse(String),
