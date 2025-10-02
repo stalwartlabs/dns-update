@@ -101,6 +101,20 @@ pub trait DnsRecordTrait {
     fn get_priority(&self) -> Option<u16>;
     fn get_weight(&self) -> Option<u16>;
     fn get_port(&self) -> Option<u16>;
+    fn fmt_ovh_desec(&self) -> (String, &str) {
+        let mut content: String = "".to_string();
+        if let Some(v) = self.get_priority() {
+            content = v.to_string() + " ";
+        }
+        if let Some(v) = self.get_weight() {
+            content += &(v.to_string() + " ");
+        }
+        if let Some(v) = self.get_port() {
+            content += &(v.to_string() + " ");
+        }
+        content += &self.get_content();
+        (content, self.get_type())
+    }
 }
 
 /// A TSIG algorithm.

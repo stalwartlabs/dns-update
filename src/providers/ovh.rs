@@ -9,7 +9,10 @@
  * except according to those terms.
  */
 
-use crate::{strip_origin_from_name, ApiCacheFetcher, ApiCacheManager, DnsRecord, Error, IntoFqdn};
+use crate::{
+    strip_origin_from_name, ApiCacheFetcher, ApiCacheManager, DnsRecord, DnsRecordTrait, Error,
+    IntoFqdn,
+};
 use reqwest::Method;
 use serde::Serialize;
 use sha1::{Digest, Sha1};
@@ -103,41 +106,9 @@ impl std::str::FromStr for OvhEndpoint {
 
 impl From<&DnsRecord> for OvhRecordFormat {
     fn from(record: &DnsRecord) -> Self {
-        match record {
-            DnsRecord::A { content } => OvhRecordFormat {
-                field_type: "A".to_string(),
-                target: content.to_string(),
-            },
-            DnsRecord::AAAA { content } => OvhRecordFormat {
-                field_type: "AAAA".to_string(),
-                target: content.to_string(),
-            },
-            DnsRecord::CNAME { content } => OvhRecordFormat {
-                field_type: "CNAME".to_string(),
-                target: content.clone(),
-            },
-            DnsRecord::NS { content } => OvhRecordFormat {
-                field_type: "NS".to_string(),
-                target: content.clone(),
-            },
-            DnsRecord::MX { content, priority } => OvhRecordFormat {
-                field_type: "MX".to_string(),
-                target: format!("{} {}", priority, content),
-            },
-            DnsRecord::TXT { content } => OvhRecordFormat {
-                field_type: "TXT".to_string(),
-                target: content.clone(),
-            },
-            DnsRecord::SRV {
-                content,
-                priority,
-                weight,
-                port,
-            } => OvhRecordFormat {
-                field_type: "SRV".to_string(),
-                target: format!("{} {} {} {}", priority, weight, port, content),
-            },
-        }
+        let (target, ftype) = record.fmt_ovh_desec();
+        let field_type = ftype.to_string();
+        OvhRecordFormat { target, field_type }
     }
 }
 
