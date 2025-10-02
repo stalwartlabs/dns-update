@@ -11,7 +11,6 @@
 
 use std::{
     hash::{Hash, Hasher},
-    net::{Ipv4Addr, Ipv6Addr},
     time::Duration,
 };
 
@@ -19,7 +18,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    http::HttpClientBuilder, ApiCacheFetcher, ApiCacheManager, DnsRecord, Error, IntoFqdn,
+    http::HttpClientBuilder, ApiCacheFetcher, ApiCacheManager, DnsRecord, DnsRecordTrait, Error,
+    IntoFqdn,
 };
 
 #[derive(Clone)]
@@ -76,16 +76,12 @@ pub struct UpdateDnsRecordParams<'a> {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
-#[serde(tag = "type")]
-#[allow(clippy::upper_case_acronyms)]
-pub enum DnsContent {
-    A { content: Ipv4Addr },
-    AAAA { content: Ipv6Addr },
-    CNAME { content: String },
-    NS { content: String },
-    MX { content: String, priority: u16 },
-    TXT { content: String },
-    SRV { content: String },
+pub struct DnsContent {
+    #[serde(rename = "type")]
+    rr_type: String,
+    content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority: Option<u16>,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -201,7 +197,7 @@ impl CloudflareProvider {
             ))
             .with_body(CreateDnsRecordParams {
                 ttl: ttl.into(),
-                priority: record.priority(),
+                priority: record.get_priority(),
                 proxied: false.into(),
                 name: name.as_ref(),
                 content: record.into(),
@@ -302,14 +298,10 @@ impl Query {
 
 impl From<DnsRecord> for DnsContent {
     fn from(record: DnsRecord) -> Self {
-        match record {
-            DnsRecord::A { content } => DnsContent::A { content },
-            DnsRecord::AAAA { content } => DnsContent::AAAA { content },
-            DnsRecord::CNAME { content } => DnsContent::CNAME { content },
-            DnsRecord::NS { content } => DnsContent::NS { content },
-            DnsRecord::MX { content, priority } => DnsContent::MX { content, priority },
-            DnsRecord::TXT { content } => DnsContent::TXT { content },
-            DnsRecord::SRV { content, .. } => DnsContent::SRV { content },
+        DnsContent {
+            rr_type: record.get_type().to_string(),
+            content: record.get_content(),
+            priority: record.get_priority(),
         }
     }
 }

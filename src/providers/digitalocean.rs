@@ -11,13 +11,12 @@
 
 use std::{
     hash::{Hash, Hasher},
-    net::{Ipv4Addr, Ipv6Addr},
     time::Duration,
 };
 
 use crate::{
     http::HttpClientBuilder, strip_origin_from_name, ApiCacheFetcher, ApiCacheManager, DnsRecord,
-    Error, IntoFqdn,
+    DnsRecordTrait, Error, IntoFqdn,
 };
 use serde::{Deserialize, Serialize};
 
@@ -56,34 +55,16 @@ pub struct DomainRecord {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
-#[serde(tag = "type")]
-#[allow(clippy::upper_case_acronyms)]
-pub enum RecordData {
-    A {
-        data: Ipv4Addr,
-    },
-    AAAA {
-        data: Ipv6Addr,
-    },
-    CNAME {
-        data: String,
-    },
-    NS {
-        data: String,
-    },
-    MX {
-        data: String,
-        priority: u16,
-    },
-    TXT {
-        data: String,
-    },
-    SRV {
-        data: String,
-        priority: u16,
-        port: u16,
-        weight: u16,
-    },
+pub struct RecordData {
+    #[serde(rename = "type")]
+    rr_type: String,
+    data: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    weight: Option<u16>,
 }
 
 #[derive(Serialize, Debug)]
@@ -227,27 +208,12 @@ impl<'a> Query<'a> {
 
 impl From<DnsRecord> for RecordData {
     fn from(record: DnsRecord) -> Self {
-        match record {
-            DnsRecord::A { content } => RecordData::A { data: content },
-            DnsRecord::AAAA { content } => RecordData::AAAA { data: content },
-            DnsRecord::CNAME { content } => RecordData::CNAME { data: content },
-            DnsRecord::NS { content } => RecordData::NS { data: content },
-            DnsRecord::MX { content, priority } => RecordData::MX {
-                data: content,
-                priority,
-            },
-            DnsRecord::TXT { content } => RecordData::TXT { data: content },
-            DnsRecord::SRV {
-                content,
-                priority,
-                weight,
-                port,
-            } => RecordData::SRV {
-                data: content,
-                priority,
-                weight,
-                port,
-            },
+        RecordData {
+            rr_type: record.get_type().to_string(),
+            data: record.get_content(),
+            priority: record.get_priority(),
+            weight: record.get_weight(),
+            port: record.get_port(),
         }
     }
 }
