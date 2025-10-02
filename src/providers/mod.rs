@@ -12,5 +12,6 @@
 pub mod cloudflare;
 pub mod desec;
 pub mod digitalocean;
+pub mod linode;
 pub mod ovh;
 pub mod rfc2136;
