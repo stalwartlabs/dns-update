@@ -29,3 +29,5 @@ sha1 = "0.10"
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 mockito = "1.2"
+# hickory-resolver is already pulled in with default features ("system-config" and "tokio") by mail-auth in Stalwart
+hickory-resolver = "0.26.0-alpha.1"

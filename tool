@@ -30,6 +30,7 @@ Usage: ./tool [ARGS...]
   -h, --help     print this help message
 Tools:
   dev            short for test fmt clippy
+  full           real Linode integration tests
   test           does cargo test
   fmt            does cargo fmt
   clippy         does cargo clippy
@@ -52,6 +53,14 @@ tool() {
       "$1" cargo test
       "$1" cargo fmt
       "$1" cargo clippy --all-targets
+      ;;
+    full)
+      DEF=""
+      "$1" cargo test
+      "$1" cargo fmt
+      "$1" cargo clippy --all-targets
+       printf "\033[0;31mNOTICE:\033[0m Running live integration test posting records to ci-cd.stalwart.dns-update.jaygiffin.com. It usually takes 10-15 seconds but can take up to 2 minutes for the records to show up and the timeout is 3 minutes. Be patient; the test is not broken and it will give you a beautiful error log if it fails after 3 minutes.\n"
+      "$1" cargo test linode_integration_test -- --include-ignored
       ;;
     test)
       DEF=""
