@@ -65,6 +65,8 @@ pub enum DnsRecordType {
 }
 
 /// A DNS record type with a value.
+/// FIXME: the u16 are incorrect; they should be NonZero<u16>. Idk what to do as this would be a breaking change
+#[derive(Clone)]
 pub enum DnsRecord {
     A {
         content: Ipv4Addr,
@@ -91,6 +93,14 @@ pub enum DnsRecord {
         weight: u16,
         port: u16,
     },
+}
+
+pub trait DnsRecordTrait {
+    fn get_type(&self) -> &'static str;
+    fn get_content(&self) -> String;
+    fn get_priority(&self) -> Option<u16>;
+    fn get_weight(&self) -> Option<u16>;
+    fn get_port(&self) -> Option<u16>;
 }
 
 /// A TSIG algorithm.
@@ -431,6 +441,20 @@ impl From<DnsRecordType> for String {
     }
 }
 
+impl From<DnsRecord> for DnsRecordType {
+    fn from(v: DnsRecord) -> DnsRecordType {
+        match v {
+            DnsRecord::A { .. } => DnsRecordType::A,
+            DnsRecord::AAAA { .. } => DnsRecordType::AAAA,
+            DnsRecord::CNAME { .. } => DnsRecordType::CNAME,
+            DnsRecord::NS { .. } => DnsRecordType::NS,
+            DnsRecord::MX { .. } => DnsRecordType::MX,
+            DnsRecord::TXT { .. } => DnsRecordType::TXT,
+            DnsRecord::SRV { .. } => DnsRecordType::SRV,
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for DnsRecordType {
     fn deserialize<D>(de: D) -> std::result::Result<Self, D::Error>
     where
@@ -457,6 +481,46 @@ impl std::error::Error for Error {}
 impl Display for DnsRecordType {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl DnsRecordTrait for DnsRecord {
+    fn get_type(&self) -> &'static str {
+        DnsRecordType::from(self.clone()).into()
+    }
+    fn get_content(&self) -> String {
+        match self {
+            DnsRecord::A { content } => content.to_string(),
+            DnsRecord::AAAA { content } => content.to_string(),
+            DnsRecord::CNAME { content } => content.to_string(),
+            DnsRecord::NS { content } => content.to_string(),
+            DnsRecord::MX { content, .. } => content.to_string(),
+            DnsRecord::TXT { content } => content.to_string(),
+            DnsRecord::SRV { content, .. } => content.to_string(),
+        }
+    }
+    fn get_priority(&self) -> Option<u16> {
+        if let DnsRecord::MX { priority, .. } = self {
+            Some(*priority)
+        } else if let DnsRecord::SRV { priority, .. } = self {
+            Some(*priority)
+        } else {
+            None
+        }
+    }
+    fn get_weight(&self) -> Option<u16> {
+        if let DnsRecord::SRV { weight, .. } = self {
+            Some(*weight)
+        } else {
+            None
+        }
+    }
+    fn get_port(&self) -> Option<u16> {
+        if let DnsRecord::SRV { port, .. } = self {
+            Some(*port)
+        } else {
+            None
+        }
     }
 }
 
