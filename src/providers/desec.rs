@@ -13,7 +13,10 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{http::HttpClientBuilder, strip_origin_from_name, DnsRecord, DnsRecordType, IntoFqdn};
+use crate::{
+    http::HttpClientBuilder, strip_origin_from_name, DnsRecord, DnsRecordTrait, DnsRecordType,
+    IntoFqdn,
+};
 
 pub struct DesecDnsRecordRepresentation {
     pub record_type: String,
@@ -164,40 +167,17 @@ impl DesecProvider {
 /// Converts a DNS record into a representation that can be sent to the desec API.
 impl From<DnsRecord> for DesecDnsRecordRepresentation {
     fn from(record: DnsRecord) -> Self {
-        match record {
-            DnsRecord::A { content } => DesecDnsRecordRepresentation {
-                record_type: "A".to_string(),
-                content: content.to_string(),
-            },
-            DnsRecord::AAAA { content } => DesecDnsRecordRepresentation {
-                record_type: "AAAA".to_string(),
-                content: content.to_string(),
-            },
-            DnsRecord::CNAME { content } => DesecDnsRecordRepresentation {
-                record_type: "CNAME".to_string(),
-                content,
-            },
-            DnsRecord::NS { content } => DesecDnsRecordRepresentation {
-                record_type: "NS".to_string(),
-                content,
-            },
-            DnsRecord::MX { content, priority } => DesecDnsRecordRepresentation {
-                record_type: "MX".to_string(),
-                content: format!("{priority} {content}"),
-            },
-            DnsRecord::TXT { content } => DesecDnsRecordRepresentation {
-                record_type: "TXT".to_string(),
-                content: format!("\"{content}\""),
-            },
-            DnsRecord::SRV {
-                content,
-                priority,
-                weight,
-                port,
-            } => DesecDnsRecordRepresentation {
-                record_type: "SRV".to_string(),
-                content: format!("{priority} {weight} {port} {content}"),
-            },
+        let (mut content, rtype) = record.fmt_ovh_desec();
+        if let DnsRecord::TXT { .. } = record {
+            // desec requires additional JSON quoting around https://desec.readthedocs.io/en/latest/dns/rrsets.html#caveats
+            // the "proper" way to do this is serde_json, but there's no need to overcomplicate things when Stalwart only
+            // uses dns-update internally for letsencrypt certificates, so the following suffices:
+            content = serde_json::Value::String(content).to_string();
+        }
+        let record_type = rtype.to_string();
+        Self {
+            content,
+            record_type,
         }
     }
 }

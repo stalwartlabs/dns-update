@@ -10,23 +10,39 @@
  */
 
 use std::{
-    net::{Ipv4Addr, Ipv6Addr},
+    hash::{Hash, Hasher},
     time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{http::HttpClientBuilder, DnsRecord, Error, IntoFqdn};
+use crate::{
+    http::HttpClientBuilder, ApiCacheFetcher, ApiCacheManager, DnsRecord, DnsRecordTrait, Error,
+    IntoFqdn,
+};
 
 #[derive(Clone)]
 pub struct CloudflareProvider {
     client: HttpClientBuilder,
+    zone_cache: ApiCacheManager<i64>,
+    record_cache: ApiCacheManager<i64>,
+}
+
+struct CloudflareZoneFetcher<'a> {
+    client: &'a HttpClientBuilder,
+    origin: &'a str,
+}
+
+struct CloudflareRecordFetcher<'a> {
+    client: &'a HttpClientBuilder,
+    zone_id: i64,
+    name: &'a str,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct IdMap {
-    pub id: String,
+    pub id: i64,
     pub name: String,
 }
 
@@ -60,16 +76,12 @@ pub struct UpdateDnsRecordParams<'a> {
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
-#[serde(tag = "type")]
-#[allow(clippy::upper_case_acronyms)]
-pub enum DnsContent {
-    A { content: Ipv4Addr },
-    AAAA { content: Ipv6Addr },
-    CNAME { content: String },
-    NS { content: String },
-    MX { content: String, priority: u16 },
-    TXT { content: String },
-    SRV { content: String },
+pub struct DnsContent {
+    #[serde(rename = "type")]
+    rr_type: String,
+    content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority: Option<u16>,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -83,6 +95,60 @@ struct ApiResult<T> {
 pub struct ApiError {
     pub code: u16,
     pub message: String,
+}
+
+impl<'a> ApiCacheFetcher<i64> for CloudflareZoneFetcher<'a> {
+    async fn fetch_api_response(&mut self) -> crate::Result<i64> {
+        self.client
+            .get(format!(
+                "https://api.cloudflare.com/client/v4/zones?{}",
+                Query::name(self.origin).serialize()
+            ))
+            .send_with_retry::<ApiResult<Vec<IdMap>>>(3)
+            .await
+            .and_then(|r| r.unwrap_response("list zones"))
+            .and_then(|result| {
+                result
+                    .into_iter()
+                    .find(|zone| zone.name == self.origin)
+                    .map(|zone| zone.id)
+                    .ok_or_else(|| Error::Api(format!("Zone {} not found", self.origin)))
+            })
+    }
+}
+
+impl Hash for CloudflareZoneFetcher<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.origin.hash(state);
+    }
+}
+
+impl<'a> ApiCacheFetcher<i64> for CloudflareRecordFetcher<'a> {
+    async fn fetch_api_response(&mut self) -> crate::Result<i64> {
+        let zone_id = self.zone_id;
+        self.client
+            .get(format!(
+                "https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?{}",
+                Query::name(self.name).serialize()
+            ))
+            .send_with_retry::<ApiResult<Vec<IdMap>>>(3)
+            .await
+            .and_then(|r| r.unwrap_response("list DNS records"))
+            .and_then(|result| {
+                result
+                    .into_iter()
+                    .find(|record| record.name == self.name)
+                    .map(|record| record.id)
+                    .ok_or_else(|| Error::Api(format!("DNS Record {} not found", self.name)))
+            })
+    }
+}
+
+impl Hash for CloudflareRecordFetcher<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.zone_id.hash(state);
+        self.name.hash(state);
+    }
 }
 
 impl CloudflareProvider {
@@ -101,49 +167,11 @@ impl CloudflareProvider {
         }
         .with_timeout(timeout);
 
-        Ok(Self { client })
-    }
-
-    async fn obtain_zone_id(&self, origin: impl IntoFqdn<'_>) -> crate::Result<String> {
-        let origin = origin.into_name();
-        self.client
-            .get(format!(
-                "https://api.cloudflare.com/client/v4/zones?{}",
-                Query::name(origin.as_ref()).serialize()
-            ))
-            .send_with_retry::<ApiResult<Vec<IdMap>>>(3)
-            .await
-            .and_then(|r| r.unwrap_response("list zones"))
-            .and_then(|result| {
-                result
-                    .into_iter()
-                    .find(|zone| zone.name == origin.as_ref())
-                    .map(|zone| zone.id)
-                    .ok_or_else(|| Error::Api(format!("Zone {} not found", origin.as_ref())))
-            })
-    }
-
-    async fn obtain_record_id(
-        &self,
-        zone_id: &str,
-        name: impl IntoFqdn<'_>,
-    ) -> crate::Result<String> {
-        let name = name.into_name();
-        self.client
-            .get(format!(
-                "https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?{}",
-                Query::name(name.as_ref()).serialize()
-            ))
-            .send_with_retry::<ApiResult<Vec<IdMap>>>(3)
-            .await
-            .and_then(|r| r.unwrap_response("list DNS records"))
-            .and_then(|result| {
-                result
-                    .into_iter()
-                    .find(|record| record.name == name.as_ref())
-                    .map(|record| record.id)
-                    .ok_or_else(|| Error::Api(format!("DNS Record {} not found", name.as_ref())))
-            })
+        Ok(Self {
+            client,
+            zone_cache: ApiCacheManager::default(),
+            record_cache: ApiCacheManager::default(),
+        })
     }
 
     pub(crate) async fn create(
@@ -153,16 +181,25 @@ impl CloudflareProvider {
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        let name = name.into_name();
+        let origin = origin.into_name();
+        let zone_id = self
+            .zone_cache
+            .get_or_update(&mut CloudflareZoneFetcher {
+                client: &self.client,
+                origin: origin.as_ref(),
+            })
+            .await?;
         self.client
             .post(format!(
                 "https://api.cloudflare.com/client/v4/zones/{}/dns_records",
-                self.obtain_zone_id(origin).await?
+                zone_id
             ))
             .with_body(CreateDnsRecordParams {
                 ttl: ttl.into(),
-                priority: record.priority(),
+                priority: record.get_priority(),
                 proxied: false.into(),
-                name: name.into_name().as_ref(),
+                name: name.as_ref(),
                 content: record.into(),
             })?
             .send_with_retry::<ApiResult<Value>>(3)
@@ -178,10 +215,18 @@ impl CloudflareProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         let name = name.into_name();
+        let origin = origin.into_name();
+        let zone_id = self
+            .zone_cache
+            .get_or_update(&mut CloudflareZoneFetcher {
+                client: &self.client,
+                origin: origin.as_ref(),
+            })
+            .await?;
         self.client
             .patch(format!(
                 "https://api.cloudflare.com/client/v4/zones/{}/dns_records/{}",
-                self.obtain_zone_id(origin).await?,
+                zone_id,
                 name.as_ref()
             ))
             .with_body(UpdateDnsRecordParams {
@@ -200,8 +245,23 @@ impl CloudflareProvider {
         name: impl IntoFqdn<'_>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        let zone_id = self.obtain_zone_id(origin).await?;
-        let record_id = self.obtain_record_id(&zone_id, name).await?;
+        let name = name.into_name();
+        let origin = origin.into_name();
+        let zone_id = self
+            .zone_cache
+            .get_or_update(&mut CloudflareZoneFetcher {
+                client: &self.client,
+                origin: origin.as_ref(),
+            })
+            .await?;
+        let record_id = self
+            .record_cache
+            .get_or_update(&mut CloudflareRecordFetcher {
+                client: &self.client,
+                zone_id,
+                name: name.as_ref(),
+            })
+            .await?;
 
         self.client
             .delete(format!(
@@ -238,14 +298,10 @@ impl Query {
 
 impl From<DnsRecord> for DnsContent {
     fn from(record: DnsRecord) -> Self {
-        match record {
-            DnsRecord::A { content } => DnsContent::A { content },
-            DnsRecord::AAAA { content } => DnsContent::AAAA { content },
-            DnsRecord::CNAME { content } => DnsContent::CNAME { content },
-            DnsRecord::NS { content } => DnsContent::NS { content },
-            DnsRecord::MX { content, priority } => DnsContent::MX { content, priority },
-            DnsRecord::TXT { content } => DnsContent::TXT { content },
-            DnsRecord::SRV { content, .. } => DnsContent::SRV { content },
+        DnsContent {
+            rr_type: record.get_type().to_string(),
+            content: record.get_content(),
+            priority: record.get_priority(),
         }
     }
 }

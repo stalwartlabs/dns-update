@@ -9,20 +9,9 @@
  * except according to those terms.
  */
 
-use crate::DnsRecord;
-
 pub mod cloudflare;
-pub mod digitalocean;
 pub mod desec;
+pub mod digitalocean;
+pub mod linode;
 pub mod ovh;
 pub mod rfc2136;
-
-impl DnsRecord {
-    pub fn priority(&self) -> Option<u16> {
-        match self {
-            DnsRecord::MX { priority, .. } => Some(*priority),
-            DnsRecord::SRV { priority, .. } => Some(*priority),
-            _ => None,
-        }
-    }
-}

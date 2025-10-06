@@ -1,3 +1,11 @@
+dns-update 0.1.6
+================================
+- Add Linode provider
+- Linode tests plus integration on a real domain
+- Add DNS API cache
+- Added `CONTRIBUTING.md` and `./tool`
+- Added thiserror crate
+
 dns-update 0.1.5
 ================================
 - Add OVH provider.

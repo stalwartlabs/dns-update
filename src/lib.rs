@@ -13,8 +13,11 @@ use core::fmt;
 use std::{
     borrow::Cow,
     fmt::{Display, Formatter},
+    future::Future,
+    hash::{DefaultHasher, Hash, Hasher},
     net::{Ipv4Addr, Ipv6Addr},
     str::FromStr,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -24,15 +27,18 @@ use providers::{
     cloudflare::CloudflareProvider,
     desec::DesecProvider,
     digitalocean::DigitalOceanProvider,
-    ovh::{OvhProvider, OvhEndpoint},
+    linode::LinodeProvider,
+    ovh::{OvhEndpoint, OvhProvider},
     rfc2136::{DnsAddress, Rfc2136Provider},
 };
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub mod http;
 pub mod providers;
 pub mod tests;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
     Protocol(String),
     Parse(String),
@@ -46,7 +52,7 @@ pub enum Error {
 }
 
 /// A DNS record type.
-#[derive(Debug)]
+#[derive(Debug, Default, Clone, Hash, Eq, PartialEq)]
 pub enum DnsRecordType {
     A,
     AAAA,
@@ -55,9 +61,13 @@ pub enum DnsRecordType {
     MX,
     TXT,
     SRV,
+    #[default]
+    ANY,
 }
 
 /// A DNS record type with a value.
+/// FIXME: the u16 are incorrect; they should be NonZero<u16>. Idk what to do as this would be a breaking change
+#[derive(Clone)]
 pub enum DnsRecord {
     A {
         content: Ipv4Addr,
@@ -84,6 +94,28 @@ pub enum DnsRecord {
         weight: u16,
         port: u16,
     },
+}
+
+pub trait DnsRecordTrait {
+    fn get_type(&self) -> &'static str;
+    fn get_content(&self) -> String;
+    fn get_priority(&self) -> Option<u16>;
+    fn get_weight(&self) -> Option<u16>;
+    fn get_port(&self) -> Option<u16>;
+    fn fmt_ovh_desec(&self) -> (String, &str) {
+        let mut content: String = "".to_string();
+        if let Some(v) = self.get_priority() {
+            content = v.to_string() + " ";
+        }
+        if let Some(v) = self.get_weight() {
+            content += &(v.to_string() + " ");
+        }
+        if let Some(v) = self.get_port() {
+            content += &(v.to_string() + " ");
+        }
+        content += &self.get_content();
+        (content, self.get_type())
+    }
 }
 
 /// A TSIG algorithm.
@@ -119,11 +151,27 @@ pub enum DnsUpdater {
     DigitalOcean(DigitalOceanProvider),
     Desec(DesecProvider),
     Ovh(OvhProvider),
+    Linode(LinodeProvider),
 }
 
 pub trait IntoFqdn<'x> {
     fn into_fqdn(self) -> Cow<'x, str>;
     fn into_name(self) -> Cow<'x, str>;
+}
+
+#[derive(Clone, Default)]
+struct CacheKV<T: Clone + Sized + Default + Send>(u64, T);
+
+#[derive(Clone, Default)]
+pub(crate) struct ApiCacheManager<T: Clone + Sized + Default + Send> {
+    rmx: Arc<Mutex<CacheKV<T>>>,
+}
+
+pub(crate) trait ApiCacheFetcher<T>: Hash
+where
+    T: Clone + Sized + Default + Send,
+{
+    fn fetch_api_response(&mut self) -> impl Future<Output = crate::Result<T>> + Send + Sync;
 }
 
 impl DnsUpdater {
@@ -205,6 +253,14 @@ impl DnsUpdater {
         )?))
     }
 
+    /// Create a new DNS updater using the Linode API.
+    pub fn new_linode(
+        auth_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Linode(LinodeProvider::new(auth_token, timeout)))
+    }
+
     /// Create a new DNS record.
     pub async fn create(
         &self,
@@ -219,6 +275,7 @@ impl DnsUpdater {
             DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Linode(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -236,6 +293,7 @@ impl DnsUpdater {
             DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Linode(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -252,6 +310,7 @@ impl DnsUpdater {
             DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin).await,
             DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Linode(provider) => provider.delete(name, origin, record).await,
         }
     }
 }
@@ -353,8 +412,163 @@ impl Display for Error {
     }
 }
 
+impl TryFrom<&str> for DnsRecordType {
+    type Error = ();
+
+    fn try_from(i: &str) -> std::result::Result<Self, Self::Error> {
+        match i.to_uppercase().as_str() {
+            "ANY" => Ok(DnsRecordType::ANY),
+            "A" => Ok(DnsRecordType::A),
+            "AAAA" => Ok(DnsRecordType::AAAA),
+            "CNAME" => Ok(DnsRecordType::CNAME),
+            "NS" => Ok(DnsRecordType::NS),
+            "MX" => Ok(DnsRecordType::MX),
+            "TXT" => Ok(DnsRecordType::TXT),
+            "SRV" => Ok(DnsRecordType::SRV),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<String> for DnsRecordType {
+    type Error = ();
+
+    fn try_from(i: String) -> std::result::Result<Self, Self::Error> {
+        DnsRecordType::try_from(i.as_str())
+    }
+}
+
+impl FromStr for DnsRecordType {
+    type Err = ();
+
+    fn from_str(i: &str) -> std::result::Result<Self, Self::Err> {
+        DnsRecordType::try_from(i)
+    }
+}
+
+impl From<DnsRecordType> for &'static str {
+    fn from(v: DnsRecordType) -> &'static str {
+        match v {
+            DnsRecordType::A => "A",
+            DnsRecordType::AAAA => "AAAA",
+            DnsRecordType::CNAME => "CNAME",
+            DnsRecordType::NS => "NS",
+            DnsRecordType::MX => "MX",
+            DnsRecordType::TXT => "TXT",
+            DnsRecordType::SRV => "SRV",
+            DnsRecordType::ANY => "ANY",
+        }
+    }
+}
+
+impl From<DnsRecordType> for String {
+    fn from(v: DnsRecordType) -> String {
+        let s: &'static str = v.into();
+        s.to_string()
+    }
+}
+
+impl From<DnsRecord> for DnsRecordType {
+    fn from(v: DnsRecord) -> DnsRecordType {
+        match v {
+            DnsRecord::A { .. } => DnsRecordType::A,
+            DnsRecord::AAAA { .. } => DnsRecordType::AAAA,
+            DnsRecord::CNAME { .. } => DnsRecordType::CNAME,
+            DnsRecord::NS { .. } => DnsRecordType::NS,
+            DnsRecord::MX { .. } => DnsRecordType::MX,
+            DnsRecord::TXT { .. } => DnsRecordType::TXT,
+            DnsRecord::SRV { .. } => DnsRecordType::SRV,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DnsRecordType {
+    fn deserialize<D>(de: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let v: String = String::deserialize(de)?;
+        let e = format!("Invalid DnsRecordType {}", v);
+        DnsRecordType::try_from(v).map_err(|_d| serde::de::Error::custom(Error::Parse(e)))
+    }
+}
+
+impl Serialize for DnsRecordType {
+    fn serialize<S>(&self, se: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let s: &'static str = self.clone().into();
+        se.serialize_str(s)
+    }
+}
+
+impl std::error::Error for Error {}
+
 impl Display for DnsRecordType {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl DnsRecordTrait for DnsRecord {
+    fn get_type(&self) -> &'static str {
+        DnsRecordType::from(self.clone()).into()
+    }
+    fn get_content(&self) -> String {
+        match self {
+            DnsRecord::A { content } => content.to_string(),
+            DnsRecord::AAAA { content } => content.to_string(),
+            DnsRecord::CNAME { content } => content.to_string(),
+            DnsRecord::NS { content } => content.to_string(),
+            DnsRecord::MX { content, .. } => content.to_string(),
+            DnsRecord::TXT { content } => content.to_string(),
+            DnsRecord::SRV { content, .. } => content.to_string(),
+        }
+    }
+    fn get_priority(&self) -> Option<u16> {
+        if let DnsRecord::MX { priority, .. } = self {
+            Some(*priority)
+        } else if let DnsRecord::SRV { priority, .. } = self {
+            Some(*priority)
+        } else {
+            None
+        }
+    }
+    fn get_weight(&self) -> Option<u16> {
+        if let DnsRecord::SRV { weight, .. } = self {
+            Some(*weight)
+        } else {
+            None
+        }
+    }
+    fn get_port(&self) -> Option<u16> {
+        if let DnsRecord::SRV { port, .. } = self {
+            Some(*port)
+        } else {
+            None
+        }
+    }
+}
+
+impl<T: Clone + Sized + Default + Send> ApiCacheManager<T> {
+    pub async fn get_or_update<F>(&self, fet: &mut F) -> crate::Result<T>
+    where
+        F: ApiCacheFetcher<T> + Send + Sync,
+    {
+        let (mut dfh, mut kv) = (DefaultHasher::default(), CacheKV::<T>::default());
+        fet.hash(&mut dfh);
+        if let Ok(mut guard) = self.rmx.try_lock() {
+            std::mem::swap(&mut kv, &mut *guard);
+        }
+        let (hash, mut value) = (dfh.finish().max(1u64), kv.1);
+        if kv.0 != hash {
+            value = fet.fetch_api_response().await?
+        };
+        if let Ok(mut guard) = self.rmx.try_lock() {
+            kv = CacheKV::<T>(hash, value.clone());
+            std::mem::swap(&mut kv, &mut *guard);
+        }
+        Ok(value)
     }
 }

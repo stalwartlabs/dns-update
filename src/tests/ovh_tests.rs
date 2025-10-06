@@ -181,10 +181,8 @@ mod tests {
             .with_body("")
             .create();
 
-        let mut provider = setup_provider();
-        provider.endpoint = server.url();
-
-        let result = provider
+        let result = setup_provider()
+            .with_endpoint(server.url())
             .create(
                 "test.example.com",
                 DnsRecord::A {
@@ -245,10 +243,8 @@ mod tests {
             .with_body("")
             .create();
 
-        let mut provider = setup_provider();
-        provider.endpoint = server.url();
-
-        let result = provider
+        let result = setup_provider()
+            .with_endpoint(server.url())
             .update(
                 "test.example.com",
                 DnsRecord::A {
@@ -305,10 +301,8 @@ mod tests {
             .with_body("")
             .create();
 
-        let mut provider = setup_provider();
-        provider.endpoint = server.url();
-
-        let result = provider
+        let result = setup_provider()
+            .with_endpoint(server.url())
             .delete("test.example.com", "example.com", DnsRecordType::TXT)
             .await;
 
@@ -331,10 +325,8 @@ mod tests {
             .with_body(r#"{"message": "Invalid credentials"}"#)
             .create();
 
-        let mut provider = setup_provider();
-        provider.endpoint = server.url();
-
-        let result = provider
+        let result = setup_provider()
+            .with_endpoint(server.url())
             .create(
                 "test.example.com",
                 DnsRecord::A {
@@ -372,10 +364,8 @@ mod tests {
             .with_body(r#"[]"#)
             .create();
 
-        let mut provider = setup_provider();
-        provider.endpoint = server.url();
-
-        let result = provider
+        let result = setup_provider()
+            .with_endpoint(server.url())
             .update(
                 "nonexistent.example.com",
                 DnsRecord::A {
