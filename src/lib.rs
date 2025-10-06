@@ -452,6 +452,8 @@ impl Serialize for DnsRecordType {
     }
 }
 
+impl std::error::Error for Error {}
+
 impl Display for DnsRecordType {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
