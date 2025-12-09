@@ -5,7 +5,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{http::HttpClientBuilder, providers::bunny, DnsRecord, DnsRecordType, Error, IntoFqdn};
+use crate::{http::HttpClientBuilder, DnsRecord, DnsRecordType, Error, IntoFqdn};
 
 #[derive(Clone)]
 pub struct BunnyProvider {
@@ -16,7 +16,6 @@ impl BunnyProvider {
     pub(crate) fn new(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
         Ok(Self {
             client: HttpClientBuilder::default()
-                .with_header("User-Agent", "dns-update")
                 .with_header("AccessKey", api_key.as_ref())
                 .with_timeout(timeout),
         })

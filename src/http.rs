@@ -36,9 +36,12 @@ pub struct HttpClient {
 
 impl Default for HttpClientBuilder {
     fn default() -> Self {
+        let mut headers = HeaderMap::new();
+        headers.append(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
         Self {
             timeout: Duration::from_secs(30),
-            headers: HeaderMap::new(),
+            headers,
         }
     }
 }
@@ -100,8 +103,6 @@ impl HttpClient {
     pub fn with_body<B: Serialize>(mut self, body: B) -> crate::Result<Self> {
         match serde_json::to_string(&body) {
             Ok(body) => {
-                self.headers
-                    .append(CONTENT_TYPE, HeaderValue::from_static("application/json"));
                 self.body = Some(body);
                 Ok(self)
             }
