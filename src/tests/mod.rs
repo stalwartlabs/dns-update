@@ -9,6 +9,7 @@
  * except according to those terms.
  */
 
-pub mod lib_tests;
+pub mod bunny_test;
 pub mod desec_tests;
+pub mod lib_tests;
 pub mod ovh_tests;

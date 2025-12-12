@@ -11,9 +11,10 @@
 
 use crate::DnsRecord;
 
+pub mod bunny;
 pub mod cloudflare;
-pub mod digitalocean;
 pub mod desec;
+pub mod digitalocean;
 pub mod ovh;
 pub mod rfc2136;
 
