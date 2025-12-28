@@ -346,6 +346,8 @@ impl FromStr for TsigAlgorithm {
     }
 }
 
+impl std::error::Error for Error {}
+
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
