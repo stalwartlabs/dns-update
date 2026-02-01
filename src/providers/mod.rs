@@ -17,6 +17,7 @@ pub mod desec;
 pub mod digitalocean;
 pub mod ovh;
 pub mod rfc2136;
+pub mod route53;
 
 impl DnsRecord {
     pub fn priority(&self) -> Option<u16> {
