@@ -27,8 +27,10 @@ use providers::{
     digitalocean::DigitalOceanProvider,
     ovh::{OvhEndpoint, OvhProvider},
     rfc2136::{DnsAddress, Rfc2136Provider},
-    route53::{Route53Config, Route53Provider},
 };
+
+#[cfg(feature = "route53")]
+use providers::route53::{Route53Config, Route53Provider};
 
 pub mod http;
 pub mod providers;
@@ -122,6 +124,7 @@ pub enum DnsUpdater {
     Desec(DesecProvider),
     Ovh(OvhProvider),
     Bunny(BunnyProvider),
+    #[cfg(feature = "route53")]
     Route53(Route53Provider),
 }
 
@@ -214,20 +217,25 @@ impl DnsUpdater {
     }
 
     /// Create a new DNS updater using the AWS Route53 API.
+    #[cfg(feature = "route53")]
     pub async fn new_route53(
         hosted_zone_id: impl Into<String>,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::Route53(
-            Route53Provider::new(hosted_zone_id, timeout).await?,
+            Route53Provider::new(Route53Config {
+                hosted_zone_id: Some(hosted_zone_id.into()),
+                timeout,
+                ..Default::default()
+            })
+            .await?,
         ))
     }
 
     /// Create a new DNS updater using the AWS Route53 API with a configurable setup.
+    #[cfg(feature = "route53")]
     pub async fn new_route53_config(config: Route53Config) -> crate::Result<Self> {
-        Ok(DnsUpdater::Route53(
-            Route53Provider::new_with_config(config).await?,
-        ))
+        Ok(DnsUpdater::Route53(Route53Provider::new(config).await?))
     }
 
     /// Create a new DNS record.
@@ -245,6 +253,7 @@ impl DnsUpdater {
             DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
+            #[cfg(feature = "route53")]
             DnsUpdater::Route53(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
@@ -264,6 +273,7 @@ impl DnsUpdater {
             DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
+            #[cfg(feature = "route53")]
             DnsUpdater::Route53(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
@@ -282,6 +292,7 @@ impl DnsUpdater {
             DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
+            #[cfg(feature = "route53")]
             DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
         }
     }

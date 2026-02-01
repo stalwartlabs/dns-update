@@ -50,19 +50,7 @@ fn env_or_file(key: &str) -> Option<String> {
 }
 
 impl Route53Provider {
-    pub(crate) async fn new(
-        hosted_zone_id: impl Into<String>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        let config = Route53Config {
-            hosted_zone_id: Some(hosted_zone_id.into()),
-            timeout,
-            ..Default::default()
-        };
-        Self::new_with_config(config).await
-    }
-
-    pub(crate) async fn new_with_config(config: Route53Config) -> crate::Result<Self> {
+    pub(crate) async fn new(config: Route53Config) -> crate::Result<Self> {
         let hosted_zone_id = config
             .hosted_zone_id
             .or_else(|| env_or_file("AWS_HOSTED_ZONE_ID"))
