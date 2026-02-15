@@ -16,7 +16,12 @@ and different cloud provider APIs such as [Cloudflare](https://www.cloudflare.co
 
 ## PRs Welcome
 
-PRs to add more providers are welcome. The goal is to support as many providers as Go's [lego](https://go-acme.github.io/lego/dns/) library.
+PRs to add more providers are welcome. The goal is to support as many providers as Go's [lego](https://go-acme.github.io/lego/dns/) library. 
+
+### Design Goals
+
+- **Minimal dependency footprint**: Prefer as few external dependencies as practical.
+- **Reuse existing building blocks**: Providers should generally leverage shared HTTP tooling (e.g. `reqwest`) instead of adding vendor-specific SDK dependencies.
 
 ## Usage Example
 
