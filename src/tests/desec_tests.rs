@@ -278,7 +278,7 @@ mod tests {
             content: "test".to_string(),
         };
         let desec_record: DesecDnsRecordRepresentation = record.into();
-        assert_eq!(desec_record.content, "test");
+        assert_eq!(desec_record.content, "\"test\"");
         assert_eq!(desec_record.record_type, "TXT");
 
         let record = DnsRecord::MX {
