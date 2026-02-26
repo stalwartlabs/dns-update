@@ -12,25 +12,27 @@
 use std::net::{AddrParseError, SocketAddr};
 use std::sync::Arc;
 
-use hickory_client::client::{AsyncClient, ClientConnection, ClientHandle, Signer};
-use hickory_client::error::ClientError;
-use hickory_client::op::ResponseCode;
-use hickory_client::proto::error::ProtoError;
-use hickory_client::proto::rr::dnssec::tsig::TSigner;
-use hickory_client::proto::rr::dnssec::{Algorithm, KeyPair, Private, SigSigner};
-use hickory_client::rr::rdata::key::KEY;
-use hickory_client::rr::rdata::tsig::TsigAlgorithm;
-use hickory_client::rr::rdata::{A, AAAA, CNAME, MX, NS, SRV, TXT};
-use hickory_client::rr::{DNSClass, Name, RData, Record, RecordType};
-use hickory_client::tcp::TcpClientConnection;
-use hickory_client::udp::UdpClientConnection;
+use hickory_client::client::{Client, ClientHandle};
+use hickory_client::proto::dnssec::rdata::tsig::TsigAlgorithm;
+use hickory_client::proto::dnssec::rdata::KEY;
+use hickory_client::proto::dnssec::tsig::TSigner;
+use hickory_client::proto::dnssec::{Algorithm, DnsSecError, SigSigner, SigningKey};
+use hickory_client::proto::op::MessageFinalizer;
+use hickory_client::proto::op::ResponseCode;
+use hickory_client::proto::rr::rdata::{A, AAAA, CNAME, MX, NS, SRV, TXT};
+use hickory_client::proto::rr::{DNSClass, Name, RData, Record, RecordType};
+use hickory_client::proto::runtime::TokioRuntimeProvider;
+use hickory_client::proto::tcp::TcpClientStream;
+use hickory_client::proto::udp::UdpClientStream;
+use hickory_client::proto::ProtoError;
+use hickory_client::ClientError;
 
 use crate::{DnsRecord, Error, IntoFqdn};
 
 #[derive(Clone)]
 pub struct Rfc2136Provider {
     addr: DnsAddress,
-    signer: Arc<Signer>,
+    signer: Arc<dyn MessageFinalizer>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,19 +52,19 @@ impl Rfc2136Provider {
             addr: addr
                 .try_into()
                 .map_err(|_| Error::Parse("Invalid address".to_string()))?,
-            signer: Arc::new(Signer::from(TSigner::new(
+            signer: Arc::new(TSigner::new(
                 key.into(),
                 algorithm,
                 Name::from_ascii(key_name.as_ref())?,
                 60,
-            )?)),
+            )?),
         })
     }
 
     pub(crate) fn new_sig0(
         addr: impl TryInto<DnsAddress>,
         signer_name: impl AsRef<str>,
-        key: KeyPair<Private>,
+        key: Box<dyn SigningKey>,
         public_key: impl Into<Vec<u8>>,
         algorithm: Algorithm,
     ) -> crate::Result<Self> {
@@ -81,21 +83,24 @@ impl Rfc2136Provider {
             addr: addr
                 .try_into()
                 .map_err(|_| Error::Parse("Invalid address".to_string()))?,
-            signer: Arc::new(Signer::from(signer)),
+            signer: Arc::new(signer),
         })
     }
 
-    async fn connect(&self) -> crate::Result<AsyncClient> {
+    async fn connect(&self) -> crate::Result<Client> {
         match &self.addr {
             DnsAddress::Udp(addr) => {
-                let conn = UdpClientConnection::new(*addr)?.new_stream(Some(self.signer.clone()));
-                let (client, bg) = AsyncClient::connect(conn).await?;
+                let stream = UdpClientStream::builder(*addr, TokioRuntimeProvider::new())
+                    .with_signer(Some(self.signer.clone()))
+                    .build();
+                let (client, bg) = Client::connect(stream).await?;
                 tokio::spawn(bg);
                 Ok(client)
             }
             DnsAddress::Tcp(addr) => {
-                let conn = TcpClientConnection::new(*addr)?.new_stream(Some(self.signer.clone()));
-                let (client, bg) = AsyncClient::connect(conn).await?;
+                let (stream, sender) =
+                    TcpClientStream::new(*addr, None, None, TokioRuntimeProvider::new());
+                let (client, bg) = Client::new(stream, sender, Some(self.signer.clone())).await?;
                 tokio::spawn(bg);
                 Ok(client)
             }
@@ -109,13 +114,12 @@ impl Rfc2136Provider {
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        let (rr_type, rdata) = convert_record(record)?;
-        let mut record = Record::with(
+        let (_rr_type, rdata) = convert_record(record)?;
+        let record = Record::from_rdata(
             Name::from_str_relaxed(name.into_name().as_ref())?,
-            rr_type,
             ttl,
+            rdata,
         );
-        record.set_data(Some(rdata));
 
         let mut client = self.connect().await?;
         let result = client
@@ -135,13 +139,12 @@ impl Rfc2136Provider {
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        let (rr_type, rdata) = convert_record(record)?;
-        let mut record = Record::with(
+        let (_rr_type, rdata) = convert_record(record)?;
+        let record = Record::from_rdata(
             Name::from_str_relaxed(name.into_name().as_ref())?,
-            rr_type,
             ttl,
+            rdata,
         );
-        record.set_data(Some(rdata));
 
         let mut client = self.connect().await?;
         let result = client
@@ -310,5 +313,11 @@ impl From<AddrParseError> for Error {
 impl From<ClientError> for Error {
     fn from(e: ClientError) -> Self {
         Error::Client(e.to_string())
+    }
+}
+
+impl From<DnsSecError> for Error {
+    fn from(e: DnsSecError) -> Self {
+        Error::Protocol(e.to_string())
     }
 }

@@ -18,17 +18,20 @@ use std::{
     time::Duration,
 };
 
-use hickory_client::proto::rr::dnssec::{KeyPair, Private};
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use hickory_client::proto::dnssec::SigningKey;
 
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use providers::ovh::{OvhEndpoint, OvhProvider};
 use providers::{
     bunny::BunnyProvider,
     cloudflare::CloudflareProvider,
     desec::DesecProvider,
     digitalocean::DigitalOceanProvider,
-    ovh::{OvhEndpoint, OvhProvider},
     rfc2136::{DnsAddress, Rfc2136Provider},
 };
 
+pub mod crypto;
 pub mod http;
 pub mod providers;
 pub mod tests;
@@ -119,6 +122,7 @@ pub enum DnsUpdater {
     Cloudflare(CloudflareProvider),
     DigitalOcean(DigitalOceanProvider),
     Desec(DesecProvider),
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     Ovh(OvhProvider),
     Bunny(BunnyProvider),
 }
@@ -145,10 +149,11 @@ impl DnsUpdater {
     }
 
     /// Create a new DNS updater using the RFC 2136 protocol and SIG(0) authentication.
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     pub fn new_rfc2136_sig0(
         addr: impl TryInto<DnsAddress>,
         signer_name: impl AsRef<str>,
-        key: KeyPair<Private>,
+        key: Box<dyn SigningKey>,
         public_key: impl Into<Vec<u8>>,
         algorithm: Algorithm,
     ) -> crate::Result<Self> {
@@ -191,6 +196,7 @@ impl DnsUpdater {
     }
 
     /// Create a new DNS updater using the OVH API.
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     pub fn new_ovh(
         application_key: impl AsRef<str>,
         application_secret: impl AsRef<str>,
@@ -224,6 +230,7 @@ impl DnsUpdater {
             DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
         }
@@ -242,6 +249,7 @@ impl DnsUpdater {
             DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
         }
@@ -259,6 +267,7 @@ impl DnsUpdater {
             DnsUpdater::Cloudflare(provider) => provider.delete(name, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin).await,
             DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
         }
