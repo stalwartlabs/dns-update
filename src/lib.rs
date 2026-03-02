@@ -28,6 +28,7 @@ use providers::{
     cloudflare::CloudflareProvider,
     desec::DesecProvider,
     digitalocean::DigitalOceanProvider,
+    porkbun::PorkBunProvider,
     rfc2136::{DnsAddress, Rfc2136Provider},
 };
 
@@ -125,6 +126,7 @@ pub enum DnsUpdater {
     #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     Ovh(OvhProvider),
     Bunny(BunnyProvider),
+    Porkbun(PorkBunProvider),
 }
 
 pub trait IntoFqdn<'x> {
@@ -217,6 +219,18 @@ impl DnsUpdater {
         Ok(DnsUpdater::Bunny(BunnyProvider::new(api_key, timeout)?))
     }
 
+    pub fn new_porkbun(
+        api_key: impl AsRef<str>,
+        secret_api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Porkbun(PorkBunProvider::new(
+            api_key,
+            secret_api_key,
+            timeout,
+        )))
+    }
+
     /// Create a new DNS record.
     pub async fn create(
         &self,
@@ -233,6 +247,7 @@ impl DnsUpdater {
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -252,6 +267,7 @@ impl DnsUpdater {
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -270,6 +286,7 @@ impl DnsUpdater {
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
         }
     }
 }
