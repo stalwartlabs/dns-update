@@ -216,7 +216,7 @@ impl OvhProvider {
         record_type: &str,
     ) -> crate::Result<u64> {
         let name = name.into_name();
-        let subdomain = strip_origin_from_name(&name, zone);
+        let subdomain = strip_origin_from_name(&name, zone, None);
         let subdomain = if subdomain == "@" { "" } else { &subdomain };
 
         let url = format!(
@@ -256,7 +256,7 @@ impl OvhProvider {
     ) -> crate::Result<()> {
         let zone = self.get_zone_name(origin).await?;
         let name = name.into_name();
-        let subdomain = strip_origin_from_name(&name, &zone);
+        let subdomain = strip_origin_from_name(&name, &zone, None);
         let subdomain = if subdomain == "@" {
             String::new()
         } else {

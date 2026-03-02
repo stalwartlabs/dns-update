@@ -97,7 +97,7 @@ impl DigitalOceanProvider {
     ) -> crate::Result<()> {
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain);
+        let subdomain = strip_origin_from_name(&name, &domain, None);
 
         self.client
             .post(format!(
@@ -122,7 +122,7 @@ impl DigitalOceanProvider {
     ) -> crate::Result<()> {
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain);
+        let subdomain = strip_origin_from_name(&name, &domain, None);
         let record_id = self.obtain_record_id(&name, &domain).await?;
 
         self.client
@@ -158,7 +158,7 @@ impl DigitalOceanProvider {
     }
 
     async fn obtain_record_id(&self, name: &str, domain: &str) -> crate::Result<i64> {
-        let subdomain = strip_origin_from_name(name, domain);
+        let subdomain = strip_origin_from_name(name, domain, None);
         self.client
             .get(format!(
                 "https://api.digitalocean.com/v2/domains/{domain}/records?{}",

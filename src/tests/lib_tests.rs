@@ -1,20 +1,24 @@
 #[test]
 fn test_strip_origin_from_name() {
     assert_eq!(
-        crate::strip_origin_from_name("www.example.com", "example.com"),
+        crate::strip_origin_from_name("www.example.com", "example.com", None),
         "www"
     );
     assert_eq!(
-        crate::strip_origin_from_name("example.com", "example.com"),
+        crate::strip_origin_from_name("example.com", "example.com", None),
         "@"
     );
     assert_eq!(
-        crate::strip_origin_from_name("api.v1.example.com", "example.com"),
+        crate::strip_origin_from_name("api.v1.example.com", "example.com", None),
         "api.v1"
     );
     assert_eq!(
-        crate::strip_origin_from_name("example.com", "google.com"),
+        crate::strip_origin_from_name("example.com", "google.com", None),
         "example.com"
+    );
+    assert_eq!(
+        strip_origin_from_name("example.com", "example.com", Some("")),
+        ""
     );
 }
 

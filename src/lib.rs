@@ -320,12 +320,14 @@ impl<'x> IntoFqdn<'x> for String {
     }
 }
 
-pub fn strip_origin_from_name(name: &str, origin: &str) -> String {
+/// Strip `name` from `origin`, return `return_if_equal` if `name` is the same
+/// as `origin`, or  `@` if `None` given.
+pub fn strip_origin_from_name(name: &str, origin: &str, return_if_equal: Option<&str>) -> String {
     let name = name.trim_end_matches('.');
     let origin = origin.trim_end_matches('.');
 
     if name == origin {
-        return "@".to_string();
+        return return_if_equal.unwrap_or("@").to_string();
     }
 
     if name.ends_with(&format!(".{}", origin)) {

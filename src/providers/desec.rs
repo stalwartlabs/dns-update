@@ -85,7 +85,7 @@ impl DesecProvider {
     ) -> crate::Result<()> {
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain);
+        let subdomain = strip_origin_from_name(&name, &domain, None);
 
         let desec_record = DesecDnsRecordRepresentation::from(record);
         self.client
@@ -114,7 +114,7 @@ impl DesecProvider {
     ) -> crate::Result<()> {
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain);
+        let subdomain = strip_origin_from_name(&name, &domain, None);
 
         let desec_record = DesecDnsRecordRepresentation::from(record);
         self.client
@@ -144,7 +144,7 @@ impl DesecProvider {
     ) -> crate::Result<()> {
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain);
+        let subdomain = strip_origin_from_name(&name, &domain, None);
 
         let rr_type = &record_type.to_string();
         self.client
