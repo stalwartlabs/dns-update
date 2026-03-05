@@ -4,7 +4,7 @@ pub fn sha1_digest(data: &[u8]) -> Vec<u8> {
         .as_ref()
         .to_vec();
 
-    #[cfg(feature = "ring")]
+    #[cfg(all(feature = "ring", not(feature = "aws-lc-rs")))]
     return ring::digest::digest(&ring::digest::SHA1_FOR_LEGACY_USE_ONLY, data)
         .as_ref()
         .to_vec();
