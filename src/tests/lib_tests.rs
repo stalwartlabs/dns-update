@@ -58,5 +58,3 @@ async fn test_https_mock() {
     assert_eq!(resp.text().await.unwrap(), "hello");
     mock.assert_calls(1);
 }
-
-// Test removed: httpmock TLS API not compatible. TLS enabled via reqwest features.
