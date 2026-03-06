@@ -14,3 +14,4 @@ pub mod desec_tests;
 #[cfg(test)]
 pub mod lib_tests;
 pub mod ovh_tests;
+pub mod porkbun_tests;
