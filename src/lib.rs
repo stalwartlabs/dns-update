@@ -28,6 +28,7 @@ use providers::{
     cloudflare::CloudflareProvider,
     desec::DesecProvider,
     digitalocean::DigitalOceanProvider,
+    dnsimple::DNSimpleProvider,
     porkbun::PorkBunProvider,
     rfc2136::{DnsAddress, Rfc2136Provider},
 };
@@ -127,6 +128,7 @@ pub enum DnsUpdater {
     Ovh(OvhProvider),
     Bunny(BunnyProvider),
     Porkbun(PorkBunProvider),
+    DNSimple(DNSimpleProvider),
 }
 
 pub trait IntoFqdn<'x> {
@@ -231,6 +233,19 @@ impl DnsUpdater {
         )))
     }
 
+    /// Create a new DNS updater using the DNSimple API.
+    pub fn new_dnsimple(
+        auth_token: impl AsRef<str>,
+        account_id: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::DNSimple(DNSimpleProvider::new(
+            auth_token,
+            account_id,
+            timeout,
+        )))
+    }
+
     /// Create a new DNS record.
     pub async fn create(
         &self,
@@ -248,6 +263,7 @@ impl DnsUpdater {
             DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::DNSimple(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -268,6 +284,7 @@ impl DnsUpdater {
             DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::DNSimple(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -287,6 +304,7 @@ impl DnsUpdater {
             DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
         }
     }
 }

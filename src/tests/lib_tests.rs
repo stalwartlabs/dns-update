@@ -17,7 +17,7 @@ fn test_strip_origin_from_name() {
         "example.com"
     );
     assert_eq!(
-        strip_origin_from_name("example.com", "example.com", Some("")),
+        crate::strip_origin_from_name("example.com", "example.com", Some("")),
         ""
     );
 }
