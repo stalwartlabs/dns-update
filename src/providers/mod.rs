@@ -15,6 +15,7 @@ pub mod bunny;
 pub mod cloudflare;
 pub mod desec;
 pub mod digitalocean;
+pub mod dnsimple;
 pub mod ovh;
 pub mod porkbun;
 pub mod rfc2136;
