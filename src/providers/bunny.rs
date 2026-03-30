@@ -1,11 +1,20 @@
+/*
+ * Copyright Stalwart Labs LLC See the COPYING
+ * file at the top-level directory of this distribution.
+ *
+ * Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+ * https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+ * <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
+ * option. This file may not be copied, modified, or distributed
+ * except according to those terms.
+ */
+
+use crate::{http::HttpClientBuilder, DnsRecord, DnsRecordType, Error, IntoFqdn};
+use serde::{Deserialize, Serialize};
 use std::{
     net::{Ipv4Addr, Ipv6Addr},
     time::Duration,
 };
-
-use serde::{Deserialize, Serialize};
-
-use crate::{http::HttpClientBuilder, DnsRecord, DnsRecordType, Error, IntoFqdn};
 
 #[derive(Clone)]
 pub struct BunnyProvider {
@@ -33,10 +42,13 @@ impl BunnyProvider {
     ) -> crate::Result<()> {
         let zone_id = self.get_zone_data(origin).await?.id;
         let name = name.into_name();
+        let (flags, tag) = extract_caa_fields(&record);
         let body = DnsRecordData {
             name: name.into(),
             record_type: (&record).into(),
             ttl: Some(ttl),
+            flags,
+            tag,
         };
 
         self.client
@@ -69,13 +81,18 @@ impl BunnyProvider {
                 "https://api.bunny.net/dnszone/{zone_id}/records/{}",
                 bunny_record.id
             ))
-            .with_body(BunnyDnsRecord {
-                id: bunny_record.id,
-                record: DnsRecordData {
-                    name: bunny_record.record.name.clone(),
-                    record_type: (&record).into(),
-                    ttl: Some(ttl),
-                },
+            .with_body({
+                let (flags, tag) = extract_caa_fields(&record);
+                BunnyDnsRecord {
+                    id: bunny_record.id,
+                    record: DnsRecordData {
+                        name: bunny_record.record.name.clone(),
+                        record_type: (&record).into(),
+                        ttl: Some(ttl),
+                        flags,
+                        tag,
+                    },
+                }
             })?
             .send_with_retry::<serde_json::Value>(3)
             .await
@@ -167,7 +184,10 @@ pub enum BunnyDnsRecordType {
         port: u16,
         weight: u16,
     },
-    CAA,
+    #[serde(rename_all = "PascalCase")]
+    CAA {
+        value: String,
+    },
     PTR,
     Script,
     #[serde(rename_all = "PascalCase")]
@@ -176,37 +196,43 @@ pub enum BunnyDnsRecordType {
     },
     SVCB,
     HTTPS,
+    #[serde(rename_all = "PascalCase")]
+    TLSA {
+        value: String,
+    },
 }
 
 impl From<&DnsRecord> for BunnyDnsRecordType {
     fn from(record: &DnsRecord) -> Self {
         match record {
-            DnsRecord::A { content } => BunnyDnsRecordType::A { value: (*content) },
-            DnsRecord::AAAA { content } => BunnyDnsRecordType::AAAA { value: (*content) },
-            DnsRecord::CNAME { content } => BunnyDnsRecordType::CNAME {
+            DnsRecord::A(content) => BunnyDnsRecordType::A { value: *content },
+            DnsRecord::AAAA(content) => BunnyDnsRecordType::AAAA { value: *content },
+            DnsRecord::CNAME(content) => BunnyDnsRecordType::CNAME {
                 value: content.to_string(),
             },
-            DnsRecord::NS { content } => BunnyDnsRecordType::NS {
+            DnsRecord::NS(content) => BunnyDnsRecordType::NS {
                 value: content.to_string(),
             },
-            DnsRecord::MX { content, priority } => BunnyDnsRecordType::MX {
-                value: content.to_string(),
-                priority: *priority,
+            DnsRecord::MX(mx) => BunnyDnsRecordType::MX {
+                value: mx.exchange.to_string(),
+                priority: mx.priority,
             },
-            DnsRecord::TXT { content } => BunnyDnsRecordType::TXT {
+            DnsRecord::TXT(content) => BunnyDnsRecordType::TXT {
                 value: content.to_string(),
             },
-            DnsRecord::SRV {
-                content,
-                priority,
-                weight,
-                port,
-            } => BunnyDnsRecordType::SRV {
-                value: content.to_string(),
-                priority: *priority,
-                port: *port,
-                weight: *weight,
+            DnsRecord::SRV(srv) => BunnyDnsRecordType::SRV {
+                value: srv.target.to_string(),
+                priority: srv.priority,
+                port: srv.port,
+                weight: srv.weight,
             },
+            DnsRecord::TLSA(tlsa) => BunnyDnsRecordType::TLSA {
+                value: tlsa.to_string(),
+            },
+            DnsRecord::CAA(caa) => {
+                let (_flags, _tag, value) = caa.clone().decompose();
+                BunnyDnsRecordType::CAA { value }
+            }
         }
     }
 }
@@ -215,13 +241,15 @@ impl BunnyDnsRecordType {
     /// Tests `self` and `other`'s DNS record type to be equal
     fn eq_type(&self, other: &DnsRecord) -> bool {
         match other {
-            DnsRecord::A { .. } => matches!(self, BunnyDnsRecordType::A { .. }),
-            DnsRecord::AAAA { .. } => matches!(self, BunnyDnsRecordType::AAAA { .. }),
-            DnsRecord::CNAME { .. } => matches!(self, BunnyDnsRecordType::CNAME { .. }),
-            DnsRecord::NS { .. } => matches!(self, BunnyDnsRecordType::NS { .. }),
-            DnsRecord::MX { .. } => matches!(self, BunnyDnsRecordType::MX { .. }),
-            DnsRecord::TXT { .. } => matches!(self, BunnyDnsRecordType::TXT { .. }),
-            DnsRecord::SRV { .. } => matches!(self, BunnyDnsRecordType::SRV { .. }),
+            DnsRecord::A(..) => matches!(self, BunnyDnsRecordType::A { .. }),
+            DnsRecord::AAAA(..) => matches!(self, BunnyDnsRecordType::AAAA { .. }),
+            DnsRecord::CNAME(..) => matches!(self, BunnyDnsRecordType::CNAME { .. }),
+            DnsRecord::NS(..) => matches!(self, BunnyDnsRecordType::NS { .. }),
+            DnsRecord::MX(..) => matches!(self, BunnyDnsRecordType::MX { .. }),
+            DnsRecord::TXT(..) => matches!(self, BunnyDnsRecordType::TXT { .. }),
+            DnsRecord::SRV(..) => matches!(self, BunnyDnsRecordType::SRV { .. }),
+            DnsRecord::TLSA(..) => matches!(self, BunnyDnsRecordType::TLSA { .. }),
+            DnsRecord::CAA(..) => matches!(self, BunnyDnsRecordType::CAA { .. }),
         }
     }
 }
@@ -236,6 +264,8 @@ impl PartialEq<DnsRecordType> for BunnyDnsRecordType {
             DnsRecordType::MX => matches!(self, BunnyDnsRecordType::MX { .. }),
             DnsRecordType::TXT => matches!(self, BunnyDnsRecordType::TXT { .. }),
             DnsRecordType::SRV => matches!(self, BunnyDnsRecordType::SRV { .. }),
+            DnsRecordType::TLSA => matches!(self, BunnyDnsRecordType::TLSA { .. }),
+            DnsRecordType::CAA => matches!(self, BunnyDnsRecordType::CAA { .. }),
         }
     }
 }
@@ -280,4 +310,19 @@ pub struct DnsRecordData {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ttl: Option<u32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flags: Option<u8>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+}
+
+fn extract_caa_fields(record: &DnsRecord) -> (Option<u8>, Option<String>) {
+    if let DnsRecord::CAA(caa) = record {
+        let (flags, tag, _value) = caa.clone().decompose();
+        (Some(flags), Some(tag))
+    } else {
+        (None, None)
+    }
 }

@@ -12,10 +12,10 @@
 use std::time::Duration;
 
 use reqwest::{
-    header::{HeaderMap, HeaderValue, CONTENT_TYPE},
     Method,
+    header::{CONTENT_TYPE, HeaderMap, HeaderValue},
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::Error;
 
@@ -198,12 +198,12 @@ impl HttpClient {
                     })
                 }
                 429 if attempts < max_retries => {
-                    if let Some(retry_after) = response.headers().get("retry-after") {
-                        if let Ok(seconds) = retry_after.to_str().unwrap_or("0").parse::<u64>() {
-                            tokio::time::sleep(Duration::from_secs(seconds)).await;
-                            attempts += 1;
-                            continue;
-                        }
+                    if let Some(retry_after) = response.headers().get("retry-after")
+                        && let Ok(seconds) = retry_after.to_str().unwrap_or("0").parse::<u64>()
+                    {
+                        tokio::time::sleep(Duration::from_secs(seconds)).await;
+                        attempts += 1;
+                        continue;
                     }
                     Err(Error::Api("Rate limit exceeded".to_string()))
                 }

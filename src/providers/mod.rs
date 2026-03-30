@@ -23,8 +23,8 @@ pub mod rfc2136;
 impl DnsRecord {
     pub fn priority(&self) -> Option<u16> {
         match self {
-            DnsRecord::MX { priority, .. } => Some(*priority),
-            DnsRecord::SRV { priority, .. } => Some(*priority),
+            DnsRecord::MX(record) => Some(record.priority),
+            DnsRecord::SRV(record) => Some(record.priority),
             _ => None,
         }
     }

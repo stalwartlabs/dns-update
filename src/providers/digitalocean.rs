@@ -9,13 +9,12 @@
  * except according to those terms.
  */
 
+use crate::{DnsRecord, Error, IntoFqdn, http::HttpClientBuilder, utils::strip_origin_from_name};
+use serde::{Deserialize, Serialize};
 use std::{
     net::{Ipv4Addr, Ipv6Addr},
     time::Duration,
 };
-
-use crate::{http::HttpClientBuilder, strip_origin_from_name, DnsRecord, Error, IntoFqdn};
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct DigitalOceanProvider {
@@ -73,6 +72,11 @@ pub enum RecordData {
         port: u16,
         weight: u16,
     },
+    CAA {
+        data: String,
+        flags: u8,
+        tag: String,
+    },
 }
 
 #[derive(Serialize, Debug)]
@@ -106,7 +110,7 @@ impl DigitalOceanProvider {
             .with_body(UpdateDomainRecord {
                 ttl,
                 name: &subdomain,
-                data: record.into(),
+                data: RecordData::try_from(record).map_err(|err| Error::Api(err.to_string()))?,
             })?
             .send_raw()
             .await
@@ -132,7 +136,7 @@ impl DigitalOceanProvider {
             .with_body(UpdateDomainRecord {
                 ttl,
                 name: &subdomain,
-                data: record.into(),
+                data: RecordData::try_from(record).map_err(|err| Error::Api(err.to_string()))?,
             })?
             .send_raw()
             .await
@@ -187,29 +191,35 @@ impl<'a> Query<'a> {
     }
 }
 
-impl From<DnsRecord> for RecordData {
-    fn from(record: DnsRecord) -> Self {
+impl TryFrom<DnsRecord> for RecordData {
+    type Error = &'static str;
+
+    fn try_from(record: DnsRecord) -> Result<Self, Self::Error> {
         match record {
-            DnsRecord::A { content } => RecordData::A { data: content },
-            DnsRecord::AAAA { content } => RecordData::AAAA { data: content },
-            DnsRecord::CNAME { content } => RecordData::CNAME { data: content },
-            DnsRecord::NS { content } => RecordData::NS { data: content },
-            DnsRecord::MX { content, priority } => RecordData::MX {
-                data: content,
-                priority,
-            },
-            DnsRecord::TXT { content } => RecordData::TXT { data: content },
-            DnsRecord::SRV {
-                content,
-                priority,
-                weight,
-                port,
-            } => RecordData::SRV {
-                data: content,
-                priority,
-                weight,
-                port,
-            },
+            DnsRecord::A(content) => Ok(RecordData::A { data: content }),
+            DnsRecord::AAAA(content) => Ok(RecordData::AAAA { data: content }),
+            DnsRecord::CNAME(content) => Ok(RecordData::CNAME { data: content }),
+            DnsRecord::NS(content) => Ok(RecordData::NS { data: content }),
+            DnsRecord::MX(mx) => Ok(RecordData::MX {
+                data: mx.exchange,
+                priority: mx.priority,
+            }),
+            DnsRecord::TXT(content) => Ok(RecordData::TXT { data: content }),
+            DnsRecord::SRV(srv) => Ok(RecordData::SRV {
+                data: srv.target,
+                priority: srv.priority,
+                weight: srv.weight,
+                port: srv.port,
+            }),
+            DnsRecord::TLSA(_) => Err("TLSA records are not supported by DigitalOcean"),
+            DnsRecord::CAA(caa) => {
+                let (flags, tag, value) = caa.decompose();
+                Ok(RecordData::CAA {
+                    data: value,
+                    flags,
+                    tag,
+                })
+            }
         }
     }
 }

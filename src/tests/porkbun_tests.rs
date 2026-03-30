@@ -12,7 +12,7 @@
 mod tests {
     use crate::{
         providers::porkbun::{PorkBunProvider, RecordData},
-        DnsRecord, DnsRecordType, DnsUpdater,
+        DnsRecord, DnsRecordType, DnsUpdater, MXRecord, SRVRecord,
     };
     use serde_json::json;
     use std::{
@@ -47,9 +47,7 @@ mod tests {
 
     #[test]
     fn record_data_from_dns_record() {
-        let record = DnsRecord::A {
-            content: "1.1.1.1".parse().unwrap(),
-        };
+        let record = DnsRecord::A("1.1.1.1".parse().unwrap());
 
         let porkbun_record: RecordData = record.into();
         if let RecordData::A { content } = porkbun_record {
@@ -59,9 +57,7 @@ mod tests {
         }
         assert_eq!(porkbun_record.variant_name(), "A");
 
-        let record = DnsRecord::AAAA {
-            content: "2001:db8::1".parse().unwrap(),
-        };
+        let record = DnsRecord::AAAA("2001:db8::1".parse().unwrap());
         let porkbun_record: RecordData = record.into();
         if let RecordData::AAAA { content } = porkbun_record {
             assert_eq!(content, "2001:db8::1".parse::<Ipv6Addr>().unwrap());
@@ -70,9 +66,7 @@ mod tests {
         }
         assert_eq!(porkbun_record.variant_name(), "AAAA");
 
-        let record = DnsRecord::CNAME {
-            content: "alias.example.com".to_string(),
-        };
+        let record = DnsRecord::CNAME("alias.example.com".to_string());
         let porkbun_record: RecordData = record.into();
         if let RecordData::CNAME { ref content } = porkbun_record {
             assert_eq!(content, "alias.example.com");
@@ -81,10 +75,10 @@ mod tests {
         }
         assert_eq!(porkbun_record.variant_name(), "CNAME");
 
-        let record = DnsRecord::MX {
+        let record = DnsRecord::MX(MXRecord {
+            exchange: "mail.example.com".to_string(),
             priority: 10,
-            content: "mail.example.com".to_string(),
-        };
+        });
         let porkbun_record: RecordData = record.into();
         if let RecordData::MX { prio, ref content } = porkbun_record {
             assert_eq!(prio, 10);
@@ -94,9 +88,7 @@ mod tests {
         }
         assert_eq!(porkbun_record.variant_name(), "MX");
 
-        let record = DnsRecord::TXT {
-            content: "v=spf1 include:_spf.example.com ~all".to_string(),
-        };
+        let record = DnsRecord::TXT("v=spf1 include:_spf.example.com ~all".to_string());
         let porkbun_record: RecordData = record.into();
         if let RecordData::TXT { ref content } = porkbun_record {
             assert_eq!(content, "v=spf1 include:_spf.example.com ~all");
@@ -105,12 +97,12 @@ mod tests {
         }
         assert_eq!(porkbun_record.variant_name(), "TXT");
 
-        let record = DnsRecord::SRV {
+        let record = DnsRecord::SRV(SRVRecord {
+            target: "sip.example.com".to_string(),
             priority: 10,
             weight: 20,
             port: 443,
-            content: "sip.example.com".to_string(),
-        };
+        });
         let porkbun_record: RecordData = record.into();
         if let RecordData::SRV { prio, ref content } = porkbun_record {
             assert_eq!(prio, 10);
@@ -120,9 +112,7 @@ mod tests {
         }
         assert_eq!(porkbun_record.variant_name(), "SRV");
 
-        let record = DnsRecord::NS {
-            content: "ns1.example.com".to_string(),
-        };
+        let record = DnsRecord::NS("ns1.example.com".to_string());
         let porkbun_record: RecordData = record.into();
         if let RecordData::NS { ref content } = porkbun_record {
             assert_eq!(content, "ns1.example.com");
@@ -155,9 +145,7 @@ mod tests {
         let result = provider
             .create(
                 "test.example.com",
-                DnsRecord::A {
-                    content: "1.1.1.1".parse().unwrap(),
-                },
+                DnsRecord::A("1.1.1.1".parse().unwrap()),
                 3600,
                 "example.com",
             )
@@ -190,9 +178,7 @@ mod tests {
         let result = provider
             .update(
                 "www.example.com",
-                DnsRecord::AAAA {
-                    content: "2001:db8::1".parse().unwrap(),
-                },
+                DnsRecord::AAAA("2001:db8::1".parse().unwrap()),
                 3600,
                 "example.com",
             )
@@ -258,9 +244,7 @@ mod tests {
         let creation_result = updater
             .create(
                 &domain,
-                DnsRecord::A {
-                    content: "1.1.1.1".parse().unwrap(),
-                },
+                DnsRecord::A("1.1.1.1".parse().unwrap()),
                 3600,
                 &origin,
             )
@@ -271,9 +255,7 @@ mod tests {
         let update_result = updater
             .update(
                 &domain,
-                DnsRecord::A {
-                    content: "2.2.2.2".parse().unwrap(),
-                },
+                DnsRecord::A("2.2.2.2".parse().unwrap()),
                 3600,
                 &origin,
             )

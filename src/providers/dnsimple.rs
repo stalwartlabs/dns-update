@@ -9,10 +9,12 @@
  * except according to those terms.
  */
 
-use std::time::Duration;
-
-use crate::{http::HttpClientBuilder, strip_origin_from_name, DnsRecord, DnsRecordType, Error, IntoFqdn};
+use crate::{
+    DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder,
+    utils::strip_origin_from_name,
+};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 const DEFAULT_ENDPOINT: &str = "https://api.dnsimple.com/v2";
 
@@ -158,9 +160,7 @@ impl DNSimpleProvider {
         let zone = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &zone, Some(""));
         let type_str = record_type_to_str(record_type);
-        let record_id = self
-            .obtain_record_id(&subdomain, &zone, type_str)
-            .await?;
+        let record_id = self.obtain_record_id(&subdomain, &zone, type_str).await?;
 
         self.client
             .delete(format!(
@@ -212,13 +212,15 @@ impl DNSimpleProvider {
 
 fn record_type_str(record: &DnsRecord) -> &'static str {
     match record {
-        DnsRecord::A { .. } => "A",
-        DnsRecord::AAAA { .. } => "AAAA",
-        DnsRecord::CNAME { .. } => "CNAME",
-        DnsRecord::NS { .. } => "NS",
-        DnsRecord::MX { .. } => "MX",
-        DnsRecord::TXT { .. } => "TXT",
-        DnsRecord::SRV { .. } => "SRV",
+        DnsRecord::A(..) => "A",
+        DnsRecord::AAAA(..) => "AAAA",
+        DnsRecord::CNAME(..) => "CNAME",
+        DnsRecord::NS(..) => "NS",
+        DnsRecord::MX(..) => "MX",
+        DnsRecord::TXT(..) => "TXT",
+        DnsRecord::SRV(..) => "SRV",
+        DnsRecord::TLSA(..) => "TLSA",
+        DnsRecord::CAA(..) => "CAA",
     }
 }
 
@@ -231,42 +233,31 @@ fn record_type_to_str(t: DnsRecordType) -> &'static str {
         DnsRecordType::MX => "MX",
         DnsRecordType::TXT => "TXT",
         DnsRecordType::SRV => "SRV",
+        DnsRecordType::TLSA => "TLSA",
+        DnsRecordType::CAA => "CAA",
     }
 }
 
 fn record_content_and_priority(record: &DnsRecord) -> (String, Option<u16>) {
     match record {
-        DnsRecord::A { content } => (content.to_string(), None),
-        DnsRecord::AAAA { content } => (content.to_string(), None),
-        DnsRecord::CNAME { content } => (content.clone(), None),
-        DnsRecord::NS { content } => (content.clone(), None),
-        DnsRecord::MX { content, priority } => (content.clone(), Some(*priority)),
-        DnsRecord::TXT { content } => (content.clone(), None),
-        DnsRecord::SRV {
-            content,
-            priority,
-            weight,
-            port,
-        } => (format!("{weight} {port} {content}"), Some(*priority)),
+        DnsRecord::A(content) => (content.to_string(), None),
+        DnsRecord::AAAA(content) => (content.to_string(), None),
+        DnsRecord::CNAME(content) => (content.clone(), None),
+        DnsRecord::NS(content) => (content.clone(), None),
+        DnsRecord::MX(mx) => (mx.exchange.clone(), Some(mx.priority)),
+        DnsRecord::TXT(content) => (content.clone(), None),
+        DnsRecord::SRV(srv) => (
+            format!("{} {} {}", srv.weight, srv.port, srv.target),
+            Some(srv.priority),
+        ),
+        DnsRecord::TLSA(value) => (value.to_string(), None),
+        DnsRecord::CAA(caa) => (caa.to_string(), None),
     }
 }
 
 impl CreateRecordParams {
     fn from_record(record: &DnsRecord, name: &str, ttl: u32) -> Self {
-        let (content, priority) = match record {
-            DnsRecord::A { content } => (content.to_string(), None),
-            DnsRecord::AAAA { content } => (content.to_string(), None),
-            DnsRecord::CNAME { content } => (content.clone(), None),
-            DnsRecord::NS { content } => (content.clone(), None),
-            DnsRecord::MX { content, priority } => (content.clone(), Some(*priority)),
-            DnsRecord::TXT { content } => (content.clone(), None),
-            DnsRecord::SRV {
-                content,
-                priority,
-                weight,
-                port,
-            } => (format!("{weight} {port} {content}"), Some(*priority)),
-        };
+        let (content, priority) = record_content_and_priority(record);
         CreateRecordParams {
             name: name.to_string(),
             record_type: record_type_str(record).to_string(),

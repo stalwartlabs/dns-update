@@ -9,7 +9,9 @@
  * except according to those terms.
  */
 
-use crate::{http::HttpClientBuilder, strip_origin_from_name, DnsRecord, Error, IntoFqdn};
+use crate::{
+    http::HttpClientBuilder, utils::strip_origin_from_name, DnsRecord, Error, IntoFqdn,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     net::{Ipv4Addr, Ipv6Addr},
@@ -186,7 +188,7 @@ impl PorkBunProvider {
                 "{endpoint}/dns/deleteByNameType/{domain}/{type}/{subdomain}",
                 endpoint = self.endpoint,
                 domain = domain,
-                type = record_type.to_string(),
+                type = record_type,
                 subdomain = subdomain,
             ))
             .with_body(AuthParams {
@@ -232,23 +234,24 @@ impl RecordData {
 impl From<DnsRecord> for RecordData {
     fn from(record: DnsRecord) -> Self {
         match record {
-            DnsRecord::A { content } => RecordData::A { content },
-            DnsRecord::AAAA { content } => RecordData::AAAA { content },
-            DnsRecord::CNAME { content } => RecordData::CNAME { content },
-            DnsRecord::NS { content } => RecordData::NS { content },
-            DnsRecord::MX { content, priority } => RecordData::MX {
-                content,
-                prio: priority,
+            DnsRecord::A(content) => RecordData::A { content },
+            DnsRecord::AAAA(content) => RecordData::AAAA { content },
+            DnsRecord::CNAME(content) => RecordData::CNAME { content },
+            DnsRecord::NS(content) => RecordData::NS { content },
+            DnsRecord::MX(mx) => RecordData::MX {
+                content: mx.exchange,
+                prio: mx.priority,
             },
-            DnsRecord::TXT { content } => RecordData::TXT { content },
-            DnsRecord::SRV {
-                content,
-                priority,
-                weight,
-                port,
-            } => RecordData::SRV {
-                content: format!("{weight} {port} {content}"),
-                prio: priority,
+            DnsRecord::TXT(content) => RecordData::TXT { content },
+            DnsRecord::SRV(srv) => RecordData::SRV {
+                content: format!("{} {} {}", srv.weight, srv.port, srv.target),
+                prio: srv.priority,
+            },
+            DnsRecord::TLSA(tlsa) => RecordData::TLSA {
+                content: tlsa.to_string(),
+            },
+            DnsRecord::CAA(caa) => RecordData::CAA {
+                content: caa.to_string(),
             },
         }
     }

@@ -9,15 +9,13 @@
  * except according to those terms.
  */
 
+use crate::{DnsRecord, Error, IntoFqdn, http::HttpClientBuilder};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
     net::{Ipv4Addr, Ipv6Addr},
     time::Duration,
 };
-
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-
-use crate::{http::HttpClientBuilder, DnsRecord, Error, IntoFqdn};
 
 #[derive(Clone)]
 pub struct CloudflareProvider {
@@ -70,6 +68,8 @@ pub enum DnsContent {
     MX { content: String, priority: u16 },
     TXT { content: String },
     SRV { content: String },
+    TLSA { content: String },
+    CAA { content: String },
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -239,13 +239,24 @@ impl Query {
 impl From<DnsRecord> for DnsContent {
     fn from(record: DnsRecord) -> Self {
         match record {
-            DnsRecord::A { content } => DnsContent::A { content },
-            DnsRecord::AAAA { content } => DnsContent::AAAA { content },
-            DnsRecord::CNAME { content } => DnsContent::CNAME { content },
-            DnsRecord::NS { content } => DnsContent::NS { content },
-            DnsRecord::MX { content, priority } => DnsContent::MX { content, priority },
-            DnsRecord::TXT { content } => DnsContent::TXT { content },
-            DnsRecord::SRV { content, .. } => DnsContent::SRV { content },
+            DnsRecord::A(content) => DnsContent::A { content },
+            DnsRecord::AAAA(content) => DnsContent::AAAA { content },
+            DnsRecord::CNAME(content) => DnsContent::CNAME { content },
+            DnsRecord::NS(content) => DnsContent::NS { content },
+            DnsRecord::MX(mx) => DnsContent::MX {
+                content: mx.exchange,
+                priority: mx.priority,
+            },
+            DnsRecord::TXT(content) => DnsContent::TXT { content },
+            DnsRecord::SRV(srv) => DnsContent::SRV {
+                content: srv.target,
+            },
+            DnsRecord::TLSA(tlsa) => DnsContent::TLSA {
+                content: tlsa.to_string(),
+            },
+            DnsRecord::CAA(caa) => DnsContent::CAA {
+                content: caa.to_string(),
+            },
         }
     }
 }

@@ -9,11 +9,11 @@
  * except according to those terms.
  */
 
-use std::time::Duration;
-
+use crate::{
+    DnsRecord, DnsRecordType, IntoFqdn, http::HttpClientBuilder, utils::strip_origin_from_name,
+};
 use serde::{Deserialize, Serialize};
-
-use crate::{http::HttpClientBuilder, strip_origin_from_name, DnsRecord, DnsRecordType, IntoFqdn};
+use std::time::Duration;
 
 pub struct DesecDnsRecordRepresentation {
     pub record_type: String,
@@ -165,38 +165,41 @@ impl DesecProvider {
 impl From<DnsRecord> for DesecDnsRecordRepresentation {
     fn from(record: DnsRecord) -> Self {
         match record {
-            DnsRecord::A { content } => DesecDnsRecordRepresentation {
+            DnsRecord::A(content) => DesecDnsRecordRepresentation {
                 record_type: "A".to_string(),
                 content: content.to_string(),
             },
-            DnsRecord::AAAA { content } => DesecDnsRecordRepresentation {
+            DnsRecord::AAAA(content) => DesecDnsRecordRepresentation {
                 record_type: "AAAA".to_string(),
                 content: content.to_string(),
             },
-            DnsRecord::CNAME { content } => DesecDnsRecordRepresentation {
+            DnsRecord::CNAME(content) => DesecDnsRecordRepresentation {
                 record_type: "CNAME".to_string(),
                 content,
             },
-            DnsRecord::NS { content } => DesecDnsRecordRepresentation {
+            DnsRecord::NS(content) => DesecDnsRecordRepresentation {
                 record_type: "NS".to_string(),
                 content,
             },
-            DnsRecord::MX { content, priority } => DesecDnsRecordRepresentation {
+            DnsRecord::MX(mx) => DesecDnsRecordRepresentation {
                 record_type: "MX".to_string(),
-                content: format!("{priority} {content}"),
+                content: mx.to_string(),
             },
-            DnsRecord::TXT { content } => DesecDnsRecordRepresentation {
+            DnsRecord::TXT(content) => DesecDnsRecordRepresentation {
                 record_type: "TXT".to_string(),
                 content: format!("\"{content}\""),
             },
-            DnsRecord::SRV {
-                content,
-                priority,
-                weight,
-                port,
-            } => DesecDnsRecordRepresentation {
+            DnsRecord::SRV(srv) => DesecDnsRecordRepresentation {
                 record_type: "SRV".to_string(),
-                content: format!("{priority} {weight} {port} {content}"),
+                content: srv.to_string(),
+            },
+            DnsRecord::TLSA(tlsa) => DesecDnsRecordRepresentation {
+                record_type: "TLSA".to_string(),
+                content: tlsa.to_string(),
+            },
+            DnsRecord::CAA(caa) => DesecDnsRecordRepresentation {
+                record_type: "CAA".to_string(),
+                content: caa.to_string(),
             },
         }
     }

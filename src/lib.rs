@@ -1,5 +1,4 @@
 #![doc = include_str!("../README.md")]
-use core::fmt;
 /*
  * Copyright Stalwart Labs LLC See the COPYING
  * file at the top-level directory of this distribution.
@@ -10,33 +9,27 @@ use core::fmt;
  * option. This file may not be copied, modified, or distributed
  * except according to those terms.
  */
+
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use providers::ovh::OvhProvider;
+
+pub use hickory_client::proto::dnssec;
+use providers::{
+    bunny::BunnyProvider, cloudflare::CloudflareProvider, desec::DesecProvider,
+    digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider, porkbun::PorkBunProvider,
+    rfc2136::Rfc2136Provider,
+};
 use std::{
     borrow::Cow,
-    fmt::{Display, Formatter},
     net::{Ipv4Addr, Ipv6Addr},
-    str::FromStr,
-    time::Duration,
-};
-
-#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-use hickory_client::proto::dnssec::SigningKey;
-
-#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-use providers::ovh::{OvhEndpoint, OvhProvider};
-use providers::{
-    bunny::BunnyProvider,
-    cloudflare::CloudflareProvider,
-    desec::DesecProvider,
-    digitalocean::DigitalOceanProvider,
-    dnsimple::DNSimpleProvider,
-    porkbun::PorkBunProvider,
-    rfc2136::{DnsAddress, Rfc2136Provider},
 };
 
 pub mod crypto;
 pub mod http;
 pub mod providers;
 pub mod tests;
+pub mod update;
+pub mod utils;
 
 #[derive(Debug)]
 pub enum Error {
@@ -52,7 +45,7 @@ pub enum Error {
 }
 
 /// A DNS record type.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum DnsRecordType {
     A,
     AAAA,
@@ -61,35 +54,97 @@ pub enum DnsRecordType {
     MX,
     TXT,
     SRV,
+    TLSA,
+    CAA,
 }
 
 /// A DNS record type with a value.
+#[derive(Clone, Debug)]
 pub enum DnsRecord {
-    A {
-        content: Ipv4Addr,
+    A(Ipv4Addr),
+    AAAA(Ipv6Addr),
+    CNAME(String),
+    NS(String),
+    MX(MXRecord),
+    TXT(String),
+    SRV(SRVRecord),
+    TLSA(TLSARecord),
+    CAA(CAARecord),
+}
+
+// An MX record, which consists of an exchange string and a priority.
+#[derive(Clone, Debug)]
+
+pub struct MXRecord {
+    pub exchange: String,
+    pub priority: u16,
+}
+
+// A SRV record, which consists of a target string, priority, weight, and port.
+#[derive(Clone, Debug)]
+pub struct SRVRecord {
+    pub target: String,
+    pub priority: u16,
+    pub weight: u16,
+    pub port: u16,
+}
+
+// A TLSA record, which consists of a certificate usage, selector, matching type, and certificate data.
+#[derive(Clone, Debug)]
+pub struct TLSARecord {
+    pub cert_usage: TlsaCertUsage,
+    pub selector: TlsaSelector,
+    pub matching: TlsaMatching,
+    pub cert_data: Vec<u8>,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum TlsaCertUsage {
+    PkixTa,
+    PkixEe,
+    DaneTa,
+    DaneEe,
+    Private,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum TlsaSelector {
+    Full,
+    Spki,
+    Private,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum TlsaMatching {
+    Raw,
+    Sha256,
+    Sha512,
+    Private,
+}
+
+// A CAA record, which can be either an Issue, IssueWild, or Iodef record.
+#[derive(Clone, Debug)]
+pub enum CAARecord {
+    Issue {
+        issuer_critical: bool,
+        name: Option<String>,
+        options: Vec<KeyValue>,
     },
-    AAAA {
-        content: Ipv6Addr,
+    IssueWild {
+        issuer_critical: bool,
+        name: Option<String>,
+        options: Vec<KeyValue>,
     },
-    CNAME {
-        content: String,
+    Iodef {
+        issuer_critical: bool,
+        url: String,
     },
-    NS {
-        content: String,
-    },
-    MX {
-        content: String,
-        priority: u16,
-    },
-    TXT {
-        content: String,
-    },
-    SRV {
-        content: String,
-        priority: u16,
-        weight: u16,
-        port: u16,
-    },
+}
+
+#[derive(Clone, Debug)]
+pub struct KeyValue {
+    pub key: String,
+    pub value: String,
 }
 
 /// A TSIG algorithm.
@@ -134,284 +189,4 @@ pub enum DnsUpdater {
 pub trait IntoFqdn<'x> {
     fn into_fqdn(self) -> Cow<'x, str>;
     fn into_name(self) -> Cow<'x, str>;
-}
-
-impl DnsUpdater {
-    /// Create a new DNS updater using the RFC 2136 protocol and TSIG authentication.
-    pub fn new_rfc2136_tsig(
-        addr: impl TryInto<DnsAddress>,
-        key_name: impl AsRef<str>,
-        key: impl Into<Vec<u8>>,
-        algorithm: TsigAlgorithm,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Rfc2136(Rfc2136Provider::new_tsig(
-            addr,
-            key_name,
-            key,
-            algorithm.into(),
-        )?))
-    }
-
-    /// Create a new DNS updater using the RFC 2136 protocol and SIG(0) authentication.
-    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-    pub fn new_rfc2136_sig0(
-        addr: impl TryInto<DnsAddress>,
-        signer_name: impl AsRef<str>,
-        key: Box<dyn SigningKey>,
-        public_key: impl Into<Vec<u8>>,
-        algorithm: Algorithm,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Rfc2136(Rfc2136Provider::new_sig0(
-            addr,
-            signer_name,
-            key,
-            public_key,
-            algorithm.into(),
-        )?))
-    }
-
-    /// Create a new DNS updater using the Cloudflare API.
-    pub fn new_cloudflare(
-        secret: impl AsRef<str>,
-        email: Option<impl AsRef<str>>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Cloudflare(CloudflareProvider::new(
-            secret, email, timeout,
-        )?))
-    }
-
-    /// Create a new DNS updater using the Cloudflare API.
-    pub fn new_digitalocean(
-        auth_token: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::DigitalOcean(DigitalOceanProvider::new(
-            auth_token, timeout,
-        )))
-    }
-
-    /// Create a new DNS updater using the Desec.io API.
-    pub fn new_desec(
-        auth_token: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Desec(DesecProvider::new(auth_token, timeout)))
-    }
-
-    /// Create a new DNS updater using the OVH API.
-    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-    pub fn new_ovh(
-        application_key: impl AsRef<str>,
-        application_secret: impl AsRef<str>,
-        consumer_key: impl AsRef<str>,
-        endpoint: OvhEndpoint,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Ovh(OvhProvider::new(
-            application_key,
-            application_secret,
-            consumer_key,
-            endpoint,
-            timeout,
-        )?))
-    }
-
-    pub fn new_bunny(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
-        Ok(DnsUpdater::Bunny(BunnyProvider::new(api_key, timeout)?))
-    }
-
-    pub fn new_porkbun(
-        api_key: impl AsRef<str>,
-        secret_api_key: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Porkbun(PorkBunProvider::new(
-            api_key,
-            secret_api_key,
-            timeout,
-        )))
-    }
-
-    /// Create a new DNS updater using the DNSimple API.
-    pub fn new_dnsimple(
-        auth_token: impl AsRef<str>,
-        account_id: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::DNSimple(DNSimpleProvider::new(
-            auth_token,
-            account_id,
-            timeout,
-        )))
-    }
-
-    /// Create a new DNS record.
-    pub async fn create(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        match self {
-            DnsUpdater::Rfc2136(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::DNSimple(provider) => provider.create(name, record, ttl, origin).await,
-        }
-    }
-
-    /// Update an existing DNS record.
-    pub async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        match self {
-            DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::DNSimple(provider) => provider.update(name, record, ttl, origin).await,
-        }
-    }
-
-    /// Delete an existing DNS record.
-    pub async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
-        record: DnsRecordType,
-    ) -> crate::Result<()> {
-        match self {
-            DnsUpdater::Rfc2136(provider) => provider.delete(name, origin).await,
-            DnsUpdater::Cloudflare(provider) => provider.delete(name, origin).await,
-            DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin).await,
-            DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
-        }
-    }
-}
-
-impl<'x> IntoFqdn<'x> for &'x str {
-    fn into_fqdn(self) -> Cow<'x, str> {
-        if self.ends_with('.') {
-            Cow::Borrowed(self)
-        } else {
-            Cow::Owned(format!("{}.", self))
-        }
-    }
-
-    fn into_name(self) -> Cow<'x, str> {
-        if let Some(name) = self.strip_suffix('.') {
-            Cow::Borrowed(name)
-        } else {
-            Cow::Borrowed(self)
-        }
-    }
-}
-
-impl<'x> IntoFqdn<'x> for &'x String {
-    fn into_fqdn(self) -> Cow<'x, str> {
-        self.as_str().into_fqdn()
-    }
-
-    fn into_name(self) -> Cow<'x, str> {
-        self.as_str().into_name()
-    }
-}
-
-impl<'x> IntoFqdn<'x> for String {
-    fn into_fqdn(self) -> Cow<'x, str> {
-        if self.ends_with('.') {
-            Cow::Owned(self)
-        } else {
-            Cow::Owned(format!("{}.", self))
-        }
-    }
-
-    fn into_name(self) -> Cow<'x, str> {
-        if let Some(name) = self.strip_suffix('.') {
-            Cow::Owned(name.to_string())
-        } else {
-            Cow::Owned(self)
-        }
-    }
-}
-
-/// Strip `name` from `origin`, return `return_if_equal` if `name` is the same
-/// as `origin`, or  `@` if `None` given.
-pub fn strip_origin_from_name(name: &str, origin: &str, return_if_equal: Option<&str>) -> String {
-    let name = name.trim_end_matches('.');
-    let origin = origin.trim_end_matches('.');
-
-    if name == origin {
-        return return_if_equal.unwrap_or("@").to_string();
-    }
-
-    if name.ends_with(&format!(".{}", origin)) {
-        name[..name.len() - origin.len() - 1].to_string()
-    } else {
-        name.to_string()
-    }
-}
-
-impl FromStr for TsigAlgorithm {
-    type Err = ();
-
-    fn from_str(s: &str) -> std::prelude::v1::Result<Self, Self::Err> {
-        match s {
-            "hmac-md5" => Ok(TsigAlgorithm::HmacMd5),
-            "gss" => Ok(TsigAlgorithm::Gss),
-            "hmac-sha1" => Ok(TsigAlgorithm::HmacSha1),
-            "hmac-sha224" => Ok(TsigAlgorithm::HmacSha224),
-            "hmac-sha256" => Ok(TsigAlgorithm::HmacSha256),
-            "hmac-sha256-128" => Ok(TsigAlgorithm::HmacSha256_128),
-            "hmac-sha384" => Ok(TsigAlgorithm::HmacSha384),
-            "hmac-sha384-192" => Ok(TsigAlgorithm::HmacSha384_192),
-            "hmac-sha512" => Ok(TsigAlgorithm::HmacSha512),
-            "hmac-sha512-256" => Ok(TsigAlgorithm::HmacSha512_256),
-            _ => Err(()),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Protocol(e) => write!(f, "Protocol error: {}", e),
-            Error::Parse(e) => write!(f, "Parse error: {}", e),
-            Error::Client(e) => write!(f, "Client error: {}", e),
-            Error::Response(e) => write!(f, "Response error: {}", e),
-            Error::Api(e) => write!(f, "API error: {}", e),
-            Error::Serialize(e) => write!(f, "Serialize error: {}", e),
-            Error::Unauthorized => write!(f, "Unauthorized"),
-            Error::NotFound => write!(f, "Not found"),
-            Error::BadRequest => write!(f, "Bad request"),
-        }
-    }
-}
-
-impl Display for DnsRecordType {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
 }

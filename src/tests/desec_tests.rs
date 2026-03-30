@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::providers::desec::DesecDnsRecordRepresentation;
-    use crate::{providers::desec::DesecProvider, DnsRecord, DnsRecordType, Error};
+    use crate::{providers::desec::DesecProvider, DnsRecord, DnsRecordType, Error, MXRecord, SRVRecord};
     use serde_json::json;
     use std::time::Duration;
 
@@ -44,9 +44,7 @@ mod tests {
         let result = provider
             .create(
                 "test.example.com",
-                DnsRecord::A {
-                    content: "1.1.1.1".parse().unwrap(),
-                },
+                DnsRecord::A("1.1.1.1".parse().unwrap()),
                 3600,
                 "example.com",
             )
@@ -91,10 +89,10 @@ mod tests {
         let result = provider
             .create(
                 "test.example.com",
-                DnsRecord::MX {
+                DnsRecord::MX(MXRecord {
+                    exchange: "mail.example.com".to_string(),
                     priority: 10,
-                    content: "mail.example.com".to_string(),
-                },
+                }),
                 3600,
                 "example.com",
             )
@@ -128,9 +126,7 @@ mod tests {
         let result = provider
             .create(
                 "test.example.com",
-                DnsRecord::A {
-                    content: "1.1.1.1".parse().unwrap(),
-                },
+                DnsRecord::A("1.1.1.1".parse().unwrap()),
                 3600,
                 "example.com",
             )
@@ -173,9 +169,7 @@ mod tests {
         let result = provider
             .update(
                 "test",
-                DnsRecord::AAAA {
-                    content: "2001:db8::1".parse().unwrap(),
-                },
+                DnsRecord::AAAA("2001:db8::1".parse().unwrap()),
                 3600,
                 "example.com",
             )
@@ -228,9 +222,7 @@ mod tests {
         let creation_result = provider
             .create(
                 domain,
-                DnsRecord::A {
-                    content: "1.1.1.1".parse().unwrap(),
-                },
+                DnsRecord::A("1.1.1.1".parse().unwrap()),
                 3600,
                 origin,
             )
@@ -242,9 +234,7 @@ mod tests {
         let update_result = provider
             .update(
                 domain,
-                DnsRecord::A {
-                    content: "2.2.2.2".parse().unwrap(),
-                },
+                DnsRecord::A("2.2.2.2".parse().unwrap()),
                 3600,
                 origin,
             )
@@ -260,41 +250,35 @@ mod tests {
 
     #[test]
     fn test_into_desec_record() {
-        let record = DnsRecord::A {
-            content: "1.1.1.1".parse().unwrap(),
-        };
+        let record = DnsRecord::A("1.1.1.1".parse().unwrap());
         let desec_record: DesecDnsRecordRepresentation = record.into();
         assert_eq!(desec_record.content, "1.1.1.1");
         assert_eq!(desec_record.record_type, "A");
 
-        let record = DnsRecord::AAAA {
-            content: "2001:db8::1".parse().unwrap(),
-        };
+        let record = DnsRecord::AAAA("2001:db8::1".parse().unwrap());
         let desec_record: DesecDnsRecordRepresentation = record.into();
         assert_eq!(desec_record.content, "2001:db8::1");
         assert_eq!(desec_record.record_type, "AAAA");
 
-        let record = DnsRecord::TXT {
-            content: "test".to_string(),
-        };
+        let record = DnsRecord::TXT("test".to_string());
         let desec_record: DesecDnsRecordRepresentation = record.into();
         assert_eq!(desec_record.content, "\"test\"");
         assert_eq!(desec_record.record_type, "TXT");
 
-        let record = DnsRecord::MX {
+        let record = DnsRecord::MX(MXRecord {
+            exchange: "mail.example.com".to_string(),
             priority: 10,
-            content: "mail.example.com".to_string(),
-        };
+        });
         let desec_record: DesecDnsRecordRepresentation = record.into();
         assert_eq!(desec_record.content, "10 mail.example.com");
         assert_eq!(desec_record.record_type, "MX");
 
-        let record = DnsRecord::SRV {
+        let record = DnsRecord::SRV(SRVRecord {
+            target: "sip.example.com".to_string(),
             priority: 10,
             weight: 20,
             port: 443,
-            content: "sip.example.com".to_string(),
-        };
+        });
         let desec_record: DesecDnsRecordRepresentation = record.into();
         assert_eq!(desec_record.content, "10 20 443 sip.example.com");
         assert_eq!(desec_record.record_type, "SRV");

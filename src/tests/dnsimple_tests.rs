@@ -54,9 +54,7 @@ mod tests {
         let result = provider
             .create(
                 "test.example.com",
-                DnsRecord::A {
-                    content: "1.1.1.1".parse().unwrap(),
-                },
+                DnsRecord::A("1.1.1.1".parse().unwrap()),
                 3600,
                 "example.com",
             )
@@ -96,9 +94,7 @@ mod tests {
         let result = provider
             .update(
                 "www.example.com",
-                DnsRecord::AAAA {
-                    content: "2001:db8::2".parse().unwrap(),
-                },
+                DnsRecord::AAAA("2001:db8::2".parse().unwrap()),
                 3600,
                 "example.com",
             )

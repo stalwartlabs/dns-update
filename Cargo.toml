@@ -1,8 +1,8 @@
 [package]
 name = "dns-update"
 description = "Dynamic DNS update (RFC 2136 and cloud) library for Rust"
-version = "0.1.6"
-edition = "2021"
+version = "0.2.0"
+edition = "2024"
 authors = [ "Stalwart Labs <hello@stalw.art>"]
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/stalwartlabs/dns-update"

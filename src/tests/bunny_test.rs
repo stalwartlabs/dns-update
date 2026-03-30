@@ -28,9 +28,7 @@ mod tests {
         let create_result = updater
             .create(
                 &domain,
-                DnsRecord::A {
-                    content: [1, 1, 1, 1].into(),
-                },
+                DnsRecord::A([1, 1, 1, 1].into()),
                 300,
                 &origin,
             )
@@ -40,9 +38,7 @@ mod tests {
         let update_result = updater
             .update(
                 &domain,
-                DnsRecord::A {
-                    content: [8, 8, 8, 8].into(),
-                },
+                DnsRecord::A([8, 8, 8, 8].into()),
                 300,
                 &origin,
             )

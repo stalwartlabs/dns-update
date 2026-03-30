@@ -13,7 +13,7 @@
 mod tests {
     use crate::{
         providers::ovh::{OvhEndpoint, OvhProvider, OvhRecordFormat},
-        DnsRecord, DnsRecordType, DnsUpdater, Error,
+        DnsRecord, DnsRecordType, DnsUpdater, Error, MXRecord, SRVRecord,
     };
     use serde_json::json;
     use std::time::Duration;
@@ -92,55 +92,45 @@ mod tests {
 
     #[test]
     fn test_ovh_record_format_from_dns_record() {
-        let record = DnsRecord::A {
-            content: "1.1.1.1".parse().unwrap(),
-        };
+        let record = DnsRecord::A("1.1.1.1".parse().unwrap());
         let ovh_record: OvhRecordFormat = (&record).into();
         assert_eq!(ovh_record.field_type, "A");
         assert_eq!(ovh_record.target, "1.1.1.1");
 
-        let record = DnsRecord::AAAA {
-            content: "2001:db8::1".parse().unwrap(),
-        };
+        let record = DnsRecord::AAAA("2001:db8::1".parse().unwrap());
         let ovh_record: OvhRecordFormat = (&record).into();
         assert_eq!(ovh_record.field_type, "AAAA");
         assert_eq!(ovh_record.target, "2001:db8::1");
 
-        let record = DnsRecord::CNAME {
-            content: "alias.example.com".to_string(),
-        };
+        let record = DnsRecord::CNAME("alias.example.com".to_string());
         let ovh_record: OvhRecordFormat = (&record).into();
         assert_eq!(ovh_record.field_type, "CNAME");
         assert_eq!(ovh_record.target, "alias.example.com");
 
-        let record = DnsRecord::MX {
+        let record = DnsRecord::MX(MXRecord {
+            exchange: "mail.example.com".to_string(),
             priority: 10,
-            content: "mail.example.com".to_string(),
-        };
+        });
         let ovh_record: OvhRecordFormat = (&record).into();
         assert_eq!(ovh_record.field_type, "MX");
         assert_eq!(ovh_record.target, "10 mail.example.com");
 
-        let record = DnsRecord::TXT {
-            content: "v=spf1 include:_spf.example.com ~all".to_string(),
-        };
+        let record = DnsRecord::TXT("v=spf1 include:_spf.example.com ~all".to_string());
         let ovh_record: OvhRecordFormat = (&record).into();
         assert_eq!(ovh_record.field_type, "TXT");
         assert_eq!(ovh_record.target, "v=spf1 include:_spf.example.com ~all");
 
-        let record = DnsRecord::SRV {
+        let record = DnsRecord::SRV(SRVRecord {
+            target: "sip.example.com".to_string(),
             priority: 10,
             weight: 20,
             port: 443,
-            content: "sip.example.com".to_string(),
-        };
+        });
         let ovh_record: OvhRecordFormat = (&record).into();
         assert_eq!(ovh_record.field_type, "SRV");
         assert_eq!(ovh_record.target, "10 20 443 sip.example.com");
 
-        let record = DnsRecord::NS {
-            content: "ns1.example.com".to_string(),
-        };
+        let record = DnsRecord::NS("ns1.example.com".to_string());
         let ovh_record: OvhRecordFormat = (&record).into();
         assert_eq!(ovh_record.field_type, "NS");
         assert_eq!(ovh_record.target, "ns1.example.com");
@@ -187,9 +177,7 @@ mod tests {
         let result = provider
             .create(
                 "test.example.com",
-                DnsRecord::A {
-                    content: "1.1.1.1".parse().unwrap(),
-                },
+                DnsRecord::A("1.1.1.1".parse().unwrap()),
                 3600,
                 "example.com",
             )
@@ -251,9 +239,7 @@ mod tests {
         let result = provider
             .update(
                 "test.example.com",
-                DnsRecord::A {
-                    content: "2.2.2.2".parse().unwrap(),
-                },
+                DnsRecord::A("2.2.2.2".parse().unwrap()),
                 3600,
                 "example.com",
             )
@@ -337,9 +323,7 @@ mod tests {
         let result = provider
             .create(
                 "test.example.com",
-                DnsRecord::A {
-                    content: "1.1.1.1".parse().unwrap(),
-                },
+                DnsRecord::A("1.1.1.1".parse().unwrap()),
                 3600,
                 "example.com",
             )
@@ -378,9 +362,7 @@ mod tests {
         let result = provider
             .update(
                 "nonexistent.example.com",
-                DnsRecord::A {
-                    content: "1.1.1.1".parse().unwrap(),
-                },
+                DnsRecord::A("1.1.1.1".parse().unwrap()),
                 3600,
                 "example.com",
             )
@@ -438,9 +420,7 @@ mod tests {
         let creation_result = updater
             .create(
                 &domain,
-                DnsRecord::A {
-                    content: "1.1.1.1".parse().unwrap(),
-                },
+                DnsRecord::A("1.1.1.1".parse().unwrap()),
                 3600,
                 &origin,
             )
@@ -451,9 +431,7 @@ mod tests {
         let update_result = updater
             .update(
                 &domain,
-                DnsRecord::A {
-                    content: "2.2.2.2".parse().unwrap(),
-                },
+                DnsRecord::A("2.2.2.2".parse().unwrap()),
                 3600,
                 &origin,
             )

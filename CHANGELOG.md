@@ -1,3 +1,10 @@
+dns-update 0.2.0
+================================
+- Bunny provider support (#24)
+- Porkbun provider support (porkbun.com) (#31)
+- DNSimple provider support (#33)
+- update `hickory_client` with feature flag for `ring` and `aws-lc-rs` (#29)
+
 dns-update 0.1.6
 ================================
 - deSec fixes.

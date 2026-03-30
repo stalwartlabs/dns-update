@@ -9,25 +9,25 @@
  * except according to those terms.
  */
 
-use std::net::{AddrParseError, SocketAddr};
-use std::sync::Arc;
-
+use crate::{CAARecord, DnsRecord, Error, IntoFqdn, TlsaCertUsage, TlsaMatching, TlsaSelector};
+use hickory_client::ClientError;
 use hickory_client::client::{Client, ClientHandle};
-use hickory_client::proto::dnssec::rdata::tsig::TsigAlgorithm;
+use hickory_client::proto::ProtoError;
 use hickory_client::proto::dnssec::rdata::KEY;
+use hickory_client::proto::dnssec::rdata::tsig::TsigAlgorithm;
 use hickory_client::proto::dnssec::tsig::TSigner;
 use hickory_client::proto::dnssec::{Algorithm, DnsSecError, SigSigner, SigningKey};
 use hickory_client::proto::op::MessageFinalizer;
 use hickory_client::proto::op::ResponseCode;
-use hickory_client::proto::rr::rdata::{A, AAAA, CNAME, MX, NS, SRV, TXT};
+use hickory_client::proto::rr::rdata::caa::KeyValue;
+use hickory_client::proto::rr::rdata::tlsa::{CertUsage, Matching, Selector};
+use hickory_client::proto::rr::rdata::{A, AAAA, CAA, CNAME, MX, NS, SRV, TLSA, TXT};
 use hickory_client::proto::rr::{DNSClass, Name, RData, Record, RecordType};
 use hickory_client::proto::runtime::TokioRuntimeProvider;
 use hickory_client::proto::tcp::TcpClientStream;
 use hickory_client::proto::udp::UdpClientStream;
-use hickory_client::proto::ProtoError;
-use hickory_client::ClientError;
-
-use crate::{DnsRecord, Error, IntoFqdn};
+use std::net::{AddrParseError, SocketAddr};
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Rfc2136Provider {
@@ -184,36 +184,113 @@ impl Rfc2136Provider {
 
 fn convert_record(record: DnsRecord) -> crate::Result<(RecordType, RData)> {
     Ok(match record {
-        DnsRecord::A { content } => (RecordType::A, RData::A(A::from(content))),
-        DnsRecord::AAAA { content } => (RecordType::AAAA, RData::AAAA(AAAA::from(content))),
-        DnsRecord::CNAME { content } => (
+        DnsRecord::A(content) => (RecordType::A, RData::A(A::from(content))),
+        DnsRecord::AAAA(content) => (RecordType::AAAA, RData::AAAA(AAAA::from(content))),
+        DnsRecord::CNAME(content) => (
             RecordType::CNAME,
             RData::CNAME(CNAME(Name::from_str_relaxed(content)?)),
         ),
-        DnsRecord::NS { content } => (
+        DnsRecord::NS(content) => (
             RecordType::NS,
             RData::NS(NS(Name::from_str_relaxed(content)?)),
         ),
-        DnsRecord::MX { content, priority } => (
+        DnsRecord::MX(content) => (
             RecordType::MX,
-            RData::MX(MX::new(priority, Name::from_str_relaxed(content)?)),
-        ),
-        DnsRecord::TXT { content } => (RecordType::TXT, RData::TXT(TXT::new(vec![content]))),
-        DnsRecord::SRV {
-            content,
-            priority,
-            weight,
-            port,
-        } => (
-            RecordType::SRV,
-            RData::SRV(SRV::new(
-                priority,
-                weight,
-                port,
-                Name::from_str_relaxed(content)?,
+            RData::MX(MX::new(
+                content.priority,
+                Name::from_str_relaxed(content.exchange)?,
             )),
         ),
+        DnsRecord::TXT(content) => (RecordType::TXT, RData::TXT(TXT::new(vec![content]))),
+        DnsRecord::SRV(content) => (
+            RecordType::SRV,
+            RData::SRV(SRV::new(
+                content.priority,
+                content.weight,
+                content.port,
+                Name::from_str_relaxed(content.target)?,
+            )),
+        ),
+        DnsRecord::TLSA(content) => (
+            RecordType::TLSA,
+            RData::TLSA(TLSA::new(
+                content.cert_usage.into(),
+                content.selector.into(),
+                content.matching.into(),
+                content.cert_data,
+            )),
+        ),
+        DnsRecord::CAA(caa) => (
+            RecordType::CAA,
+            RData::CAA(match caa {
+                CAARecord::Issue {
+                    issuer_critical,
+                    name,
+                    options,
+                } => CAA::new_issue(
+                    issuer_critical,
+                    name.map(Name::from_str_relaxed).transpose()?,
+                    options
+                        .into_iter()
+                        .map(|kv| KeyValue::new(kv.key, kv.value))
+                        .collect(),
+                ),
+                CAARecord::IssueWild {
+                    issuer_critical,
+                    name,
+                    options,
+                } => CAA::new_issuewild(
+                    issuer_critical,
+                    name.map(Name::from_str_relaxed).transpose()?,
+                    options
+                        .into_iter()
+                        .map(|kv| KeyValue::new(kv.key, kv.value))
+                        .collect(),
+                ),
+                CAARecord::Iodef {
+                    issuer_critical,
+                    url,
+                } => CAA::new_iodef(
+                    issuer_critical,
+                    url.parse()
+                        .map_err(|_| Error::Parse("Invalid URL in CAA record".to_string()))?,
+                ),
+            }),
+        ),
     })
+}
+
+impl From<TlsaCertUsage> for CertUsage {
+    fn from(usage: TlsaCertUsage) -> Self {
+        match usage {
+            TlsaCertUsage::PkixTa => CertUsage::PkixTa,
+            TlsaCertUsage::PkixEe => CertUsage::PkixEe,
+            TlsaCertUsage::DaneTa => CertUsage::DaneTa,
+            TlsaCertUsage::DaneEe => CertUsage::DaneEe,
+            TlsaCertUsage::Private => CertUsage::Private,
+        }
+    }
+}
+
+impl From<TlsaMatching> for Matching {
+    fn from(matching: TlsaMatching) -> Self {
+        match matching {
+            TlsaMatching::Raw => Matching::Raw,
+            TlsaMatching::Sha256 => Matching::Sha256,
+            TlsaMatching::Sha512 => Matching::Sha512,
+            TlsaMatching::Private => Matching::Private,
+        }
+    }
+}
+
+impl From<TlsaSelector> for Selector {
+    fn from(selector: TlsaSelector) -> Self {
+        match selector {
+            TlsaSelector::Full => Selector::Full,
+            TlsaSelector::Spki => Selector::Spki,
+            TlsaSelector::Private => Selector::Private,
+        }
+    }
 }
 
 impl TryFrom<&str> for DnsAddress {
