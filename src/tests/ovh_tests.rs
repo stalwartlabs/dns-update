@@ -13,7 +13,8 @@
 mod tests {
     use crate::{
         providers::ovh::{OvhEndpoint, OvhProvider, OvhRecordFormat},
-        DnsRecord, DnsRecordType, DnsUpdater, Error, MXRecord, SRVRecord,
+        CAARecord, DnsRecord, DnsRecordType, DnsUpdater, Error, MXRecord, SRVRecord,
+        TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
     };
     use serde_json::json;
     use std::time::Duration;
@@ -439,8 +440,57 @@ mod tests {
 
         assert!(update_result.is_ok());
 
-        let deletion_result = updater.delete(domain, origin, DnsRecordType::A).await;
+        let deletion_result = updater
+            .delete(&domain, &origin, DnsRecordType::A)
+            .await;
 
         assert!(deletion_result.is_ok());
+
+        let tlsa_result = updater
+            .create(
+                &domain,
+                DnsRecord::TLSA(TLSARecord {
+                    cert_usage: TlsaCertUsage::DaneEe,
+                    selector: TlsaSelector::Spki,
+                    matching: TlsaMatching::Sha256,
+                    cert_data: vec![
+                        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4,
+                        0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b,
+                        0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
+                    ],
+                }),
+                3600,
+                &origin,
+            )
+            .await;
+
+        assert!(tlsa_result.is_ok());
+
+        let tlsa_deletion_result = updater
+            .delete(&domain, &origin, DnsRecordType::TLSA)
+            .await;
+
+        assert!(tlsa_deletion_result.is_ok());
+
+        let caa_result = updater
+            .create(
+                &domain,
+                DnsRecord::CAA(CAARecord::Issue {
+                    issuer_critical: false,
+                    name: Some("letsencrypt.org".to_string()),
+                    options: vec![],
+                }),
+                3600,
+                &origin,
+            )
+            .await;
+
+        assert!(caa_result.is_ok());
+
+        let caa_deletion_result = updater
+            .delete(&domain, &origin, DnsRecordType::CAA)
+            .await;
+
+        assert!(caa_deletion_result.is_ok());
     }
 }
