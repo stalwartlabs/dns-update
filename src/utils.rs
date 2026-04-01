@@ -10,8 +10,8 @@
  */
 
 use crate::{
-    CAARecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord, TLSARecord,
-    TlsaCertUsage, TlsaMatching, TlsaSelector, TsigAlgorithm,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, TsigAlgorithm,
 };
 use std::{
     borrow::Cow,
@@ -184,6 +184,22 @@ impl Display for SRVRecord {
             "{} {} {} {}",
             self.priority, self.weight, self.port, self.target
         )
+    }
+}
+
+impl DnsRecord {
+    pub fn as_type(&self) -> DnsRecordType {
+        match self {
+            DnsRecord::A { .. } => DnsRecordType::A,
+            DnsRecord::AAAA { .. } => DnsRecordType::AAAA,
+            DnsRecord::CNAME { .. } => DnsRecordType::CNAME,
+            DnsRecord::NS { .. } => DnsRecordType::NS,
+            DnsRecord::MX { .. } => DnsRecordType::MX,
+            DnsRecord::TXT { .. } => DnsRecordType::TXT,
+            DnsRecord::SRV { .. } => DnsRecordType::SRV,
+            DnsRecord::TLSA { .. } => DnsRecordType::TLSA,
+            DnsRecord::CAA { .. } => DnsRecordType::CAA,
+        }
     }
 }
 
