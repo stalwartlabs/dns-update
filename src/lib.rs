@@ -24,6 +24,7 @@ use std::{
     net::{Ipv4Addr, Ipv6Addr},
 };
 
+pub mod bind;
 pub mod crypto;
 pub mod http;
 pub mod providers;
@@ -56,6 +57,13 @@ pub enum DnsRecordType {
     SRV,
     TLSA,
     CAA,
+}
+
+/// A named DNS record, which consists of a name and a DNS record.
+#[derive(Clone, Debug)]
+pub struct NamedDnsRecord {
+    pub name: String,
+    pub record: DnsRecord,
 }
 
 /// A DNS record type with a value.

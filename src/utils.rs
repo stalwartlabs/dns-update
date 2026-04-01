@@ -128,7 +128,7 @@ impl fmt::Display for CAARecord {
                     f.write_str(name)?;
                 }
                 for opt in options {
-                    write!(f, "; {}", opt)?;
+                    write!(f, ";{}", opt)?;
                 }
                 f.write_str("\"")?;
             }
@@ -148,7 +148,7 @@ impl fmt::Display for CAARecord {
                     f.write_str(name)?;
                 }
                 for opt in options {
-                    write!(f, "; {}", opt)?;
+                    write!(f, ";{}", opt)?;
                 }
                 f.write_str("\"")?;
             }
