@@ -38,14 +38,17 @@ test_provider = []
 tokio = { version = "1.51", features = ["rt", "net"] }
 hickory-client = { version = "0.25", default-features = false }
 serde = { version = "1.0.197", features = ["derive"] }
-serde_json = "1.0.116"
+serde_json = { version = "1.0.116", default-features = false, features = ["std"] }
 reqwest = { version = "0.13", default-features = false, features = ["http2", "gzip", "deflate"]}
-serde_urlencoded = "0.7.1"
+serde_urlencoded = { version = "0.7.1", default-features = false }
 ring = { version = "0.17", optional = true }
 aws-lc-rs = { version = "1.16", optional = true }
 rustls = { version = "0.23", default-features = false, optional = true }
+quick-xml = { version = "0.36", features = ["serialize"] }
+chrono = { version = "0.4" , default-features = false, features = ["std", "clock", "now"] }
+hex = { version = "0.4" , default-features = false, features = ["std"] }
 
 [dev-dependencies]
-tokio = { version = "1.51", features = ["full"] }
-mockito = "1.6"
+tokio = { version = "1", features = ["full"] }
+mockito = { version = "1.6" }
 httpmock = { version = "0.8", features = ["https"] }

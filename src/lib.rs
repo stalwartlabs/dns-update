@@ -20,7 +20,7 @@ pub use hickory_client::proto::dnssec;
 use providers::{
     bunny::BunnyProvider, cloudflare::CloudflareProvider, desec::DesecProvider,
     digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider, porkbun::PorkBunProvider,
-    spaceship::SpaceshipProvider, rfc2136::Rfc2136Provider,
+    rfc2136::Rfc2136Provider, route53::Route53Provider, spaceship::SpaceshipProvider,
 };
 use std::{
     borrow::Cow,
@@ -196,10 +196,7 @@ pub enum DnsUpdater {
     Porkbun(PorkBunProvider),
     Spaceship(SpaceshipProvider),
     DNSimple(DNSimpleProvider),
-    #[cfg(feature = "test_provider")]
-    Pebble(PebbleProvider),
-    #[cfg(feature = "test_provider")]
-    InMemory(InMemoryProvider),
+    Route53(Route53Provider),
 }
 
 pub trait IntoFqdn<'x> {

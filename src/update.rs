@@ -36,8 +36,9 @@ use crate::{
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
         porkbun::PorkBunProvider,
-        spaceship::SpaceshipProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
+        route53::Route53Provider,
+        spaceship::SpaceshipProvider,
     },
 };
 use std::time::Duration;
@@ -159,6 +160,9 @@ impl DnsUpdater {
         Ok(DnsUpdater::DNSimple(DNSimpleProvider::new(
             auth_token, account_id, timeout,
         )))
+    }
+    pub fn new_route53(config: crate::providers::route53::Route53Config) -> crate::Result<Self> {
+        Ok(DnsUpdater::Route53(Route53Provider::new(config)))
     }
 
     /// Create a new DNS updater using the Pebble Challenge Test Server.
