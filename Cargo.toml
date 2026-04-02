@@ -32,6 +32,7 @@ aws-lc-rs = [
     "rustls",
     "rustls/aws-lc-rs",
 ]
+test_provider = []
 
 [dependencies]
 tokio = { version = "1", features = ["rt", "net"] }
