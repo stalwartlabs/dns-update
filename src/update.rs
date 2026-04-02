@@ -36,8 +36,8 @@ use crate::{
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
         porkbun::PorkBunProvider,
-        spaceship::SpaceshipProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
+        spaceship::SpaceshipProvider,
     },
 };
 use std::time::Duration;

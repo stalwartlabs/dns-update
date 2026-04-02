@@ -20,7 +20,7 @@ pub use hickory_client::proto::dnssec;
 use providers::{
     bunny::BunnyProvider, cloudflare::CloudflareProvider, desec::DesecProvider,
     digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider, porkbun::PorkBunProvider,
-    spaceship::SpaceshipProvider, rfc2136::Rfc2136Provider,
+    rfc2136::Rfc2136Provider, spaceship::SpaceshipProvider,
 };
 use std::{
     borrow::Cow,

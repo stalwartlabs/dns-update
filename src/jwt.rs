@@ -74,7 +74,7 @@ pub fn create_jwt(sa: &ServiceAccount, scopes: &str) -> Result<String, Box<dyn s
         .decode(pem_content.trim())
         .map_err(|e| format!("Invalid base64 in private key: {}", e))?;
     let key_pair = RsaKeyPair::from_pkcs8(&der_bytes)?;
-    let mut signature = vec![0u8; key_pair.public().modulus_len()];
+    let mut signature = vec![0u8; key_pair.public_modulus_len()];
     let rng = SystemRandom::new();
     key_pair.sign(
         &RSA_PKCS1_SHA256,
