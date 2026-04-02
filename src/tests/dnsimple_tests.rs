@@ -1,28 +1,17 @@
 #[cfg(test)]
 mod tests {
-    use crate::{
-        providers::dnsimple::DNSimpleProvider,
-        DnsRecord, DnsRecordType, DnsUpdater,
-    };
+    use crate::{DnsRecord, DnsRecordType, DnsUpdater, providers::dnsimple::DNSimpleProvider};
     use serde_json::json;
     use std::time::Duration;
 
     fn setup_provider(endpoint: &str) -> DNSimpleProvider {
-        DNSimpleProvider::new(
-            "test_bearer_token",
-            "1010",
-            Some(Duration::from_secs(1)),
-        )
-        .with_endpoint(endpoint)
+        DNSimpleProvider::new("test_bearer_token", "1010", Some(Duration::from_secs(1)))
+            .with_endpoint(endpoint)
     }
 
     #[test]
     fn dns_updater_creation() {
-        let updater = DnsUpdater::new_dnsimple(
-            "test_token",
-            "1010",
-            Some(Duration::from_secs(30)),
-        );
+        let updater = DnsUpdater::new_dnsimple("test_token", "1010", Some(Duration::from_secs(30)));
 
         assert!(updater.is_ok());
         assert!(

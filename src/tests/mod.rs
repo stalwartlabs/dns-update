@@ -16,3 +16,5 @@ pub mod dnsimple_tests;
 pub mod lib_tests;
 pub mod ovh_tests;
 pub mod porkbun_tests;
+#[cfg(test)]
+pub mod route53_tests;

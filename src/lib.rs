@@ -17,7 +17,7 @@ pub use hickory_client::proto::dnssec;
 use providers::{
     bunny::BunnyProvider, cloudflare::CloudflareProvider, desec::DesecProvider,
     digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider, porkbun::PorkBunProvider,
-    rfc2136::Rfc2136Provider,
+    rfc2136::Rfc2136Provider, route53::Route53Provider,
 };
 use std::{
     borrow::Cow,
@@ -192,6 +192,7 @@ pub enum DnsUpdater {
     Bunny(BunnyProvider),
     Porkbun(PorkBunProvider),
     DNSimple(DNSimpleProvider),
+    Route53(Route53Provider),
 }
 
 pub trait IntoFqdn<'x> {

@@ -19,6 +19,7 @@ pub mod dnsimple;
 pub mod ovh;
 pub mod porkbun;
 pub mod rfc2136;
+pub mod route53;
 
 impl DnsRecord {
     pub fn priority(&self) -> Option<u16> {
