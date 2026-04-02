@@ -28,6 +28,7 @@ use crate::{
         dnsimple::DNSimpleProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
+        route53::Route53Provider,
     },
 };
 use std::time::Duration;
@@ -140,6 +141,11 @@ impl DnsUpdater {
         )))
     }
 
+    /// Create a new DNS updater using the AWS Route53 API.
+    pub fn new_route53(config: crate::providers::route53::Route53Config) -> crate::Result<Self> {
+        Ok(DnsUpdater::Route53(Route53Provider::new(config)))
+    }
+
     /// Create a new DNS record.
     pub async fn create(
         &self,
@@ -158,6 +164,7 @@ impl DnsUpdater {
             DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Route53(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -179,6 +186,7 @@ impl DnsUpdater {
             DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Route53(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -199,6 +207,7 @@ impl DnsUpdater {
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
         }
     }
 }
