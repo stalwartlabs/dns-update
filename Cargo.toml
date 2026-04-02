@@ -34,11 +34,13 @@ aws-lc-rs = [
 ]
 
 [dependencies]
+base64 = { version = "0.22.1", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["rt", "net"] }
+hex = { version = "0.4.3", default-features = false, features = ["std"] }
 hickory-client = { version = "0.25", default-features = false }
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0.116"
-reqwest = { version = "0.13", default-features = false, features = ["http2", "gzip", "deflate"]}
+reqwest = { version = "0.13", default-features = false, features = ["http2", "gzip", "deflate", "json"]}
 serde_urlencoded = "0.7.1"
 ring = { version = "0.17", optional = true }
 aws-lc-rs = { version = "1.16", optional = true }

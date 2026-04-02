@@ -11,8 +11,8 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        providers::porkbun::{PorkBunProvider, RecordData},
         DnsRecord, DnsRecordType, DnsUpdater, MXRecord, SRVRecord,
+        providers::porkbun::{PorkBunProvider, RecordData},
     };
     use serde_json::json;
     use std::{
