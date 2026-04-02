@@ -140,6 +140,15 @@ impl DnsUpdater {
         )))
     }
 
+    /// Create a new DNS updater using the Google Cloud DNS API.
+    pub fn new_google_cloud_dns(
+        config: crate::providers::google_cloud_dns::GoogleCloudDnsConfig,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::GoogleCloudDns(
+            crate::providers::google_cloud_dns::GoogleCloudDnsProvider::new(config),
+        ))
+    }
+
     /// Create a new DNS record.
     pub async fn create(
         &self,
@@ -158,6 +167,9 @@ impl DnsUpdater {
             DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::GoogleCloudDns(provider) => {
+                provider.create(name, record, ttl, origin).await
+            }
         }
     }
 
@@ -179,6 +191,9 @@ impl DnsUpdater {
             DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::GoogleCloudDns(provider) => {
+                provider.update(name, record, ttl, origin).await
+            }
         }
     }
 
@@ -199,6 +214,7 @@ impl DnsUpdater {
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
         }
     }
 }

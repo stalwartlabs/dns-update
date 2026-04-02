@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
     use crate::providers::desec::DesecDnsRecordRepresentation;
-    use crate::{providers::desec::DesecProvider, DnsRecord, DnsRecordType, Error, MXRecord, SRVRecord};
+    use crate::{
+        DnsRecord, DnsRecordType, Error, MXRecord, SRVRecord, providers::desec::DesecProvider,
+    };
     use serde_json::json;
     use std::time::Duration;
 

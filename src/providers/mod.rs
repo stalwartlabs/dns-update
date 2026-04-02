@@ -16,6 +16,7 @@ pub mod cloudflare;
 pub mod desec;
 pub mod digitalocean;
 pub mod dnsimple;
+pub mod google_cloud_dns;
 pub mod ovh;
 pub mod porkbun;
 pub mod rfc2136;

@@ -9,7 +9,7 @@
  * except according to those terms.
  */
 
-use crate::{http::HttpClientBuilder, DnsRecord, DnsRecordType, Error, IntoFqdn};
+use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder};
 use serde::{Deserialize, Serialize};
 use std::{
     net::{Ipv4Addr, Ipv6Addr},

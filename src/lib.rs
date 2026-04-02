@@ -27,6 +27,7 @@ use std::{
 pub mod bind;
 pub mod crypto;
 pub mod http;
+pub mod jwt;
 pub mod providers;
 pub mod tests;
 pub mod update;
@@ -192,6 +193,7 @@ pub enum DnsUpdater {
     Bunny(BunnyProvider),
     Porkbun(PorkBunProvider),
     DNSimple(DNSimpleProvider),
+    GoogleCloudDns(providers::google_cloud_dns::GoogleCloudDnsProvider),
 }
 
 pub trait IntoFqdn<'x> {

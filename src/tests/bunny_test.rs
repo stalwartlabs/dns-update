@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::{providers::bunny::BunnyProvider, DnsRecord, DnsUpdater};
+    use crate::{DnsRecord, DnsUpdater, providers::bunny::BunnyProvider};
     use std::time::Duration;
 
     #[tokio::test]
@@ -26,22 +26,12 @@ mod tests {
         let updater = DnsUpdater::new_bunny(api_key, Some(Duration::from_secs(30))).unwrap();
 
         let create_result = updater
-            .create(
-                &domain,
-                DnsRecord::A([1, 1, 1, 1].into()),
-                300,
-                &origin,
-            )
+            .create(&domain, DnsRecord::A([1, 1, 1, 1].into()), 300, &origin)
             .await;
         assert!(create_result.is_ok());
 
         let update_result = updater
-            .update(
-                &domain,
-                DnsRecord::A([8, 8, 8, 8].into()),
-                300,
-                &origin,
-            )
+            .update(&domain, DnsRecord::A([8, 8, 8, 8].into()), 300, &origin)
             .await;
         assert!(update_result.is_ok());
 
