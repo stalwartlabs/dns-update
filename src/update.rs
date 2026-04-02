@@ -18,6 +18,15 @@ use hickory_client::proto::dnssec::SigningKey;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use crate::providers::ovh::{OvhEndpoint, OvhProvider};
 
+#[cfg(feature = "test_provider")]
+use crate::providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
+
+#[cfg(feature = "test_provider")]
+use crate::NamedDnsRecord;
+
+#[cfg(feature = "test_provider")]
+use std::sync::{Arc, Mutex};
+
 use crate::{
     DnsRecord, DnsRecordType, DnsUpdater, IntoFqdn, TsigAlgorithm,
     providers::{
@@ -149,6 +158,18 @@ impl DnsUpdater {
         ))
     }
 
+    /// Create a new DNS updater using the Pebble Challenge Test Server.
+    #[cfg(feature = "test_provider")]
+    pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
+        DnsUpdater::Pebble(PebbleProvider::new(base_url, timeout))
+    }
+
+    /// Create a new DNS updater backed by an in-memory record store.
+    #[cfg(feature = "test_provider")]
+    pub fn new_in_memory(records: Arc<Mutex<Vec<NamedDnsRecord>>>) -> Self {
+        DnsUpdater::InMemory(InMemoryProvider::new(records))
+    }
+
     /// Create a new DNS record.
     pub async fn create(
         &self,
@@ -170,6 +191,10 @@ impl DnsUpdater {
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.create(name, record, ttl, origin).await
             }
+            #[cfg(feature = "test_provider")]
+            DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
+            #[cfg(feature = "test_provider")]
+            DnsUpdater::InMemory(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -194,6 +219,10 @@ impl DnsUpdater {
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.update(name, record, ttl, origin).await
             }
+            #[cfg(feature = "test_provider")]
+            DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
+            #[cfg(feature = "test_provider")]
+            DnsUpdater::InMemory(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -215,6 +244,10 @@ impl DnsUpdater {
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
+            #[cfg(feature = "test_provider")]
+            DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
+            #[cfg(feature = "test_provider")]
+            DnsUpdater::InMemory(provider) => provider.delete(name, origin, record).await,
         }
     }
 }

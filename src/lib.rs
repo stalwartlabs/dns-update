@@ -13,6 +13,9 @@
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use providers::ovh::OvhProvider;
 
+#[cfg(feature = "test_provider")]
+use providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
+
 pub use hickory_client::proto::dnssec;
 use providers::{
     bunny::BunnyProvider, cloudflare::CloudflareProvider, desec::DesecProvider,
@@ -194,6 +197,10 @@ pub enum DnsUpdater {
     Porkbun(PorkBunProvider),
     DNSimple(DNSimpleProvider),
     GoogleCloudDns(providers::google_cloud_dns::GoogleCloudDnsProvider),
+    #[cfg(feature = "test_provider")]
+    Pebble(PebbleProvider),
+    #[cfg(feature = "test_provider")]
+    InMemory(InMemoryProvider),
 }
 
 pub trait IntoFqdn<'x> {
