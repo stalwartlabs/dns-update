@@ -13,7 +13,7 @@ readme = "README.md"
 resolver = "2"
 
 [features]
-default = ["ring"]
+default = ["aws-lc-rs"]
 ring = [
     "hickory-client/dnssec-ring",
     "hickory-client/tls-ring",
@@ -35,7 +35,7 @@ aws-lc-rs = [
 test_provider = []
 
 [dependencies]
-tokio = { version = "1", features = ["rt", "net"] }
+tokio = { version = "1.51", features = ["rt", "net"] }
 hickory-client = { version = "0.25", default-features = false }
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0.116"
@@ -46,6 +46,6 @@ aws-lc-rs = { version = "1.16", optional = true }
 rustls = { version = "0.23", default-features = false, optional = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1.51", features = ["full"] }
 mockito = "1.6"
 httpmock = { version = "0.8", features = ["https"] }
