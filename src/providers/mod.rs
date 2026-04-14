@@ -23,6 +23,7 @@ pub mod ovh;
 #[cfg(feature = "test_provider")]
 pub mod pebble;
 pub mod porkbun;
+pub mod spaceship;
 pub mod rfc2136;
 
 impl DnsRecord {

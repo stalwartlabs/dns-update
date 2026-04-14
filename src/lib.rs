@@ -20,7 +20,7 @@ pub use hickory_client::proto::dnssec;
 use providers::{
     bunny::BunnyProvider, cloudflare::CloudflareProvider, desec::DesecProvider,
     digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider, porkbun::PorkBunProvider,
-    rfc2136::Rfc2136Provider,
+    spaceship::SpaceshipProvider, rfc2136::Rfc2136Provider,
 };
 use std::{
     borrow::Cow,
@@ -195,6 +195,7 @@ pub enum DnsUpdater {
     Ovh(OvhProvider),
     Bunny(BunnyProvider),
     Porkbun(PorkBunProvider),
+    Spaceship(SpaceshipProvider),
     DNSimple(DNSimpleProvider),
     GoogleCloudDns(providers::google_cloud_dns::GoogleCloudDnsProvider),
     #[cfg(feature = "test_provider")]
