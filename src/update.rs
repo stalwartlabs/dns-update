@@ -36,6 +36,7 @@ use crate::{
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
         porkbun::PorkBunProvider,
+        spaceship::SpaceshipProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
     },
 };
@@ -138,6 +139,17 @@ impl DnsUpdater {
         )))
     }
 
+    /// Create a new DNS updater using the Spaceship API.
+    pub fn new_spaceship(
+        api_key: impl AsRef<str>,
+        api_secret: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Spaceship(SpaceshipProvider::new(
+            api_key, api_secret, timeout,
+        )))
+    }
+
     /// Create a new DNS updater using the DNSimple API.
     pub fn new_dnsimple(
         auth_token: impl AsRef<str>,
@@ -178,6 +190,7 @@ impl DnsUpdater {
             DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Spaceship(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
@@ -203,6 +216,7 @@ impl DnsUpdater {
             DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Spaceship(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
@@ -227,6 +241,7 @@ impl DnsUpdater {
             DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Spaceship(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
