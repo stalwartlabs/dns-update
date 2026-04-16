@@ -85,7 +85,7 @@ pub fn create_jwt(sa: &ServiceAccount, scopes: &str) -> Result<String, Box<dyn s
         .decode(pem_content.trim())
         .map_err(|e| format!("Invalid base64 in private key: {}", e))?;
     let key_pair = RsaKeyPair::from_pkcs8(&der_bytes)?;
-    let mut signature = vec![0u8; key_pair.public_modulus_len()];
+    let mut signature = vec![0u8; signature_len(&key_pair)];
     let rng = SystemRandom::new();
     key_pair.sign(
         &RSA_PKCS1_SHA256,
@@ -108,7 +108,7 @@ pub async fn exchange_jwt_for_token(
         ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
         ("assertion", jwt),
     ];
-    let body = serde_urlencoded::to_string(&params).map_err(|e| e.to_string())?;
+    let body = serde_urlencoded::to_string(params).map_err(|e| e.to_string())?;
     let resp: serde_json::Value = client
         .post(token_uri)
         .header("Content-Type", "application/x-www-form-urlencoded")
@@ -122,4 +122,14 @@ pub async fn exchange_jwt_for_token(
     } else {
         Err("Failed to obtain access token".into())
     }
+}
+
+#[cfg(feature = "ring")]
+fn signature_len(key_pair: &RsaKeyPair) -> usize {
+    key_pair.public().modulus_len()
+}
+
+#[cfg(all(feature = "aws-lc-rs", not(feature = "ring")))]
+fn signature_len(key_pair: &RsaKeyPair) -> usize {
+    key_pair.public_modulus_len()
 }

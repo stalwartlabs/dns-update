@@ -166,7 +166,7 @@ impl DnsUpdater {
         config: crate::providers::google_cloud_dns::GoogleCloudDnsConfig,
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::GoogleCloudDns(
-            crate::providers::google_cloud_dns::GoogleCloudDnsProvider::new(config),
+            crate::providers::google_cloud_dns::GoogleCloudDnsProvider::new(config)?,
         ))
     }
 
