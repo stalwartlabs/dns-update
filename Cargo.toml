@@ -33,7 +33,6 @@ aws-lc-rs = [
     "rustls/aws-lc-rs",
 ]
 test_provider = []
-test_provider = []
 
 [dependencies]
 base64 = { version = "0.22.1", default-features = false, features = ["std"] }
@@ -49,7 +48,6 @@ aws-lc-rs = { version = "1.16", optional = true }
 rustls = { version = "0.23", default-features = false, optional = true }
 
 [dev-dependencies]
-tokio = { version = "1.51", features = ["full"] }
 tokio = { version = "1.51", features = ["full"] }
 mockito = "1.6"
 httpmock = { version = "0.8", features = ["https"] }
