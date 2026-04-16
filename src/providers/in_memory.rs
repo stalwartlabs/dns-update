@@ -30,7 +30,10 @@ impl InMemoryProvider {
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         let name = name.into_fqdn().into_owned();
-        self.records.lock().unwrap().push(NamedDnsRecord { name, record });
+        self.records
+            .lock()
+            .unwrap()
+            .push(NamedDnsRecord { name, record });
         Ok(())
     }
 

@@ -11,8 +11,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        DnsRecord, DnsRecordType, DnsUpdater, MXRecord,
-        providers::spaceship::SpaceshipProvider,
+        DnsRecord, DnsRecordType, DnsUpdater, MXRecord, providers::spaceship::SpaceshipProvider,
     };
     use serde_json::json;
     use std::time::Duration;
