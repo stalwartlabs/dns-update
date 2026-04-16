@@ -16,11 +16,15 @@ use providers::ovh::OvhProvider;
 #[cfg(feature = "test_provider")]
 use providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
 
+#[cfg(feature = "test_provider")]
+use providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
+
 pub use hickory_client::proto::dnssec;
 use providers::{
     bunny::BunnyProvider, cloudflare::CloudflareProvider, desec::DesecProvider,
     digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider, porkbun::PorkBunProvider,
-    rfc2136::Rfc2136Provider, spaceship::SpaceshipProvider,
+    rfc2136::Rfc2136Provider, rfc2136::Rfc2136Provider, spaceship::SpaceshipProvider,
+    spaceship::SpaceshipProvider,
 };
 use std::{
     borrow::Cow,
@@ -50,7 +54,7 @@ pub enum Error {
 }
 
 /// A DNS record type.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DnsRecordType {
     A,
     AAAA,
@@ -64,14 +68,14 @@ pub enum DnsRecordType {
 }
 
 /// A named DNS record, which consists of a name and a DNS record.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct NamedDnsRecord {
     pub name: String,
     pub record: DnsRecord,
 }
 
 /// A DNS record type with a value.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum DnsRecord {
     A(Ipv4Addr),
     AAAA(Ipv6Addr),
@@ -85,7 +89,7 @@ pub enum DnsRecord {
 }
 
 // An MX record, which consists of an exchange string and a priority.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Clone, Debug, PartialEq, Eq, Hash)]
 
 pub struct MXRecord {
     pub exchange: String,
@@ -93,7 +97,7 @@ pub struct MXRecord {
 }
 
 // A SRV record, which consists of a target string, priority, weight, and port.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SRVRecord {
     pub target: String,
     pub priority: u16,
@@ -102,7 +106,7 @@ pub struct SRVRecord {
 }
 
 // A TLSA record, which consists of a certificate usage, selector, matching type, and certificate data.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TLSARecord {
     pub cert_usage: TlsaCertUsage,
     pub selector: TlsaSelector,
@@ -135,7 +139,7 @@ pub enum TlsaMatching {
 }
 
 // A CAA record, which can be either an Issue, IssueWild, or Iodef record.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum CAARecord {
     Issue {
         issuer_critical: bool,
@@ -153,7 +157,7 @@ pub enum CAARecord {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct KeyValue {
     pub key: String,
     pub value: String,
@@ -196,7 +200,12 @@ pub enum DnsUpdater {
     Bunny(BunnyProvider),
     Porkbun(PorkBunProvider),
     Spaceship(SpaceshipProvider),
+    Spaceship(SpaceshipProvider),
     DNSimple(DNSimpleProvider),
+    #[cfg(feature = "test_provider")]
+    Pebble(PebbleProvider),
+    #[cfg(feature = "test_provider")]
+    InMemory(InMemoryProvider),
     GoogleCloudDns(providers::google_cloud_dns::GoogleCloudDnsProvider),
     #[cfg(feature = "test_provider")]
     Pebble(PebbleProvider),
