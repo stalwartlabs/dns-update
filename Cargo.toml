@@ -35,7 +35,9 @@ aws-lc-rs = [
 test_provider = []
 
 [dependencies]
+base64 = { version = "0.22.1", default-features = false, features = ["std"] }
 tokio = { version = "1.51", features = ["rt", "net"] }
+hex = { version = "0.4.3", default-features = false, features = ["std"] }
 hickory-client = { version = "0.25", default-features = false }
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = { version = "1.0.116", default-features = false, features = ["std"] }

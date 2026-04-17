@@ -10,7 +10,8 @@
  */
 
 use crate::{
-    DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder, utils::strip_origin_from_name,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder,
+    utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -175,7 +176,11 @@ impl SpaceshipProvider {
             .put(format!("{}/dns/records/{}", self.endpoint, domain))
             .with_body(PutRecordsRequest {
                 force: None,
-                items: vec![SpaceshipDnsRecord::from_dns_record(record, &subdomain, Some(ttl))?],
+                items: vec![SpaceshipDnsRecord::from_dns_record(
+                    record,
+                    &subdomain,
+                    Some(ttl),
+                )?],
             })?
             .send_raw()
             .await
@@ -197,7 +202,11 @@ impl SpaceshipProvider {
             .put(format!("{}/dns/records/{}", self.endpoint, domain))
             .with_body(PutRecordsRequest {
                 force: None,
-                items: vec![SpaceshipDnsRecord::from_dns_record(record, &subdomain, Some(ttl))?],
+                items: vec![SpaceshipDnsRecord::from_dns_record(
+                    record,
+                    &subdomain,
+                    Some(ttl),
+                )?],
             })?
             .send_raw()
             .await

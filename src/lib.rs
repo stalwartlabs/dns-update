@@ -30,6 +30,7 @@ use std::{
 pub mod bind;
 pub mod crypto;
 pub mod http;
+pub mod jwt;
 pub mod providers;
 pub mod tests;
 pub mod update;
@@ -85,7 +86,6 @@ pub enum DnsRecord {
 
 // An MX record, which consists of an exchange string and a priority.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-
 pub struct MXRecord {
     pub exchange: String,
     pub priority: u16,
@@ -196,6 +196,11 @@ pub enum DnsUpdater {
     Porkbun(PorkBunProvider),
     Spaceship(SpaceshipProvider),
     DNSimple(DNSimpleProvider),
+    GoogleCloudDns(providers::google_cloud_dns::GoogleCloudDnsProvider),
+    #[cfg(feature = "test_provider")]
+    Pebble(PebbleProvider),
+    #[cfg(feature = "test_provider")]
+    InMemory(InMemoryProvider),
     Route53(Route53Provider),
 }
 

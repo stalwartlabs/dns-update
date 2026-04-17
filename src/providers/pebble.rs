@@ -97,50 +97,46 @@ impl PebbleProvider {
 
     async fn set_record(&self, host: &str, record: DnsRecord) -> crate::Result<()> {
         match record {
-            DnsRecord::A(addr) => {
-                self.client
-                    .post(format!("{}/add-a", self.base_url))
-                    .with_body(AddA {
-                        host: host.to_string(),
-                        addresses: vec![addr.to_string()],
-                    })?
-                    .send_raw()
-                    .await
-                    .map(|_| ())
-            }
-            DnsRecord::AAAA(addr) => {
-                self.client
-                    .post(format!("{}/add-aaaa", self.base_url))
-                    .with_body(AddA {
-                        host: host.to_string(),
-                        addresses: vec![addr.to_string()],
-                    })?
-                    .send_raw()
-                    .await
-                    .map(|_| ())
-            }
-            DnsRecord::CNAME(target) => {
-                self.client
-                    .post(format!("{}/set-cname", self.base_url))
-                    .with_body(SetCname {
-                        host: host.to_string(),
-                        target,
-                    })?
-                    .send_raw()
-                    .await
-                    .map(|_| ())
-            }
-            DnsRecord::TXT(value) => {
-                self.client
-                    .post(format!("{}/set-txt", self.base_url))
-                    .with_body(SetTxt {
-                        host: host.to_string(),
-                        value,
-                    })?
-                    .send_raw()
-                    .await
-                    .map(|_| ())
-            }
+            DnsRecord::A(addr) => self
+                .client
+                .post(format!("{}/add-a", self.base_url))
+                .with_body(AddA {
+                    host: host.to_string(),
+                    addresses: vec![addr.to_string()],
+                })?
+                .send_raw()
+                .await
+                .map(|_| ()),
+            DnsRecord::AAAA(addr) => self
+                .client
+                .post(format!("{}/add-aaaa", self.base_url))
+                .with_body(AddA {
+                    host: host.to_string(),
+                    addresses: vec![addr.to_string()],
+                })?
+                .send_raw()
+                .await
+                .map(|_| ()),
+            DnsRecord::CNAME(target) => self
+                .client
+                .post(format!("{}/set-cname", self.base_url))
+                .with_body(SetCname {
+                    host: host.to_string(),
+                    target,
+                })?
+                .send_raw()
+                .await
+                .map(|_| ()),
+            DnsRecord::TXT(value) => self
+                .client
+                .post(format!("{}/set-txt", self.base_url))
+                .with_body(SetTxt {
+                    host: host.to_string(),
+                    value,
+                })?
+                .send_raw()
+                .await
+                .map(|_| ()),
             DnsRecord::CAA(caa) => {
                 let (_, tag, value) = caa.decompose();
                 self.client

@@ -162,6 +162,13 @@ impl DnsUpdater {
         )))
     }
 
+    /// Create a new DNS updater using the Google Cloud DNS API.
+    pub fn new_google_cloud_dns(
+        config: crate::providers::google_cloud_dns::GoogleCloudDnsConfig,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::GoogleCloudDns(
+            crate::providers::google_cloud_dns::GoogleCloudDnsProvider::new(config)?,
+        ))
     /// Create a new DNS updater using the Route53 API.
     pub fn new_route53(config: crate::providers::route53::Route53Config) -> crate::Result<Self> {
         Ok(DnsUpdater::Route53(Route53Provider::new(config)))
@@ -199,6 +206,10 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Route53(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Spaceship(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::DNSimple(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::GoogleCloudDns(provider) => {
+                provider.create(name, record, ttl, origin).await
+            }
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -226,6 +237,10 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Route53(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Spaceship(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::DNSimple(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::GoogleCloudDns(provider) => {
+                provider.update(name, record, ttl, origin).await
+            }
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -252,6 +267,8 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.delete(name, origin).await,
             DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Spaceship(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
