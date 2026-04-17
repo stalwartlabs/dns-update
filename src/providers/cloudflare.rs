@@ -67,9 +67,25 @@ pub enum DnsContent {
     NS { content: String },
     MX { content: String, priority: u16 },
     TXT { content: String },
-    SRV { content: String },
-    TLSA { content: String },
+    SRV { data: SrvData },
+    TLSA { data: TlsaData },
     CAA { content: String },
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct SrvData {
+    pub priority: u16,
+    pub weight: u16,
+    pub port: u16,
+    pub target: String,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct TlsaData {
+    pub usage: u8,
+    pub selector: u8,
+    pub matching_type: u8,
+    pub certificate: String,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -249,10 +265,24 @@ impl From<DnsRecord> for DnsContent {
             },
             DnsRecord::TXT(content) => DnsContent::TXT { content },
             DnsRecord::SRV(srv) => DnsContent::SRV {
-                content: srv.target,
+                data: SrvData {
+                    priority: srv.priority,
+                    weight: srv.weight,
+                    port: srv.port,
+                    target: srv.target,
+                },
             },
             DnsRecord::TLSA(tlsa) => DnsContent::TLSA {
-                content: tlsa.to_string(),
+                data: TlsaData {
+                    usage: u8::from(tlsa.cert_usage),
+                    selector: u8::from(tlsa.selector),
+                    matching_type: u8::from(tlsa.matching),
+                    certificate: tlsa
+                        .cert_data
+                        .iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect(),
+                },
             },
             DnsRecord::CAA(caa) => DnsContent::CAA {
                 content: caa.to_string(),

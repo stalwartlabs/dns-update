@@ -211,7 +211,7 @@ impl Route53Provider {
         }
 
         // Sort by name length (longest first) and return the first match
-        matching_zones.sort_by(|a, b| b.name.len().cmp(&a.name.len()));
+        matching_zones.sort_by_key(|b| std::cmp::Reverse(b.name.len()));
 
         matching_zones
             .into_iter()

@@ -124,10 +124,12 @@ impl DnsUpdater {
         )?))
     }
 
+    /// Create a new DNS updater using the Bunny API.
     pub fn new_bunny(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
         Ok(DnsUpdater::Bunny(BunnyProvider::new(api_key, timeout)?))
     }
 
+    /// Create a new DNS updater using the Porkbun API.
     pub fn new_porkbun(
         api_key: impl AsRef<str>,
         secret_api_key: impl AsRef<str>,
