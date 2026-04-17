@@ -24,6 +24,7 @@ pub mod pebble;
 pub mod porkbun;
 pub mod spaceship;
 pub mod rfc2136;
+pub mod route53;
 
 impl DnsRecord {
     pub fn priority(&self) -> Option<u16> {

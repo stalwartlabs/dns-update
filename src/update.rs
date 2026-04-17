@@ -36,8 +36,9 @@ use crate::{
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
         porkbun::PorkBunProvider,
-        spaceship::SpaceshipProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
+        route53::Route53Provider,
+        spaceship::SpaceshipProvider,
     },
 };
 use std::time::Duration;
@@ -161,6 +162,11 @@ impl DnsUpdater {
         )))
     }
 
+    /// Create a new DNS updater using the Route53 API.
+    pub fn new_route53(config: crate::providers::route53::Route53Config) -> crate::Result<Self> {
+        Ok(DnsUpdater::Route53(Route53Provider::new(config)))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -182,16 +188,17 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         match self {
-            DnsUpdater::Rfc2136(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::DNSimple(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Rfc2136(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Route53(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Spaceship(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::DNSimple(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -208,16 +215,17 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         match self {
-            DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::DNSimple(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Route53(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Spaceship(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::DNSimple(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -233,16 +241,17 @@ impl DnsUpdater {
         record: DnsRecordType,
     ) -> crate::Result<()> {
         match self {
-            DnsUpdater::Rfc2136(provider) => provider.delete(name, origin).await,
+            DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Cloudflare(provider) => provider.delete(name, origin).await,
-            DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin).await,
             DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin).await,
+            DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Rfc2136(provider) => provider.delete(name, origin).await,
+            DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Spaceship(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
