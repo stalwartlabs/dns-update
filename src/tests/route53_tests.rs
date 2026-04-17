@@ -43,7 +43,6 @@ async fn test_route53_updater_creation() {
     match updater {
         DnsUpdater::Route53(_) => {
             // Successfully created Route53 updater
-            assert!(true);
         }
         _ => panic!("Expected Route53 provider"),
     }
@@ -95,7 +94,6 @@ async fn test_route53_config_minimal() {
     match updater {
         DnsUpdater::Route53(_) => {
             // Successfully created Route53 updater with minimal config
-            assert!(true);
         }
         _ => panic!("Expected Route53 provider"),
     }

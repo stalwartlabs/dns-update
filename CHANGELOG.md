@@ -1,8 +1,11 @@
 dns-update 0.2.0
 ================================
-- Bunny provider support (#24)
-- Porkbun provider support (porkbun.com) (#31)
-- DNSimple provider support (#33)
+- Route53 provider support (contributed by @jimmystewpot) (#23)
+- Google Cloud DNS provider support (contributed by @jimmystewpot) (#36)
+- Bunny provider support (contributed by @angeloanan) (#24)
+- Porkbun provider support (contributed by @jeffesquivels) (#31)
+- DNSimple provider support (contributed by @NelsonVides) (#33)
+- Spaceship provider support (contributed by @matserix) (#34)
 - update `hickory_client` with feature flag for `ring` and `aws-lc-rs` (#29)
 
 dns-update 0.1.6
