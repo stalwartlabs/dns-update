@@ -17,4 +17,6 @@ pub mod google_cloud_dns_tests;
 pub mod lib_tests;
 pub mod ovh_tests;
 pub mod porkbun_tests;
+#[cfg(test)]
+pub mod route53_tests;
 pub mod spaceship_tests;
