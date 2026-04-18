@@ -60,7 +60,17 @@ impl DnsUpdater {
     }
 
     /// Create a new DNS updater using the RFC 2136 protocol and SIG(0) authentication.
+    ///
+    /// **Deprecated:** SIG(0) support will be removed in v0.3.0. Upstream
+    /// `hickory-client` has dropped SIG(0) message authentication in v0.26
+    /// (see hickory-dns/hickory-dns#3437) due to negligible real-world use, and
+    /// every production RFC 2136 endpoint and ACME client uses TSIG. Migrate to
+    /// [`DnsUpdater::new_rfc2136_tsig`].
     #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+    #[deprecated(
+        since = "0.2.1",
+        note = "SIG(0) will be removed in v0.3.0, upstream hickory-client v0.26 drops SIG(0) message authentication; use `new_rfc2136_tsig` instead"
+    )]
     pub fn new_rfc2136_sig0(
         addr: impl TryInto<DnsAddress>,
         signer_name: impl AsRef<str>,
@@ -259,14 +269,14 @@ impl DnsUpdater {
     ) -> crate::Result<()> {
         match self {
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Cloudflare(provider) => provider.delete(name, origin).await,
+            DnsUpdater::Cloudflare(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin).await,
+            DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Rfc2136(provider) => provider.delete(name, origin).await,
+            DnsUpdater::Rfc2136(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Spaceship(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
