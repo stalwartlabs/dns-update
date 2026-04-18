@@ -9,7 +9,7 @@
  * except according to those terms.
  */
 
-use crate::{DnsRecord, Error, IntoFqdn, http::HttpClientBuilder};
+use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -31,6 +31,10 @@ pub struct IdMap {
 #[derive(Serialize, Debug)]
 pub struct Query {
     name: String,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    record_type: Option<&'static str>,
+    #[serde(rename = "match", skip_serializing_if = "Option::is_none")]
+    match_mode: Option<&'static str>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -143,12 +147,13 @@ impl CloudflareProvider {
         &self,
         zone_id: &str,
         name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
     ) -> crate::Result<String> {
         let name = name.into_name();
         self.client
             .get(format!(
                 "https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?{}",
-                Query::name(name.as_ref()).serialize()
+                Query::name_and_type(name.as_ref(), record_type).serialize()
             ))
             .send_with_retry::<ApiResult<Vec<IdMap>>>(3)
             .await
@@ -158,7 +163,13 @@ impl CloudflareProvider {
                     .into_iter()
                     .find(|record| record.name == name.as_ref())
                     .map(|record| record.id)
-                    .ok_or_else(|| Error::Api(format!("DNS Record {} not found", name.as_ref())))
+                    .ok_or_else(|| {
+                        Error::Api(format!(
+                            "DNS Record {} of type {} not found",
+                            name.as_ref(),
+                            record_type.as_str()
+                        ))
+                    })
             })
     }
 
@@ -215,9 +226,10 @@ impl CloudflareProvider {
         &self,
         name: impl IntoFqdn<'_>,
         origin: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
     ) -> crate::Result<()> {
         let zone_id = self.obtain_zone_id(origin).await?;
-        let record_id = self.obtain_record_id(&zone_id, name).await?;
+        let record_id = self.obtain_record_id(&zone_id, name, record_type).await?;
 
         self.client
             .delete(format!(
@@ -244,7 +256,19 @@ impl<T> ApiResult<T> {
 
 impl Query {
     pub fn name(name: impl Into<String>) -> Self {
-        Self { name: name.into() }
+        Self {
+            name: name.into(),
+            record_type: None,
+            match_mode: None,
+        }
+    }
+
+    pub fn name_and_type(name: impl Into<String>, record_type: DnsRecordType) -> Self {
+        Self {
+            name: name.into(),
+            record_type: Some(record_type.as_str()),
+            match_mode: Some("all"),
+        }
     }
 
     pub fn serialize(&self) -> String {

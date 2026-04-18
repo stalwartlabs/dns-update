@@ -1,3 +1,8 @@
+dns-update 0.2.1
+================================
+- Fix deletion by record in RFC2136, Cloudflare and DigitalOcean providers
+- Deprecation notice for `new_rfc2136_sig0` 
+
 dns-update 0.2.0
 ================================
 - Route53 provider support (contributed by @jimmystewpot) (#23)

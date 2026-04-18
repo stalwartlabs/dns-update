@@ -203,6 +203,22 @@ impl DnsRecord {
     }
 }
 
+impl DnsRecordType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DnsRecordType::A => "A",
+            DnsRecordType::AAAA => "AAAA",
+            DnsRecordType::CNAME => "CNAME",
+            DnsRecordType::NS => "NS",
+            DnsRecordType::MX => "MX",
+            DnsRecordType::TXT => "TXT",
+            DnsRecordType::SRV => "SRV",
+            DnsRecordType::TLSA => "TLSA",
+            DnsRecordType::CAA => "CAA",
+        }
+    }
+}
+
 impl From<TlsaCertUsage> for u8 {
     fn from(usage: TlsaCertUsage) -> Self {
         match usage {

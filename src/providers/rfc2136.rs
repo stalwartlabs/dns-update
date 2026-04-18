@@ -9,7 +9,9 @@
  * except according to those terms.
  */
 
-use crate::{CAARecord, DnsRecord, Error, IntoFqdn, TlsaCertUsage, TlsaMatching, TlsaSelector};
+use crate::{
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, TlsaCertUsage, TlsaMatching, TlsaSelector,
+};
 use hickory_client::ClientError;
 use hickory_client::client::{Client, ClientHandle};
 use hickory_client::proto::ProtoError;
@@ -22,7 +24,7 @@ use hickory_client::proto::op::ResponseCode;
 use hickory_client::proto::rr::rdata::caa::KeyValue;
 use hickory_client::proto::rr::rdata::tlsa::{CertUsage, Matching, Selector};
 use hickory_client::proto::rr::rdata::{A, AAAA, CAA, CNAME, MX, NS, SRV, TLSA, TXT};
-use hickory_client::proto::rr::{DNSClass, Name, RData, Record, RecordType};
+use hickory_client::proto::rr::{Name, RData, Record, RecordType};
 use hickory_client::proto::runtime::TokioRuntimeProvider;
 use hickory_client::proto::tcp::TcpClientStream;
 use hickory_client::proto::udp::UdpClientStream;
@@ -61,6 +63,7 @@ impl Rfc2136Provider {
         })
     }
 
+    /// SIG(0) support is slated for removal in v0.3.0.
     pub(crate) fn new_sig0(
         addr: impl TryInto<DnsAddress>,
         signer_name: impl AsRef<str>,
@@ -165,19 +168,38 @@ impl Rfc2136Provider {
         &self,
         name: impl IntoFqdn<'_>,
         origin: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
     ) -> crate::Result<()> {
+        let record = Record::update0(
+            Name::from_str_relaxed(name.into_name().as_ref())?,
+            0,
+            record_type.into(),
+        );
+
         let mut client = self.connect().await?;
         let result = client
-            .delete_all(
-                Name::from_str_relaxed(name.into_name().as_ref())?,
-                Name::from_str_relaxed(origin.into_fqdn().as_ref())?,
-                DNSClass::IN,
-            )
+            .delete_rrset(record, Name::from_str_relaxed(origin.into_fqdn().as_ref())?)
             .await?;
         if result.response_code() == ResponseCode::NoError {
             Ok(())
         } else {
             Err(crate::Error::Response(result.response_code().to_string()))
+        }
+    }
+}
+
+impl From<DnsRecordType> for RecordType {
+    fn from(record_type: DnsRecordType) -> Self {
+        match record_type {
+            DnsRecordType::A => RecordType::A,
+            DnsRecordType::AAAA => RecordType::AAAA,
+            DnsRecordType::CNAME => RecordType::CNAME,
+            DnsRecordType::NS => RecordType::NS,
+            DnsRecordType::MX => RecordType::MX,
+            DnsRecordType::TXT => RecordType::TXT,
+            DnsRecordType::SRV => RecordType::SRV,
+            DnsRecordType::TLSA => RecordType::TLSA,
+            DnsRecordType::CAA => RecordType::CAA,
         }
     }
 }

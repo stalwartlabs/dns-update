@@ -9,7 +9,10 @@
  * except according to those terms.
  */
 
-use crate::{DnsRecord, Error, IntoFqdn, http::HttpClientBuilder, utils::strip_origin_from_name};
+use crate::{
+    DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder,
+    utils::strip_origin_from_name,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     net::{Ipv4Addr, Ipv6Addr},
@@ -82,6 +85,8 @@ pub enum RecordData {
 #[derive(Serialize, Debug)]
 pub struct Query<'a> {
     name: &'a str,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    record_type: Option<&'static str>,
 }
 
 impl DigitalOceanProvider {
@@ -127,7 +132,8 @@ impl DigitalOceanProvider {
         let name = name.into_name();
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, None);
-        let record_id = self.obtain_record_id(&name, &domain).await?;
+        let record_type = record.as_type();
+        let record_id = self.obtain_record_id(&name, &domain, record_type).await?;
 
         self.client
             .put(format!(
@@ -147,10 +153,11 @@ impl DigitalOceanProvider {
         &self,
         name: impl IntoFqdn<'_>,
         origin: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
     ) -> crate::Result<()> {
         let name = name.into_name();
         let domain = origin.into_name();
-        let record_id = self.obtain_record_id(&name, &domain).await?;
+        let record_id = self.obtain_record_id(&name, &domain, record_type).await?;
 
         self.client
             .delete(format!(
@@ -161,12 +168,17 @@ impl DigitalOceanProvider {
             .map(|_| ())
     }
 
-    async fn obtain_record_id(&self, name: &str, domain: &str) -> crate::Result<i64> {
+    async fn obtain_record_id(
+        &self,
+        name: &str,
+        domain: &str,
+        record_type: DnsRecordType,
+    ) -> crate::Result<i64> {
         let subdomain = strip_origin_from_name(name, domain, None);
         self.client
             .get(format!(
                 "https://api.digitalocean.com/v2/domains/{domain}/records?{}",
-                Query::name(name).serialize()
+                Query::name_and_type(name, record_type).serialize()
             ))
             .send_with_retry::<ListDomainRecord>(3)
             .await
@@ -174,16 +186,48 @@ impl DigitalOceanProvider {
                 result
                     .domain_records
                     .into_iter()
-                    .find(|record| record.name == subdomain)
+                    .find(|record| record.name == subdomain && record.data.is_type(record_type))
                     .map(|record| record.id)
-                    .ok_or_else(|| Error::Api(format!("DNS Record {} not found", subdomain)))
+                    .ok_or_else(|| {
+                        Error::Api(format!(
+                            "DNS Record {} of type {} not found",
+                            subdomain,
+                            record_type.as_str()
+                        ))
+                    })
             })
+    }
+}
+
+impl RecordData {
+    fn is_type(&self, record_type: DnsRecordType) -> bool {
+        matches!(
+            (self, record_type),
+            (RecordData::A { .. }, DnsRecordType::A)
+                | (RecordData::AAAA { .. }, DnsRecordType::AAAA)
+                | (RecordData::CNAME { .. }, DnsRecordType::CNAME)
+                | (RecordData::NS { .. }, DnsRecordType::NS)
+                | (RecordData::MX { .. }, DnsRecordType::MX)
+                | (RecordData::TXT { .. }, DnsRecordType::TXT)
+                | (RecordData::SRV { .. }, DnsRecordType::SRV)
+                | (RecordData::CAA { .. }, DnsRecordType::CAA)
+        )
     }
 }
 
 impl<'a> Query<'a> {
     pub fn name(name: impl Into<&'a str>) -> Self {
-        Self { name: name.into() }
+        Self {
+            name: name.into(),
+            record_type: None,
+        }
+    }
+
+    pub fn name_and_type(name: impl Into<&'a str>, record_type: DnsRecordType) -> Self {
+        Self {
+            name: name.into(),
+            record_type: Some(record_type.as_str()),
+        }
     }
 
     pub fn serialize(&self) -> String {
