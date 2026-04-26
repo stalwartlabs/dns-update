@@ -12,6 +12,7 @@
 pub mod bunny_test;
 pub mod desec_tests;
 pub mod dnsimple_tests;
+pub mod gandi_tests;
 pub mod google_cloud_dns_tests;
 #[cfg(test)]
 pub mod lib_tests;

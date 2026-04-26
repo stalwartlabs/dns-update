@@ -149,7 +149,6 @@ mod tests {
             "records": ["2001:db8::1"],
         });
 
-
         let mock = server
             .mock("PUT", "/domains/example.com/rrsets/test/AAAA/")
             .with_status(200)

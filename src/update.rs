@@ -39,6 +39,7 @@ use crate::{
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
         spaceship::SpaceshipProvider,
+        gandi::GandiProvider,
     },
 };
 use std::time::Duration;
@@ -200,6 +201,17 @@ impl DnsUpdater {
         DnsUpdater::InMemory(InMemoryProvider::new(records))
     }
 
+    /// Create a new DNS updater using the Gandi LiveDNS API.
+    pub fn new_gandi(
+        token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Gandi(GandiProvider::new(
+            token,
+            timeout,
+        )?))
+    }
+
     /// Create a new DNS record.
     pub async fn create(
         &self,
@@ -220,6 +232,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Route53(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Spaceship(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Gandi(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.create(name, record, ttl, origin).await
             }
@@ -250,6 +263,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Route53(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Spaceship(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Gandi(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.update(name, record, ttl, origin).await
             }
@@ -279,6 +293,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Spaceship(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Gandi(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,

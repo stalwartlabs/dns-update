@@ -21,6 +21,7 @@ use providers::{
     bunny::BunnyProvider, cloudflare::CloudflareProvider, desec::DesecProvider,
     digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider, porkbun::PorkBunProvider,
     rfc2136::Rfc2136Provider, route53::Route53Provider, spaceship::SpaceshipProvider,
+    gandi::GandiProvider,
 };
 use std::{
     borrow::Cow,
@@ -202,6 +203,7 @@ pub enum DnsUpdater {
     #[cfg(feature = "test_provider")]
     InMemory(InMemoryProvider),
     Route53(Route53Provider),
+    Gandi(GandiProvider),
 }
 
 pub trait IntoFqdn<'x> {

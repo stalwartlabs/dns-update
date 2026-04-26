@@ -16,6 +16,7 @@ pub mod cloudflare;
 pub mod desec;
 pub mod digitalocean;
 pub mod dnsimple;
+pub mod gandi;
 pub mod google_cloud_dns;
 #[cfg(feature = "test_provider")]
 pub mod in_memory;
