@@ -223,7 +223,7 @@ fn convert_record(record: DnsRecord) -> crate::Result<(RecordType, RData)> {
                 Name::from_str_relaxed(content.exchange)?,
             )),
         ),
-        DnsRecord::TXT(content) => (RecordType::TXT, RData::TXT(TXT::new(vec![content]))),
+        DnsRecord::TXT(content) => (RecordType::TXT, RData::TXT(TXT::new(txt_chunks(content)))),
         DnsRecord::SRV(content) => (
             RecordType::SRV,
             RData::SRV(SRV::new(
@@ -280,6 +280,31 @@ fn convert_record(record: DnsRecord) -> crate::Result<(RecordType, RData)> {
             }),
         ),
     })
+}
+
+fn txt_chunks(content: String) -> Vec<String> {
+    const MAX_CHUNK_BYTES: usize = 255;
+
+    if content.len() <= MAX_CHUNK_BYTES {
+        return vec![content];
+    }
+
+    let mut chunks = Vec::new();
+    let mut chunk = String::new();
+
+    for ch in content.chars() {
+        let ch_len = ch.len_utf8();
+        if !chunk.is_empty() && chunk.len() + ch_len > MAX_CHUNK_BYTES {
+            chunks.push(std::mem::take(&mut chunk));
+        }
+        chunk.push(ch);
+    }
+
+    if !chunk.is_empty() {
+        chunks.push(chunk);
+    }
+
+    chunks
 }
 
 impl From<TlsaCertUsage> for CertUsage {
@@ -418,5 +443,36 @@ impl From<ClientError> for Error {
 impl From<DnsSecError> for Error {
     fn from(e: DnsSecError) -> Self {
         Error::Protocol(e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::convert_record;
+    use crate::DnsRecord;
+    use hickory_client::proto::rr::{RData, RecordType};
+
+    #[test]
+    fn rfc2136_txt_record_data_splits_long_txt_content() {
+        let content = format!("v=DKIM1; k=rsa; h=sha256; p={}", "a".repeat(392));
+        let (record_type, rdata) = convert_record(DnsRecord::TXT(content.clone())).unwrap();
+
+        assert_eq!(record_type, RecordType::TXT);
+        let RData::TXT(txt) = rdata else {
+            panic!("expected TXT record data");
+        };
+        let txt_data = txt.txt_data();
+
+        assert!(
+            txt_data.len() > 1,
+            "long TXT records must be split into multiple character strings"
+        );
+        assert!(txt_data.iter().all(|chunk| chunk.len() <= 255));
+
+        let recombined = txt_data
+            .iter()
+            .flat_map(|chunk| chunk.iter().copied())
+            .collect::<Vec<_>>();
+        assert_eq!(String::from_utf8(recombined).unwrap(), content);
     }
 }
