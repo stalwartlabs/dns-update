@@ -20,3 +20,5 @@ pub mod porkbun_tests;
 #[cfg(test)]
 pub mod route53_tests;
 pub mod spaceship_tests;
+#[cfg(test)]
+pub mod vercel_tests;

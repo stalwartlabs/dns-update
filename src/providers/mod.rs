@@ -26,6 +26,7 @@ pub mod porkbun;
 pub mod rfc2136;
 pub mod route53;
 pub mod spaceship;
+pub mod vercel;
 
 impl DnsRecord {
     pub fn priority(&self) -> Option<u16> {

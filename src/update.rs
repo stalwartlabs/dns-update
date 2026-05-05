@@ -39,6 +39,7 @@ use crate::{
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
         spaceship::SpaceshipProvider,
+        vercel::VercelProvider,
     },
 };
 use std::time::Duration;
@@ -188,6 +189,18 @@ impl DnsUpdater {
         Ok(DnsUpdater::Route53(Route53Provider::new(config)))
     }
 
+    /// Create a new DNS updater using the Vercel API.
+    pub fn new_vercel(
+        token: impl AsRef<str>,
+        team_id: Option<String>,
+        slug: Option<String>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Vercel(VercelProvider::new(
+            token, team_id, slug, timeout,
+        )))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -227,6 +240,7 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Vercel(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -257,6 +271,7 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Vercel(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -284,6 +299,7 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Vercel(provider) => provider.delete(name, origin, record).await,
         }
     }
 }
