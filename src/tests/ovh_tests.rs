@@ -114,7 +114,7 @@ mod tests {
         });
         let ovh_record: OvhRecordFormat = (&record).into();
         assert_eq!(ovh_record.field_type, "MX");
-        assert_eq!(ovh_record.target, "10 mail.example.com");
+        assert_eq!(ovh_record.target, "10 mail.example.com.");
 
         let record = DnsRecord::TXT("v=spf1 include:_spf.example.com ~all".to_string());
         let ovh_record: OvhRecordFormat = (&record).into();
@@ -129,7 +129,7 @@ mod tests {
         });
         let ovh_record: OvhRecordFormat = (&record).into();
         assert_eq!(ovh_record.field_type, "SRV");
-        assert_eq!(ovh_record.target, "10 20 443 sip.example.com");
+        assert_eq!(ovh_record.target, "10 20 443 sip.example.com.");
 
         let record = DnsRecord::NS("ns1.example.com".to_string());
         let ovh_record: OvhRecordFormat = (&record).into();

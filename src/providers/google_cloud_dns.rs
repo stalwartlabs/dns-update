@@ -181,13 +181,23 @@ impl GoogleCloudDnsProvider {
             DnsRecord::AAAA(ip) => vec![ip.to_string()],
             DnsRecord::CNAME(c) => vec![format_fqdn_data(c)],
             DnsRecord::NS(ns) => vec![format_fqdn_data(ns)],
-            DnsRecord::MX(mx) => vec![mx.to_string()],
+            DnsRecord::MX(mx) => vec![format!(
+                "{} {}.",
+                mx.priority,
+                mx.exchange.trim_end_matches('.')
+            )],
             DnsRecord::TXT(txt) => {
                 let mut rdata = String::new();
                 txt_chunks_to_text(&mut rdata, txt, " ");
                 vec![rdata]
             }
-            DnsRecord::SRV(srv) => vec![srv.to_string()],
+            DnsRecord::SRV(srv) => vec![format!(
+                "{} {} {} {}.",
+                srv.priority,
+                srv.weight,
+                srv.port,
+                srv.target.trim_end_matches('.')
+            )],
             DnsRecord::TLSA(tlsa) => vec![tlsa.to_string()],
             DnsRecord::CAA(caa) => {
                 let (flags, tag, value) = caa.clone().decompose();

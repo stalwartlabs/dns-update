@@ -105,7 +105,7 @@ impl From<&DnsRecord> for OvhRecordFormat {
             },
             DnsRecord::MX(mx) => OvhRecordFormat {
                 field_type: "MX".to_string(),
-                target: mx.to_string(),
+                target: format!("{} {}.", mx.priority, mx.exchange.trim_end_matches('.')),
             },
             DnsRecord::TXT(content) => OvhRecordFormat {
                 field_type: "TXT".to_string(),
@@ -113,7 +113,13 @@ impl From<&DnsRecord> for OvhRecordFormat {
             },
             DnsRecord::SRV(srv) => OvhRecordFormat {
                 field_type: "SRV".to_string(),
-                target: srv.to_string(),
+                target: format!(
+                    "{} {} {} {}.",
+                    srv.priority,
+                    srv.weight,
+                    srv.port,
+                    srv.target.trim_end_matches('.')
+                ),
             },
             DnsRecord::TLSA(tlsa) => OvhRecordFormat {
                 field_type: "TLSA".to_string(),

@@ -1,3 +1,7 @@
+dns-update 0.2.7
+================================
+- OVH + Google Cloud DNS: Fixes FQDN handling for `MX` and `SRV` records.
+
 dns-update 0.2.6
 ================================
 - Route53: Fix serialization format (#44).

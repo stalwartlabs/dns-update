@@ -406,18 +406,70 @@ mod tests {
             "letsencrypt.org; accounturi=https://example.test/acct/1"
         );
 
-        let mx = MXRecord {
-            exchange: "mail.example.com".to_string(),
-            priority: 10,
-        };
-        assert_eq!(mx.to_string(), "10 mail.example.com");
+        let mx_mock = server
+            .mock(
+                "POST",
+                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
+            )
+            .match_body(mockito::Matcher::Json(json!({
+                "additions": [{
+                    "name": "example.com.",
+                    "type": "MX",
+                    "ttl": 60,
+                    "rrdatas": ["10 mail.example.com."]
+                }]
+            })))
+            .with_status(200)
+            .with_body(r#"{"id":"change-mx"}"#)
+            .create();
 
-        let srv = SRVRecord {
-            target: "sip.example.com".to_string(),
-            priority: 5,
-            weight: 10,
-            port: 443,
-        };
-        assert_eq!(srv.to_string(), "5 10 443 sip.example.com");
+        let result = provider
+            .create(
+                "example.com",
+                DnsRecord::MX(MXRecord {
+                    exchange: "mail.example.com".to_string(),
+                    priority: 10,
+                }),
+                60,
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        mx_mock.assert();
+
+        let srv_mock = server
+            .mock(
+                "POST",
+                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
+            )
+            .match_body(mockito::Matcher::Json(json!({
+                "additions": [{
+                    "name": "_sip._tcp.example.com.",
+                    "type": "SRV",
+                    "ttl": 60,
+                    "rrdatas": ["5 10 443 sip.example.com."]
+                }]
+            })))
+            .with_status(200)
+            .with_body(r#"{"id":"change-srv"}"#)
+            .create();
+
+        let result = provider
+            .create(
+                "_sip._tcp.example.com",
+                DnsRecord::SRV(SRVRecord {
+                    target: "sip.example.com".to_string(),
+                    priority: 5,
+                    weight: 10,
+                    port: 443,
+                }),
+                60,
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        srv_mock.assert();
     }
 }
