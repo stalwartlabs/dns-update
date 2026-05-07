@@ -17,6 +17,7 @@ pub mod desec;
 pub mod digitalocean;
 pub mod dnsimple;
 pub mod google_cloud_dns;
+pub mod hetzner;
 #[cfg(feature = "test_provider")]
 pub mod in_memory;
 pub mod ovh;

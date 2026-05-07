@@ -13,6 +13,7 @@ pub mod bunny_test;
 pub mod desec_tests;
 pub mod dnsimple_tests;
 pub mod google_cloud_dns_tests;
+pub mod hetzner_tests;
 #[cfg(test)]
 pub mod lib_tests;
 pub mod ovh_tests;

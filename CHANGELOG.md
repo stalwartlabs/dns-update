@@ -1,3 +1,7 @@
+dns-update 0.2.8
+================================
+- Hetzner Cloud DNS provider support.
+
 dns-update 0.2.7
 ================================
 - OVH + Google Cloud DNS: Fixes FQDN handling for `MX` and `SRV` records.
