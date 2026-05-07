@@ -279,7 +279,8 @@ impl Route53Provider {
             change_batch,
         };
 
-        let payload = to_string(&request).map_err(|e| format!("XML serialization error: {}", e))?;
+        let xml_body = to_string(&request).map_err(|e| format!("XML serialization error: {}", e))?;
+        let payload = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{}", xml_body);
 
         self.send_signed_request("POST", &url, Some(payload))
             .await?;
@@ -301,6 +302,7 @@ impl Route53Provider {
         let mut headers = HeaderMap::new();
         headers.insert("host", HeaderValue::from_str(ROUTE53_HOST)?);
         headers.insert("x-amz-date", HeaderValue::from_str(&amz_date)?);
+        headers.insert("content-type", HeaderValue::from_static("application/xml"));
 
         if let Some(session_token) = &self.config.session_token {
             headers.insert(
@@ -316,8 +318,8 @@ impl Route53Provider {
         let parsed_url = url.parse::<reqwest::Url>()?;
         let canonical_uri = parsed_url.path();
         let canonical_querystring = parsed_url.query().unwrap_or("");
-        let canonical_headers = format!("host:{}\nx-amz-date:{}\n", ROUTE53_HOST, amz_date);
-        let signed_headers = "host;x-amz-date";
+        let canonical_headers = format!("content-type:application/xml\nhost:{}\nx-amz-date:{}\n", ROUTE53_HOST, amz_date);
+        let signed_headers = "content-type;host;x-amz-date";
 
         let canonical_request = format!(
             "{}\n{}\n{}\n{}\n{}\n{}",
@@ -595,4 +597,44 @@ struct ListResourceRecordSetsResponse {
 struct ResourceRecordSets {
     #[serde(rename = "ResourceRecordSet", default)]
     resource_record_sets: Vec<ResourceRecordSet>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quick_xml::se::to_string;
+
+    #[test]
+    fn test_serialization() {
+        let req = ChangeResourceRecordSetsRequest {
+            xmlns: "https://route53.amazonaws.com/doc/2013-04-01/",
+            change_batch: ChangeBatch {
+                comment: Some("Test".to_string()),
+                changes: Changes {
+                    changes: vec![Change {
+                        action: ChangeAction::Create,
+                        resource_record_set: ResourceRecordSet {
+                            name: "example.com".to_string(),
+                            type_: "A".to_string(),
+                            ttl: 300,
+                            resource_records: ResourceRecords {
+                                resource_records: vec![ResourceRecord {
+                                    value: "127.0.0.1".to_string(),
+                                }],
+                            },
+                            set_identifier: None,
+                            weight: None,
+                            region: None,
+                            geo_location: None,
+                            health_check_id: None,
+                            traffic_policy_instance_id: None,
+                        },
+                    }],
+                },
+            },
+        };
+        let out = to_string(&req).unwrap();
+        println!("SERIALIZED: {}", out);
+        assert!(out.starts_with("<ChangeResourceRecordSetsRequest"));
+    }
 }
