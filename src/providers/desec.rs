@@ -15,6 +15,9 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+/// Minimum TTL required by deSEC
+const MIN_TTL: u32 = 3600;
+
 pub struct DesecDnsRecordRepresentation {
     pub record_type: String,
     pub content: String,
@@ -56,6 +59,31 @@ struct DesecEmptyResponse {}
 /// The default endpoint for the desec API.
 const DEFAULT_API_ENDPOINT: &str = "https://desec.io/api/v1";
 
+/// Normalizes TXT record content by removing parentheses, newlines, and extra whitespace
+fn normalize_txt_content(content: &str) -> String {
+    content
+        .replace('(', "")
+        .replace(')', "")
+        .replace('\n', "")
+        .replace('\r', "")
+        .replace(' ', "")
+}
+
+/// Validates that a subname only contains allowed characters (a-z, 0-9, ., -, _)
+/// and is lowercase. Returns the subname if valid, otherwise returns an error.
+fn validate_subname(subname: &str) -> crate::Result<()> {
+    if subname.is_empty() {
+        return Ok(());
+    }
+    if !subname
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-' || c == '_')
+    {
+        return Err(crate::DnsError::InvalidSubname(subname.to_string()).into());
+    }
+    Ok(())
+}
+
 impl DesecProvider {
     pub(crate) fn new(auth_token: impl AsRef<str>, timeout: Option<Duration>) -> Self {
         let client = HttpClientBuilder::default()
@@ -87,6 +115,12 @@ impl DesecProvider {
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, None);
 
+        // Validate subname
+        validate_subname(&subdomain)?;
+
+        // Enforce minimum TTL
+        let ttl = std::cmp::max(ttl, MIN_TTL);
+
         let desec_record = DesecDnsRecordRepresentation::from(record);
         self.client
             .post(format!(
@@ -115,6 +149,12 @@ impl DesecProvider {
         let name = name.into_name();
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, None);
+
+        // Validate subname
+        validate_subname(&subdomain)?;
+
+        // Enforce minimum TTL
+        let ttl = std::cmp::max(ttl, MIN_TTL);
 
         let desec_record = DesecDnsRecordRepresentation::from(record);
         self.client
@@ -195,7 +235,7 @@ impl From<DnsRecord> for DesecDnsRecordRepresentation {
             },
             DnsRecord::TXT(content) => DesecDnsRecordRepresentation {
                 record_type: "TXT".to_string(),
-                content: format!("\"{content}\""),
+                content: format!("\"{}\"", normalize_txt_content(&content)),
             },
             DnsRecord::SRV(srv) => DesecDnsRecordRepresentation {
                 record_type: "SRV".to_string(),
