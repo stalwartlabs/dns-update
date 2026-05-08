@@ -220,12 +220,14 @@ impl CloudflareProvider {
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        let zone_id = self.obtain_zone_id(origin).await?;
         let name = name.into_name();
+        let record_id = self
+            .obtain_record_id(&zone_id, name.as_ref(), record.as_type())
+            .await?;
         self.client
             .patch(format!(
-                "https://api.cloudflare.com/client/v4/zones/{}/dns_records/{}",
-                self.obtain_zone_id(origin).await?,
-                name.as_ref()
+                "https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}",
             ))
             .with_body(UpdateDnsRecordParams {
                 ttl: ttl.into(),

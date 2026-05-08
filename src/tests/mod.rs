@@ -10,6 +10,7 @@
  */
 
 pub mod bunny_test;
+pub mod cloudflare_tests;
 pub mod desec_tests;
 pub mod dnsimple_tests;
 pub mod google_cloud_dns_tests;
