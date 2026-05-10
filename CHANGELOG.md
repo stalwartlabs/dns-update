@@ -3,6 +3,7 @@ dns-update 0.2.7
 - OVH + Google Cloud DNS: Fix FQDN handling for `MX` and `SRV` records.
 - Route53: Fix changeset error resolution.
 - deSEC: Use empty `subname` for apex records instead of `@`, which the API rejects.
+- Cloudflare: Wrap `TXT` record content in double quotes (RFC 1035) to suppress dashboard warnings.
 
 dns-update 0.2.6
 ================================

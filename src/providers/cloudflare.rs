@@ -303,7 +303,9 @@ impl From<DnsRecord> for DnsContent {
                 content: mx.exchange,
                 priority: mx.priority,
             },
-            DnsRecord::TXT(content) => DnsContent::TXT { content },
+            DnsRecord::TXT(content) => DnsContent::TXT {
+                content: format!("\"{}\"", content.replace('\"', "\\\"")),
+            },
             DnsRecord::SRV(srv) => DnsContent::SRV {
                 data: SrvData {
                     priority: srv.priority,
