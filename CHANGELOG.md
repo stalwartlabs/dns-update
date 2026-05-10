@@ -1,6 +1,8 @@
 dns-update 0.2.7
 ================================
-- OVH + Google Cloud DNS: Fixes FQDN handling for `MX` and `SRV` records.
+- OVH + Google Cloud DNS: Fix FQDN handling for `MX` and `SRV` records.
+- Route53: Fix changeset error resolution.
+- deSEC: Use empty `subname` for apex records instead of `@`, which the API rejects.
 
 dns-update 0.2.6
 ================================
