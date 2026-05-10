@@ -16,7 +16,7 @@ use providers::ovh::OvhProvider;
 #[cfg(feature = "test_provider")]
 use providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
 
-pub use hickory_client::proto::dnssec;
+pub use hickory_proto::dnssec;
 use providers::{
     bunny::BunnyProvider, cloudflare::CloudflareProvider, desec::DesecProvider,
     digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider, porkbun::PorkBunProvider,
