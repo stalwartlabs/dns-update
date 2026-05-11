@@ -1,4 +1,4 @@
-dns-update 0.2.7
+dns-update 0.3.0
 ================================
 - OVH + Google Cloud DNS: Fix FQDN handling for `MX` and `SRV` records.
 - Route53: Fix changeset error resolution.
