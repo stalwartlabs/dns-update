@@ -12,7 +12,8 @@ and different cloud provider APIs such as [Cloudflare](https://www.cloudflare.co
 ## Limitations
  
 - Currently the library is `async` only.
-- Besides RFC 2136, it only supports a few cloud providers API. 
+- Besides RFC 2136, it only supports a few cloud providers API.
+- SIG(0) authentication for RFC 2136 is not supported (removed in hickory v0.26). Use TSIG instead. 
 
 ## PRs Welcome
 

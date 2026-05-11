@@ -279,7 +279,8 @@ impl Route53Provider {
             change_batch,
         };
 
-        let xml_body = to_string(&request).map_err(|e| format!("XML serialization error: {}", e))?;
+        let xml_body =
+            to_string(&request).map_err(|e| format!("XML serialization error: {}", e))?;
         let payload = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n{}", xml_body);
 
         self.send_signed_request("POST", &url, Some(payload))
@@ -318,7 +319,10 @@ impl Route53Provider {
         let parsed_url = url.parse::<reqwest::Url>()?;
         let canonical_uri = parsed_url.path();
         let canonical_querystring = parsed_url.query().unwrap_or("");
-        let canonical_headers = format!("content-type:application/xml\nhost:{}\nx-amz-date:{}\n", ROUTE53_HOST, amz_date);
+        let canonical_headers = format!(
+            "content-type:application/xml\nhost:{}\nx-amz-date:{}\n",
+            ROUTE53_HOST, amz_date
+        );
         let signed_headers = "content-type;host;x-amz-date";
 
         let canonical_request = format!(

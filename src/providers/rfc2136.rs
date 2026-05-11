@@ -13,29 +13,25 @@ use crate::utils::txt_chunks;
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, TlsaCertUsage, TlsaMatching, TlsaSelector,
 };
-use hickory_client::ClientError;
-use hickory_client::client::{Client, ClientHandle};
-use hickory_client::proto::ProtoError;
-use hickory_client::proto::dnssec::rdata::KEY;
-use hickory_client::proto::dnssec::rdata::tsig::TsigAlgorithm;
-use hickory_client::proto::dnssec::tsig::TSigner;
-use hickory_client::proto::dnssec::{Algorithm, DnsSecError, SigSigner, SigningKey};
-use hickory_client::proto::op::MessageFinalizer;
-use hickory_client::proto::op::ResponseCode;
-use hickory_client::proto::rr::rdata::caa::KeyValue;
-use hickory_client::proto::rr::rdata::tlsa::{CertUsage, Matching, Selector};
-use hickory_client::proto::rr::rdata::{A, AAAA, CAA, CNAME, MX, NS, SRV, TLSA, TXT};
-use hickory_client::proto::rr::{Name, RData, Record, RecordType};
-use hickory_client::proto::runtime::TokioRuntimeProvider;
-use hickory_client::proto::tcp::TcpClientStream;
-use hickory_client::proto::udp::UdpClientStream;
+use hickory_net::NetError;
+use hickory_net::client::{Client, ClientHandle};
+use hickory_net::runtime::TokioRuntimeProvider;
+use hickory_net::tcp::TcpClientStream;
+use hickory_net::udp::UdpClientStream;
+use hickory_proto::ProtoError;
+use hickory_proto::dnssec::DnsSecError;
+use hickory_proto::op::ResponseCode;
+use hickory_proto::rr::rdata::caa::KeyValue;
+use hickory_proto::rr::rdata::tlsa::{CertUsage, Matching, Selector};
+use hickory_proto::rr::rdata::tsig::TsigAlgorithm;
+use hickory_proto::rr::rdata::{A, AAAA, CAA, CNAME, MX, NS, SRV, TLSA, TXT};
+use hickory_proto::rr::{Name, RData, Record, RecordType, TSigner};
 use std::net::{AddrParseError, SocketAddr};
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Rfc2136Provider {
     addr: DnsAddress,
-    signer: Arc<dyn MessageFinalizer>,
+    signer: Option<TSigner>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,7 +51,7 @@ impl Rfc2136Provider {
             addr: addr
                 .try_into()
                 .map_err(|_| Error::Parse("Invalid address".to_string()))?,
-            signer: Arc::new(TSigner::new(
+            signer: Some(TSigner::new(
                 key.into(),
                 algorithm,
                 Name::from_ascii(key_name.as_ref())?,
@@ -64,47 +60,23 @@ impl Rfc2136Provider {
         })
     }
 
-    /// SIG(0) support is slated for removal in v0.3.0.
-    pub(crate) fn new_sig0(
-        addr: impl TryInto<DnsAddress>,
-        signer_name: impl AsRef<str>,
-        key: Box<dyn SigningKey>,
-        public_key: impl Into<Vec<u8>>,
-        algorithm: Algorithm,
-    ) -> crate::Result<Self> {
-        let sig0key = KEY::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            algorithm,
-            public_key.into(),
-        );
-
-        let signer = SigSigner::sig0(sig0key, key, Name::from_str_relaxed(signer_name.as_ref())?);
-
-        Ok(Rfc2136Provider {
-            addr: addr
-                .try_into()
-                .map_err(|_| Error::Parse("Invalid address".to_string()))?,
-            signer: Arc::new(signer),
-        })
-    }
-
-    async fn connect(&self) -> crate::Result<Client> {
+    async fn connect(&self) -> crate::Result<Client<TokioRuntimeProvider>> {
         match &self.addr {
             DnsAddress::Udp(addr) => {
-                let stream = UdpClientStream::builder(*addr, TokioRuntimeProvider::new())
-                    .with_signer(Some(self.signer.clone()))
-                    .build();
-                let (client, bg) = Client::connect(stream).await?;
+                let mut builder = UdpClientStream::builder(*addr, TokioRuntimeProvider::new());
+                if let Some(signer) = &self.signer {
+                    builder = builder.with_signer(Some(signer.clone()));
+                }
+                let stream = builder.build();
+                let (client, bg) = Client::from_sender(stream);
                 tokio::spawn(bg);
                 Ok(client)
             }
             DnsAddress::Tcp(addr) => {
-                let (stream, sender) =
+                let (stream_future, sender) =
                     TcpClientStream::new(*addr, None, None, TokioRuntimeProvider::new());
-                let (client, bg) = Client::new(stream, sender, Some(self.signer.clone())).await?;
+                let stream = stream_future.await?;
+                let (client, bg) = Client::new(stream, sender);
                 tokio::spawn(bg);
                 Ok(client)
             }
@@ -129,10 +101,10 @@ impl Rfc2136Provider {
         let result = client
             .create(record, Name::from_str_relaxed(origin.into_fqdn().as_ref())?)
             .await?;
-        if result.response_code() == ResponseCode::NoError {
+        if result.response_code == ResponseCode::NoError {
             Ok(())
         } else {
-            Err(crate::Error::Response(result.response_code().to_string()))
+            Err(crate::Error::Response(result.response_code.to_string()))
         }
     }
 
@@ -158,10 +130,10 @@ impl Rfc2136Provider {
                 false,
             )
             .await?;
-        if result.response_code() == ResponseCode::NoError {
+        if result.response_code == ResponseCode::NoError {
             Ok(())
         } else {
-            Err(crate::Error::Response(result.response_code().to_string()))
+            Err(crate::Error::Response(result.response_code.to_string()))
         }
     }
 
@@ -181,10 +153,10 @@ impl Rfc2136Provider {
         let result = client
             .delete_rrset(record, Name::from_str_relaxed(origin.into_fqdn().as_ref())?)
             .await?;
-        if result.response_code() == ResponseCode::NoError {
+        if result.response_code == ResponseCode::NoError {
             Ok(())
         } else {
-            Err(crate::Error::Response(result.response_code().to_string()))
+            Err(crate::Error::Response(result.response_code.to_string()))
         }
     }
 }
@@ -386,18 +358,6 @@ impl From<crate::TsigAlgorithm> for TsigAlgorithm {
     }
 }
 
-impl From<crate::Algorithm> for Algorithm {
-    fn from(alg: crate::Algorithm) -> Self {
-        match alg {
-            crate::Algorithm::RSASHA256 => Algorithm::RSASHA256,
-            crate::Algorithm::RSASHA512 => Algorithm::RSASHA512,
-            crate::Algorithm::ECDSAP256SHA256 => Algorithm::ECDSAP256SHA256,
-            crate::Algorithm::ECDSAP384SHA384 => Algorithm::ECDSAP384SHA384,
-            crate::Algorithm::ED25519 => Algorithm::ED25519,
-        }
-    }
-}
-
 impl From<ProtoError> for Error {
     fn from(e: ProtoError) -> Self {
         Error::Protocol(e.to_string())
@@ -410,8 +370,8 @@ impl From<AddrParseError> for Error {
     }
 }
 
-impl From<ClientError> for Error {
-    fn from(e: ClientError) -> Self {
+impl From<NetError> for Error {
+    fn from(e: NetError) -> Self {
         Error::Client(e.to_string())
     }
 }

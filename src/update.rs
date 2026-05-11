@@ -10,12 +10,6 @@
  */
 
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-use crate::Algorithm;
-
-#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-use hickory_client::proto::dnssec::SigningKey;
-
-#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use crate::providers::ovh::{OvhEndpoint, OvhProvider};
 
 #[cfg(feature = "test_provider")]
@@ -55,34 +49,6 @@ impl DnsUpdater {
             addr,
             key_name,
             key,
-            algorithm.into(),
-        )?))
-    }
-
-    /// Create a new DNS updater using the RFC 2136 protocol and SIG(0) authentication.
-    ///
-    /// **Deprecated:** SIG(0) support will be removed in v0.3.0. Upstream
-    /// `hickory-client` has dropped SIG(0) message authentication in v0.26
-    /// (see hickory-dns/hickory-dns#3437) due to negligible real-world use, and
-    /// every production RFC 2136 endpoint and ACME client uses TSIG. Migrate to
-    /// [`DnsUpdater::new_rfc2136_tsig`].
-    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-    #[deprecated(
-        since = "0.2.1",
-        note = "SIG(0) will be removed in v0.3.0, upstream hickory-client v0.26 drops SIG(0) message authentication; use `new_rfc2136_tsig` instead"
-    )]
-    pub fn new_rfc2136_sig0(
-        addr: impl TryInto<DnsAddress>,
-        signer_name: impl AsRef<str>,
-        key: Box<dyn SigningKey>,
-        public_key: impl Into<Vec<u8>>,
-        algorithm: Algorithm,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Rfc2136(Rfc2136Provider::new_sig0(
-            addr,
-            signer_name,
-            key,
-            public_key,
             algorithm.into(),
         )?))
     }

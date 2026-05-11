@@ -319,11 +319,7 @@ impl From<DnsRecord> for DnsContent {
                     usage: u8::from(tlsa.cert_usage),
                     selector: u8::from(tlsa.selector),
                     matching_type: u8::from(tlsa.matching),
-                    certificate: tlsa
-                        .cert_data
-                        .iter()
-                        .map(|b| format!("{b:02x}"))
-                        .collect(),
+                    certificate: tlsa.cert_data.iter().map(|b| format!("{b:02x}")).collect(),
                 },
             },
             DnsRecord::CAA(caa) => {
