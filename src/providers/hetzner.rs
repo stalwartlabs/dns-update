@@ -30,16 +30,6 @@ pub struct HetznerDnsRecordRepresentation {
     pub value: String,
 }
 
-#[derive(Serialize, Debug)]
-pub struct CreateRRSetRequest<'a> {
-    pub name: &'a str,
-    #[serde(rename = "type")]
-    pub rr_type: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl: Option<u32>,
-    pub records: Vec<RRSetRecord>,
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RRSetRecord {
     pub value: String,
@@ -88,25 +78,46 @@ impl HetznerProvider {
         let subdomain = strip_origin_from_name(&name.into_name(), &zone, None);
         let hetzner_record = HetznerDnsRecordRepresentation::from(record);
 
+        // `add_records` appends to an existing RRSet, or auto-creates one if
+        // it does not exist. TTL is intentionally omitted: when an RRSet
+        // already exists, Hetzner rejects an `add_records` call whose TTL
+        // differs from the existing one. We enforce the caller's TTL via the
+        // follow-up `change_ttl` call below, so the caller's TTL always wins.
         self.client
             .post(format!(
-                "{endpoint}/zones/{zone}/rrsets",
+                "{endpoint}/zones/{zone}/rrsets/{rr_name}/{rr_type}/actions/add_records",
                 endpoint = self.endpoint,
                 zone = &zone,
+                rr_name = &subdomain,
+                rr_type = &hetzner_record.record_type,
             ))
-            .with_body(CreateRRSetRequest {
-                name: &subdomain,
-                rr_type: &hetzner_record.record_type,
-                ttl: Some(ttl),
+            .with_body(SetRecordsRequest {
                 records: vec![RRSetRecord {
                     value: hetzner_record.value,
                 }],
             })?
             .send_with_retry::<serde_json::Value>(3)
             .await
+            .map(|_| ())?;
+
+        self.client
+            .post(format!(
+                "{endpoint}/zones/{zone}/rrsets/{rr_name}/{rr_type}/actions/change_ttl",
+                endpoint = self.endpoint,
+                zone = &zone,
+                rr_name = &subdomain,
+                rr_type = &hetzner_record.record_type,
+            ))
+            .with_body(ChangeTtlRequest { ttl })?
+            .send_with_retry::<serde_json::Value>(3)
+            .await
             .map(|_| ())
     }
 
+    // Replaces every record in the (name, type) RRSet with the single
+    // provided record. Matches the RRSet-level semantics of `desec`,
+    // `route53`, and `google_cloud_dns`: the trait does not expose which
+    // specific record to overwrite, so the whole RRSet is rewritten.
     pub(crate) async fn update(
         &self,
         name: impl IntoFqdn<'_>,
@@ -149,6 +160,8 @@ impl HetznerProvider {
             .map(|_| ())
     }
 
+    // Removes the entire (name, type) RRSet. Matches the RRSet-level
+    // semantics of `desec`, `route53`, and `google_cloud_dns`.
     pub(crate) async fn delete(
         &self,
         name: impl IntoFqdn<'_>,
