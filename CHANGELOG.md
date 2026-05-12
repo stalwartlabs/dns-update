@@ -1,3 +1,7 @@
+dns-update 0.3.1
+================================
+- RFC2136 TSIG: Fix regression related to multiplexer.
+
 dns-update 0.3.0
 ================================
 - OVH + Google Cloud DNS: Fix FQDN handling for `MX` and `SRV` records.

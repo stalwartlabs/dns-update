@@ -18,6 +18,7 @@ use hickory_net::client::{Client, ClientHandle};
 use hickory_net::runtime::TokioRuntimeProvider;
 use hickory_net::tcp::TcpClientStream;
 use hickory_net::udp::UdpClientStream;
+use hickory_net::xfer::DnsMultiplexer;
 use hickory_proto::ProtoError;
 use hickory_proto::dnssec::DnsSecError;
 use hickory_proto::op::ResponseCode;
@@ -76,7 +77,11 @@ impl Rfc2136Provider {
                 let (stream_future, sender) =
                     TcpClientStream::new(*addr, None, None, TokioRuntimeProvider::new());
                 let stream = stream_future.await?;
-                let (client, bg) = Client::new(stream, sender);
+                let mut multiplexer = DnsMultiplexer::new(stream, sender);
+                if let Some(signer) = &self.signer {
+                    multiplexer = multiplexer.with_signer(signer.clone());
+                }
+                let (client, bg) = Client::from_sender(multiplexer);
                 tokio::spawn(bg);
                 Ok(client)
             }
