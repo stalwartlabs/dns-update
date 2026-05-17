@@ -15,12 +15,14 @@ pub mod bindman;
 pub mod bluecatv2;
 pub mod bunny;
 pub mod cloudflare;
+pub mod cloudns;
 pub mod constellix;
 pub mod ddnss;
 pub mod desec;
 pub mod digitalocean;
 pub mod dnsimple;
 pub mod dnsmadeeasy;
+pub mod dreamhost;
 pub mod duckdns;
 pub mod dynu;
 pub mod easydns;
@@ -28,6 +30,7 @@ pub mod exoscale;
 pub mod freemyip;
 pub mod gandiv5;
 pub mod gcore;
+pub mod glesys;
 pub mod godaddy;
 pub mod google_cloud_dns;
 pub mod hetzner;
@@ -39,6 +42,8 @@ pub mod ionos;
 pub mod ipv64;
 pub mod joker;
 pub mod linode;
+pub mod luadns;
+pub mod mailinabox;
 pub mod mythicbeasts;
 pub mod namecheap;
 pub mod namedotcom;
@@ -46,7 +51,7 @@ pub mod namesilo;
 pub mod netcup;
 pub mod netlify;
 pub mod nifcloud;
-pub mod mailinabox;
+pub mod ns1;
 pub mod ovh;
 pub mod pdns;
 #[cfg(feature = "test_provider")]
@@ -56,12 +61,12 @@ pub mod rfc2136;
 pub mod route53;
 pub mod scaleway;
 pub mod spaceship;
+pub mod technitium;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod transip;
 pub mod vercel;
 pub mod vultr;
 pub mod websupport;
-pub mod technitium;
 
 impl DnsRecord {
     pub fn priority(&self) -> Option<u16> {
