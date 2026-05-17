@@ -11,9 +11,14 @@
 
 pub mod bunny_test;
 pub mod cloudflare_tests;
+pub mod ddnss_tests;
 pub mod desec_tests;
 pub mod dnsimple_tests;
+pub mod duckdns_tests;
+pub mod dynu_tests;
+pub mod freemyip_tests;
 pub mod google_cloud_dns_tests;
+pub mod ipv64_tests;
 #[cfg(test)]
 pub mod lib_tests;
 pub mod ovh_tests;
