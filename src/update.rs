@@ -29,6 +29,11 @@ use crate::{
         desec::DesecProvider,
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
+        gandiv5::GandiV5Provider,
+        godaddy::GodaddyProvider,
+        hetzner::HetznerProvider,
+        namedotcom::NameDotComProvider,
+        namesilo::NameSiloProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
@@ -140,6 +145,59 @@ impl DnsUpdater {
         )))
     }
 
+    /// Create a new DNS updater using the Gandi LiveDNS API (v5).
+    pub fn new_gandiv5(
+        personal_access_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::GandiV5(GandiV5Provider::new(
+            personal_access_token,
+            timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the GoDaddy API.
+    pub fn new_godaddy(
+        api_key: impl AsRef<str>,
+        api_secret: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Godaddy(GodaddyProvider::new(
+            api_key, api_secret, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Hetzner Cloud DNS (v1) API.
+    pub fn new_hetzner(
+        api_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Hetzner(HetznerProvider::new(
+            api_token, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Name.com v4 API.
+    pub fn new_namedotcom(
+        username: impl AsRef<str>,
+        api_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::NameDotCom(NameDotComProvider::new(
+            username, api_token, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the NameSilo API.
+    pub fn new_namesilo(
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::NameSilo(NameSiloProvider::new(
+            api_key, timeout,
+        )?))
+    }
+
     /// Create a new DNS updater using the Google Cloud DNS API.
     pub fn new_google_cloud_dns(
         config: crate::providers::google_cloud_dns::GoogleCloudDnsConfig,
@@ -180,6 +238,11 @@ impl DnsUpdater {
             DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::GandiV5(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Godaddy(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Hetzner(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::NameDotCom(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::NameSilo(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
@@ -210,6 +273,11 @@ impl DnsUpdater {
             DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::GandiV5(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Godaddy(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Hetzner(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::NameDotCom(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::NameSilo(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
@@ -239,6 +307,11 @@ impl DnsUpdater {
             DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::GandiV5(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Godaddy(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Hetzner(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::NameDotCom(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::NameSilo(provider) => provider.delete(name, origin, record).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,

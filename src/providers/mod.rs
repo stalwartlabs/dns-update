@@ -16,7 +16,12 @@ pub mod cloudflare;
 pub mod desec;
 pub mod digitalocean;
 pub mod dnsimple;
+pub mod gandiv5;
+pub mod godaddy;
 pub mod google_cloud_dns;
+pub mod hetzner;
+pub mod namedotcom;
+pub mod namesilo;
 #[cfg(feature = "test_provider")]
 pub mod in_memory;
 pub mod ovh;
