@@ -24,15 +24,20 @@ use std::sync::{Arc, Mutex};
 use crate::{
     DnsRecord, DnsRecordType, DnsUpdater, IntoFqdn, TsigAlgorithm,
     providers::{
+        bindman::BindmanProvider,
+        bluecatv2::{BluecatV2Config, BluecatV2Provider},
         bunny::BunnyProvider,
         cloudflare::CloudflareProvider,
         desec::DesecProvider,
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
+        mailinabox::MailinaboxProvider,
+        pdns::PdnsProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
         spaceship::SpaceshipProvider,
+        technitium::TechnitiumProvider,
     },
 };
 use std::time::Duration;
@@ -154,6 +159,62 @@ impl DnsUpdater {
         Ok(DnsUpdater::Route53(Route53Provider::new(config)))
     }
 
+    /// Create a new DNS updater using the PowerDNS HTTP API.
+    pub fn new_pdns(
+        api_key: impl AsRef<str>,
+        endpoint: Option<impl AsRef<str>>,
+        server_name: Option<impl AsRef<str>>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Pdns(PdnsProvider::new(
+            api_key,
+            endpoint,
+            server_name,
+            timeout,
+        )))
+    }
+
+    /// Create a new DNS updater using the Technitium DNS Server API.
+    pub fn new_technitium(
+        base_url: impl AsRef<str>,
+        api_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Technitium(TechnitiumProvider::new(
+            base_url, api_token, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Bindman webhook API.
+    pub fn new_bindman(
+        manager_url: impl AsRef<str>,
+        basic_auth: Option<(impl AsRef<str>, impl AsRef<str>)>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Bindman(BindmanProvider::new(
+            manager_url,
+            basic_auth,
+            timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Mail-in-a-Box DNS API.
+    pub fn new_mailinabox(
+        base_url: impl AsRef<str>,
+        email: impl AsRef<str>,
+        password: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Mailinabox(MailinaboxProvider::new(
+            base_url, email, password, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Bluecat Address Manager v2 REST API.
+    pub fn new_bluecatv2(config: BluecatV2Config) -> crate::Result<Self> {
+        Ok(DnsUpdater::BluecatV2(BluecatV2Provider::new(config)?))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -193,6 +254,11 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Pdns(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Technitium(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Bindman(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Mailinabox(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::BluecatV2(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -223,6 +289,11 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Pdns(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Technitium(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Bindman(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Mailinabox(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::BluecatV2(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -250,6 +321,11 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Pdns(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Technitium(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Bindman(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Mailinabox(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::BluecatV2(provider) => provider.delete(name, origin, record).await,
         }
     }
 }

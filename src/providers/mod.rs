@@ -11,6 +11,8 @@
 
 use crate::DnsRecord;
 
+pub mod bindman;
+pub mod bluecatv2;
 pub mod bunny;
 pub mod cloudflare;
 pub mod desec;
@@ -19,13 +21,16 @@ pub mod dnsimple;
 pub mod google_cloud_dns;
 #[cfg(feature = "test_provider")]
 pub mod in_memory;
+pub mod mailinabox;
 pub mod ovh;
+pub mod pdns;
 #[cfg(feature = "test_provider")]
 pub mod pebble;
 pub mod porkbun;
 pub mod rfc2136;
 pub mod route53;
 pub mod spaceship;
+pub mod technitium;
 
 impl DnsRecord {
     pub fn priority(&self) -> Option<u16> {

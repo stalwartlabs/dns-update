@@ -18,9 +18,11 @@ use providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
 
 pub use hickory_proto::dnssec;
 use providers::{
-    bunny::BunnyProvider, cloudflare::CloudflareProvider, desec::DesecProvider,
-    digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider, porkbun::PorkBunProvider,
-    rfc2136::Rfc2136Provider, route53::Route53Provider, spaceship::SpaceshipProvider,
+    bindman::BindmanProvider, bluecatv2::BluecatV2Provider, bunny::BunnyProvider,
+    cloudflare::CloudflareProvider, desec::DesecProvider, digitalocean::DigitalOceanProvider,
+    dnsimple::DNSimpleProvider, mailinabox::MailinaboxProvider, pdns::PdnsProvider,
+    porkbun::PorkBunProvider, rfc2136::Rfc2136Provider, route53::Route53Provider,
+    spaceship::SpaceshipProvider, technitium::TechnitiumProvider,
 };
 use std::{
     borrow::Cow,
@@ -202,6 +204,11 @@ pub enum DnsUpdater {
     #[cfg(feature = "test_provider")]
     InMemory(InMemoryProvider),
     Route53(Route53Provider),
+    Pdns(PdnsProvider),
+    Technitium(TechnitiumProvider),
+    Bindman(BindmanProvider),
+    Mailinabox(MailinaboxProvider),
+    BluecatV2(BluecatV2Provider),
 }
 
 pub trait IntoFqdn<'x> {
