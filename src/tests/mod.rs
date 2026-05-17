@@ -9,11 +9,13 @@
  * except according to those terms.
  */
 
+pub mod azuredns_tests;
 pub mod bunny_test;
 pub mod cloudflare_tests;
 pub mod desec_tests;
 pub mod dnsimple_tests;
 pub mod google_cloud_dns_tests;
+pub mod ibmcloud_tests;
 #[cfg(test)]
 pub mod lib_tests;
 pub mod ovh_tests;

@@ -24,11 +24,13 @@ use std::sync::{Arc, Mutex};
 use crate::{
     DnsRecord, DnsRecordType, DnsUpdater, IntoFqdn, TsigAlgorithm,
     providers::{
+        azuredns::{AzureDnsConfig, AzureDnsProvider},
         bunny::BunnyProvider,
         cloudflare::CloudflareProvider,
         desec::DesecProvider,
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
+        ibmcloud::IbmCloudProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
@@ -154,6 +156,22 @@ impl DnsUpdater {
         Ok(DnsUpdater::Route53(Route53Provider::new(config)))
     }
 
+    /// Create a new DNS updater using the Azure DNS REST API with OAuth2 client credentials.
+    pub fn new_azuredns(config: AzureDnsConfig) -> crate::Result<Self> {
+        Ok(DnsUpdater::AzureDns(AzureDnsProvider::new(config)?))
+    }
+
+    /// Create a new DNS updater using the IBM Cloud (SoftLayer classic) DNS API.
+    pub fn new_ibmcloud(
+        username: impl AsRef<str>,
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::IbmCloud(IbmCloudProvider::new(
+            username, api_key, timeout,
+        )?))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -175,11 +193,13 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         match self {
+            DnsUpdater::AzureDns(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::IbmCloud(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
@@ -205,11 +225,13 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         match self {
+            DnsUpdater::AzureDns(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::IbmCloud(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
@@ -234,11 +256,13 @@ impl DnsUpdater {
         record: DnsRecordType,
     ) -> crate::Result<()> {
         match self {
+            DnsUpdater::AzureDns(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Cloudflare(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::IbmCloud(provider) => provider.delete(name, origin, record).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,

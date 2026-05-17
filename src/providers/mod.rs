@@ -11,12 +11,14 @@
 
 use crate::DnsRecord;
 
+pub mod azuredns;
 pub mod bunny;
 pub mod cloudflare;
 pub mod desec;
 pub mod digitalocean;
 pub mod dnsimple;
 pub mod google_cloud_dns;
+pub mod ibmcloud;
 #[cfg(feature = "test_provider")]
 pub mod in_memory;
 pub mod ovh;
