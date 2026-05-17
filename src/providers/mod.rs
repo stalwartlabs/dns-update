@@ -11,6 +11,7 @@
 
 use crate::DnsRecord;
 
+pub mod alidns;
 pub mod bindman;
 pub mod bluecatv2;
 pub mod bunny;
@@ -62,6 +63,7 @@ pub mod route53;
 pub mod scaleway;
 pub mod spaceship;
 pub mod technitium;
+pub mod tencentcloud;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod transip;
 pub mod vercel;

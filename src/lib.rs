@@ -21,22 +21,24 @@ use providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
 
 pub use hickory_proto::dnssec;
 use providers::{
-    bindman::BindmanProvider, bluecatv2::BluecatV2Provider, bunny::BunnyProvider,
-    cloudflare::CloudflareProvider, cloudns::ClouDnsProvider, constellix::ConstellixProvider,
-    ddnss::DdnssProvider, desec::DesecProvider, digitalocean::DigitalOceanProvider,
-    dnsimple::DNSimpleProvider, dnsmadeeasy::DnsMadeEasyProvider, dreamhost::DreamhostProvider,
-    duckdns::DuckDnsProvider, dynu::DynuProvider, easydns::EasyDnsProvider,
-    exoscale::ExoscaleProvider, freemyip::FreeMyIpProvider, gandiv5::GandiV5Provider,
-    gcore::GcoreProvider, glesys::GlesysProvider, godaddy::GodaddyProvider,
-    hetzner::HetznerProvider, hostingde::HostingDeProvider, infomaniak::InfomaniakProvider,
-    ionos::IonosProvider, ipv64::Ipv64Provider, joker::JokerProvider, linode::LinodeProvider,
+    alidns::AlidnsProvider, bindman::BindmanProvider, bluecatv2::BluecatV2Provider,
+    bunny::BunnyProvider, cloudflare::CloudflareProvider, cloudns::ClouDnsProvider,
+    constellix::ConstellixProvider, ddnss::DdnssProvider, desec::DesecProvider,
+    digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider,
+    dnsmadeeasy::DnsMadeEasyProvider, dreamhost::DreamhostProvider, duckdns::DuckDnsProvider,
+    dynu::DynuProvider, easydns::EasyDnsProvider, exoscale::ExoscaleProvider,
+    freemyip::FreeMyIpProvider, gandiv5::GandiV5Provider, gcore::GcoreProvider,
+    glesys::GlesysProvider, godaddy::GodaddyProvider, hetzner::HetznerProvider,
+    hostingde::HostingDeProvider, infomaniak::InfomaniakProvider, ionos::IonosProvider,
+    ipv64::Ipv64Provider, joker::JokerProvider, linode::LinodeProvider,
     luadns::LuaDnsProvider, mailinabox::MailinaboxProvider, mythicbeasts::MythicBeastsProvider,
     namecheap::NamecheapProvider, namedotcom::NameDotComProvider, namesilo::NameSiloProvider,
     netcup::NetcupProvider, netlify::NetlifyProvider, nifcloud::NifcloudProvider,
     ns1::Ns1Provider, pdns::PdnsProvider, porkbun::PorkBunProvider,
     rfc2136::Rfc2136Provider, route53::Route53Provider, scaleway::ScalewayProvider,
-    spaceship::SpaceshipProvider, technitium::TechnitiumProvider, vercel::VercelProvider,
-    vultr::VultrProvider, websupport::WebSupportProvider,
+    spaceship::SpaceshipProvider, technitium::TechnitiumProvider,
+    tencentcloud::TencentCloudProvider, vercel::VercelProvider, vultr::VultrProvider,
+    websupport::WebSupportProvider,
 };
 use std::{
     borrow::Cow,
@@ -259,6 +261,8 @@ pub enum DnsUpdater {
     ClouDns(ClouDnsProvider),
     Glesys(GlesysProvider),
     Dreamhost(DreamhostProvider),
+    Alidns(AlidnsProvider),
+    TencentCloud(TencentCloudProvider),
 }
 
 pub trait IntoFqdn<'x> {

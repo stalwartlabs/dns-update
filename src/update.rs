@@ -27,6 +27,7 @@ use std::sync::{Arc, Mutex};
 use crate::{
     DnsRecord, DnsRecordType, DnsUpdater, IntoFqdn, TsigAlgorithm,
     providers::{
+        alidns::AlidnsProvider,
         bindman::BindmanProvider,
         bluecatv2::{BluecatV2Config, BluecatV2Provider},
         bunny::BunnyProvider,
@@ -72,6 +73,7 @@ use crate::{
         scaleway::ScalewayProvider,
         spaceship::SpaceshipProvider,
         technitium::TechnitiumProvider,
+        tencentcloud::TencentCloudProvider,
         vercel::VercelProvider,
         vultr::VultrProvider,
         websupport::WebSupportProvider,
@@ -499,6 +501,25 @@ impl DnsUpdater {
         )?))
     }
 
+    /// Create a new DNS updater using the Alibaba Cloud DNS API.
+    pub fn new_alidns(
+        access_key: impl AsRef<str>,
+        secret_key: impl AsRef<str>,
+        region: Option<impl AsRef<str>>,
+        security_token: Option<impl AsRef<str>>,
+        line: Option<impl AsRef<str>>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Alidns(AlidnsProvider::new(
+            access_key,
+            secret_key,
+            region,
+            security_token,
+            line,
+            timeout,
+        )?))
+    }
+
     /// Create a new DNS updater using the ClouDNS API.
     pub fn new_cloudns(
         auth_id: Option<impl AsRef<str>>,
@@ -510,6 +531,23 @@ impl DnsUpdater {
             auth_id,
             sub_auth_id,
             auth_password,
+            timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Tencent Cloud DNSPod API.
+    pub fn new_tencentcloud(
+        secret_id: impl AsRef<str>,
+        secret_key: impl AsRef<str>,
+        region: Option<impl AsRef<str>>,
+        session_token: Option<impl AsRef<str>>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::TencentCloud(TencentCloudProvider::new(
+            secret_id,
+            secret_key,
+            region,
+            session_token,
             timeout,
         )?))
     }
@@ -643,6 +681,7 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         match self {
+            DnsUpdater::Alidns(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Ddnss(provider) => provider.create(name, record, ttl, origin).await,
@@ -674,6 +713,7 @@ impl DnsUpdater {
             DnsUpdater::Vercel(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Vultr(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::WebSupport(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::TencentCloud(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.create(name, record, ttl, origin).await
             }
@@ -716,6 +756,7 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         match self {
+            DnsUpdater::Alidns(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Ddnss(provider) => provider.update(name, record, ttl, origin).await,
@@ -747,6 +788,7 @@ impl DnsUpdater {
             DnsUpdater::Vercel(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Vultr(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::WebSupport(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::TencentCloud(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.update(name, record, ttl, origin).await
             }
@@ -788,6 +830,7 @@ impl DnsUpdater {
         record: DnsRecordType,
     ) -> crate::Result<()> {
         match self {
+            DnsUpdater::Alidns(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Cloudflare(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Ddnss(provider) => provider.delete(name, origin, record).await,
@@ -819,6 +862,7 @@ impl DnsUpdater {
             DnsUpdater::Vercel(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Vultr(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::WebSupport(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::TencentCloud(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Ionos(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::HostingDe(provider) => provider.delete(name, origin, record).await,

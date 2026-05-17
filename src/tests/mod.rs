@@ -9,6 +9,7 @@
  * except according to those terms.
  */
 
+pub mod alidns_tests;
 pub mod bindman_tests;
 pub mod bluecatv2_tests;
 pub mod bunny_test;
@@ -59,6 +60,7 @@ pub mod route53_tests;
 pub mod scaleway_tests;
 pub mod spaceship_tests;
 pub mod technitium_tests;
+pub mod tencentcloud_tests;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod transip_tests;
 pub mod vercel_tests;
