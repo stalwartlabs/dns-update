@@ -29,6 +29,8 @@ use crate::{
         desec::DesecProvider,
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
+        edgedns::{EdgeDnsConfig, EdgeDnsProvider},
+        lightsail::{LightsailConfig, LightsailProvider},
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
@@ -154,6 +156,16 @@ impl DnsUpdater {
         Ok(DnsUpdater::Route53(Route53Provider::new(config)))
     }
 
+    /// Create a new DNS updater using the AWS Lightsail DNS API.
+    pub fn new_lightsail(config: LightsailConfig) -> crate::Result<Self> {
+        Ok(DnsUpdater::Lightsail(LightsailProvider::new(config)?))
+    }
+
+    /// Create a new DNS updater using the Akamai EdgeDNS API.
+    pub fn new_edgedns(config: EdgeDnsConfig) -> crate::Result<Self> {
+        Ok(DnsUpdater::EdgeDns(EdgeDnsProvider::new(config)?))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -189,6 +201,8 @@ impl DnsUpdater {
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.create(name, record, ttl, origin).await
             }
+            DnsUpdater::Lightsail(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::EdgeDns(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -219,6 +233,8 @@ impl DnsUpdater {
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.update(name, record, ttl, origin).await
             }
+            DnsUpdater::Lightsail(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::EdgeDns(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -246,6 +262,8 @@ impl DnsUpdater {
             DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Spaceship(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Lightsail(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::EdgeDns(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]

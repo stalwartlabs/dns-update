@@ -16,9 +16,11 @@ pub mod cloudflare;
 pub mod desec;
 pub mod digitalocean;
 pub mod dnsimple;
+pub mod edgedns;
 pub mod google_cloud_dns;
 #[cfg(feature = "test_provider")]
 pub mod in_memory;
+pub mod lightsail;
 pub mod ovh;
 #[cfg(feature = "test_provider")]
 pub mod pebble;
