@@ -17,8 +17,13 @@ pub mod desec;
 pub mod digitalocean;
 pub mod dnsimple;
 pub mod google_cloud_dns;
+pub mod hostingde;
 #[cfg(feature = "test_provider")]
 pub mod in_memory;
+pub mod infomaniak;
+pub mod ionos;
+pub mod netcup;
+pub mod netlify;
 pub mod ovh;
 #[cfg(feature = "test_provider")]
 pub mod pebble;

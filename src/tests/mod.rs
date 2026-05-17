@@ -14,8 +14,13 @@ pub mod cloudflare_tests;
 pub mod desec_tests;
 pub mod dnsimple_tests;
 pub mod google_cloud_dns_tests;
+pub mod hostingde_tests;
+pub mod infomaniak_tests;
+pub mod ionos_tests;
 #[cfg(test)]
 pub mod lib_tests;
+pub mod netcup_tests;
+pub mod netlify_tests;
 pub mod ovh_tests;
 pub mod porkbun_tests;
 #[cfg(test)]

@@ -19,7 +19,9 @@ use providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
 pub use hickory_proto::dnssec;
 use providers::{
     bunny::BunnyProvider, cloudflare::CloudflareProvider, desec::DesecProvider,
-    digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider, porkbun::PorkBunProvider,
+    digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider,
+    hostingde::HostingDeProvider, infomaniak::InfomaniakProvider, ionos::IonosProvider,
+    netcup::NetcupProvider, netlify::NetlifyProvider, porkbun::PorkBunProvider,
     rfc2136::Rfc2136Provider, route53::Route53Provider, spaceship::SpaceshipProvider,
 };
 use std::{
@@ -197,6 +199,11 @@ pub enum DnsUpdater {
     Spaceship(SpaceshipProvider),
     DNSimple(DNSimpleProvider),
     GoogleCloudDns(providers::google_cloud_dns::GoogleCloudDnsProvider),
+    Ionos(IonosProvider),
+    HostingDe(HostingDeProvider),
+    Infomaniak(InfomaniakProvider),
+    Netcup(NetcupProvider),
+    Netlify(NetlifyProvider),
     #[cfg(feature = "test_provider")]
     Pebble(PebbleProvider),
     #[cfg(feature = "test_provider")]
