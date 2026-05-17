@@ -180,7 +180,7 @@ impl NifcloudProvider {
         let name_fqdn = name.into_fqdn().to_string();
         let domain = origin.into_name();
         let subdomain_name =
-            normalized_record_name(&name_fqdn.trim_end_matches('.'), &domain);
+            normalized_record_name(name_fqdn.trim_end_matches('.'), &domain);
 
         let delete_set = ResourceRecordSet {
             name: subdomain_name.clone(),

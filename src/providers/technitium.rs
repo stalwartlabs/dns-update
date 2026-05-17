@@ -108,10 +108,11 @@ impl TechnitiumProvider {
         domain: &str,
         record_type: DnsRecordType,
     ) -> crate::Result<()> {
-        let mut pairs: Vec<(&str, String)> = Vec::new();
-        pairs.push(("token", self.token.clone()));
-        pairs.push(("domain", domain.to_string()));
-        pairs.push(("type", record_type.as_str().to_string()));
+        let pairs: Vec<(&str, String)> = vec![
+            ("token", self.token.clone()),
+            ("domain", domain.to_string()),
+            ("type", record_type.as_str().to_string()),
+        ];
         let body = serde_urlencoded::to_string(&pairs)
             .map_err(|err| Error::Serialize(err.to_string()))?;
         self.call("delete", body).await

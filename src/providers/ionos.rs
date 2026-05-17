@@ -160,15 +160,14 @@ impl IonosProvider {
             if zone.name.is_empty() {
                 continue;
             }
-            if origin == zone.name || origin.ends_with(&format!(".{}", zone.name)) {
-                if best
+            if (origin == zone.name || origin.ends_with(&format!(".{}", zone.name)))
+                && best
                     .as_ref()
                     .map(|b| zone.name.len() > b.name.len())
                     .unwrap_or(true)
                 {
                     best = Some(zone);
                 }
-            }
         }
 
         best.map(|z| z.id)

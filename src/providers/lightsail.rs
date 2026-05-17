@@ -156,14 +156,13 @@ impl LightsailProvider {
 
     fn signing_host(&self) -> String {
         let url = format!("{}/", self.base_url());
-        if let Ok(parsed) = url.parse::<reqwest::Url>() {
-            if let Some(host) = parsed.host_str() {
+        if let Ok(parsed) = url.parse::<reqwest::Url>()
+            && let Some(host) = parsed.host_str() {
                 return match parsed.port() {
                     Some(p) => format!("{}:{}", host, p),
                     None => host.to_string(),
                 };
             }
-        }
         self.default_host()
     }
 
@@ -311,15 +310,14 @@ impl LightsailProvider {
         let mut best: Option<String> = None;
         for domain in response.domains {
             let candidate = domain.name.trim_end_matches('.').to_ascii_lowercase();
-            if target == candidate || target.ends_with(&format!(".{}", candidate)) {
-                if best
+            if (target == candidate || target.ends_with(&format!(".{}", candidate)))
+                && best
                     .as_ref()
                     .map(|current| current.len() < candidate.len())
                     .unwrap_or(true)
                 {
                     best = Some(candidate);
                 }
-            }
         }
         best.ok_or_else(|| Error::Api(format!("No Lightsail domain found for {fqdn}")))
     }

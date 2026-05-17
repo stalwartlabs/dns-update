@@ -1,3 +1,69 @@
+dns-update 0.3.2
+================================
+- Added 62 new DNS provider integrations:
+   - Akamai Edge DNS
+   - Alibaba Cloud DNS
+   - ArvanCloud
+   - AutoDNS
+   - AWS Lightsail
+   - Azure DNS
+   - Baidu Cloud DNS
+   - Bindman
+   - BlueCat Address Manager v2
+   - ClouDNS
+   - Constellix
+   - cPanel
+   - DDNSS.de
+   - DNS Made Easy
+   - Domeneshop
+   - DreamHost
+   - DuckDNS
+   - Dynu
+   - EasyDNS
+   - Exoscale
+   - FreeMyIP
+   - Gandi v5
+   - Gcore
+   - GleSYS
+   - GoDaddy
+   - Hetzner DNS
+   - hosting.de
+   - Hostinger
+   - Huawei Cloud DNS
+   - Hurricane Electric
+   - IBM Cloud (SoftLayer)
+   - Infoblox NIOS
+   - Infomaniak
+   - INWX
+   - IONOS
+   - IPv64
+   - Joker
+   - Linode
+   - LuaDNS
+   - Mail-in-a-Box
+   - Mythic Beasts
+   - Name.com
+   - Namecheap
+   - NameSilo
+   - netcup
+   - Netlify
+   - Nifcloud
+   - NS1
+   - Oracle Cloud DNS
+   - Plesk
+   - PowerDNS
+   - SafeDNS
+   - Scaleway
+   - Technitium DNS Server
+   - Tencent Cloud DNSPod
+   - TransIP
+   - UltraDNS
+   - Vercel
+   - Volcano Engine
+   - Vultr
+   - Websupport
+   - Yandex Cloud DNS
+
 dns-update 0.3.1
 ================================
 - RFC2136 TSIG: Fix regression related to multiplexer.

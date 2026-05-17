@@ -367,13 +367,12 @@ fn infoblox_value_matches(value: &Value, record: &DnsRecord) -> bool {
 }
 
 fn infoblox_error_message(body: &str) -> String {
-    if let Ok(value) = serde_json::from_str::<InfobloxError>(body) {
-        if let Some(message) = value.error.or(value.text)
+    if let Ok(value) = serde_json::from_str::<InfobloxError>(body)
+        && let Some(message) = value.error.or(value.text)
             && !message.is_empty()
         {
             return message;
         }
-    }
     body.to_string()
 }
 
