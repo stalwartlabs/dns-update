@@ -16,6 +16,8 @@ pub mod dnsimple_tests;
 pub mod google_cloud_dns_tests;
 #[cfg(test)]
 pub mod lib_tests;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+pub mod oraclecloud_tests;
 pub mod ovh_tests;
 pub mod porkbun_tests;
 #[cfg(test)]

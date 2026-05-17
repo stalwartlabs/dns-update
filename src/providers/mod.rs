@@ -19,6 +19,8 @@ pub mod dnsimple;
 pub mod google_cloud_dns;
 #[cfg(feature = "test_provider")]
 pub mod in_memory;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+pub mod oraclecloud;
 pub mod ovh;
 #[cfg(feature = "test_provider")]
 pub mod pebble;

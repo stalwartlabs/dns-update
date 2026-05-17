@@ -11,6 +11,8 @@
  */
 
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use providers::oraclecloud::OracleCloudProvider;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use providers::ovh::OvhProvider;
 
 #[cfg(feature = "test_provider")]
@@ -192,6 +194,8 @@ pub enum DnsUpdater {
     Desec(DesecProvider),
     #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     Ovh(OvhProvider),
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+    OracleCloud(OracleCloudProvider),
     Bunny(BunnyProvider),
     Porkbun(PorkBunProvider),
     Spaceship(SpaceshipProvider),
