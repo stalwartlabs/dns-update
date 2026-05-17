@@ -24,11 +24,13 @@ use std::sync::{Arc, Mutex};
 use crate::{
     DnsRecord, DnsRecordType, DnsUpdater, IntoFqdn, TsigAlgorithm,
     providers::{
+        baiducloud::BaiduCloudProvider,
         bunny::BunnyProvider,
         cloudflare::CloudflareProvider,
         desec::DesecProvider,
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
+        huaweicloud::HuaweiCloudProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
@@ -154,6 +156,34 @@ impl DnsUpdater {
         Ok(DnsUpdater::Route53(Route53Provider::new(config)))
     }
 
+    /// Create a new DNS updater using the Huawei Cloud DNS API.
+    pub fn new_huaweicloud(
+        access_key: impl AsRef<str>,
+        secret_key: impl AsRef<str>,
+        region: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::HuaweiCloud(HuaweiCloudProvider::new(
+            access_key.as_ref(),
+            secret_key.as_ref(),
+            region.as_ref(),
+            timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Baidu Cloud DNS API.
+    pub fn new_baiducloud(
+        access_key: impl AsRef<str>,
+        secret_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::BaiduCloud(BaiduCloudProvider::new(
+            access_key.as_ref(),
+            secret_key.as_ref(),
+            timeout,
+        )?))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -189,6 +219,8 @@ impl DnsUpdater {
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.create(name, record, ttl, origin).await
             }
+            DnsUpdater::HuaweiCloud(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::BaiduCloud(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -219,6 +251,8 @@ impl DnsUpdater {
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.update(name, record, ttl, origin).await
             }
+            DnsUpdater::HuaweiCloud(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::BaiduCloud(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -246,6 +280,8 @@ impl DnsUpdater {
             DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Spaceship(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::HuaweiCloud(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::BaiduCloud(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]

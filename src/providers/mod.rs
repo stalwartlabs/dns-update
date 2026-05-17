@@ -11,12 +11,14 @@
 
 use crate::DnsRecord;
 
+pub mod baiducloud;
 pub mod bunny;
 pub mod cloudflare;
 pub mod desec;
 pub mod digitalocean;
 pub mod dnsimple;
 pub mod google_cloud_dns;
+pub mod huaweicloud;
 #[cfg(feature = "test_provider")]
 pub mod in_memory;
 pub mod ovh;
