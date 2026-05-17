@@ -26,9 +26,14 @@ use crate::{
     providers::{
         bunny::BunnyProvider,
         cloudflare::CloudflareProvider,
+        cloudns::ClouDnsProvider,
         desec::DesecProvider,
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
+        dreamhost::DreamhostProvider,
+        glesys::GlesysProvider,
+        luadns::LuaDnsProvider,
+        ns1::Ns1Provider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
@@ -154,6 +159,63 @@ impl DnsUpdater {
         Ok(DnsUpdater::Route53(Route53Provider::new(config)))
     }
 
+    /// Create a new DNS updater using the NS1 API.
+    pub fn new_ns1(
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Ns1(Ns1Provider::new(api_key, timeout)))
+    }
+
+    /// Create a new DNS updater using the LuaDNS API.
+    pub fn new_luadns(
+        api_username: impl AsRef<str>,
+        api_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::LuaDns(LuaDnsProvider::new(
+            api_username,
+            api_token,
+            timeout,
+        )))
+    }
+
+    /// Create a new DNS updater using the ClouDNS API.
+    pub fn new_cloudns(
+        auth_id: Option<impl AsRef<str>>,
+        sub_auth_id: Option<impl AsRef<str>>,
+        auth_password: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::ClouDns(ClouDnsProvider::new(
+            auth_id,
+            sub_auth_id,
+            auth_password,
+            timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the GleSYS API.
+    pub fn new_glesys(
+        api_user: impl AsRef<str>,
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Glesys(GlesysProvider::new(
+            api_user, api_key, timeout,
+        )))
+    }
+
+    /// Create a new DNS updater using the Dreamhost API.
+    pub fn new_dreamhost(
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Dreamhost(DreamhostProvider::new(
+            api_key, timeout,
+        )))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -193,6 +255,11 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Ns1(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::LuaDns(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::ClouDns(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Glesys(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Dreamhost(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -223,6 +290,11 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Ns1(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::LuaDns(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::ClouDns(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Glesys(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Dreamhost(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -250,6 +322,11 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Ns1(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::LuaDns(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::ClouDns(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Glesys(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Dreamhost(provider) => provider.delete(name, origin, record).await,
         }
     }
 }
