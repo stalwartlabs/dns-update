@@ -11,12 +11,14 @@
 
 pub mod bunny_test;
 pub mod cloudflare_tests;
+pub mod cpanel_tests;
 pub mod desec_tests;
 pub mod dnsimple_tests;
 pub mod google_cloud_dns_tests;
 #[cfg(test)]
 pub mod lib_tests;
 pub mod ovh_tests;
+pub mod plesk_tests;
 pub mod porkbun_tests;
 #[cfg(test)]
 pub mod rfc2136_tests;

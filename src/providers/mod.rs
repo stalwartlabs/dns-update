@@ -13,6 +13,7 @@ use crate::DnsRecord;
 
 pub mod bunny;
 pub mod cloudflare;
+pub mod cpanel;
 pub mod desec;
 pub mod digitalocean;
 pub mod dnsimple;
@@ -22,6 +23,7 @@ pub mod in_memory;
 pub mod ovh;
 #[cfg(feature = "test_provider")]
 pub mod pebble;
+pub mod plesk;
 pub mod porkbun;
 pub mod rfc2136;
 pub mod route53;
