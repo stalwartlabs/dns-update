@@ -18,13 +18,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "ring")]
 use ring::{
     rand::SystemRandom,
-    signature::{RSA_PKCS1_SHA256, RsaKeyPair},
+    signature::{RSA_PKCS1_SHA256, RSA_PKCS1_SHA512, RsaKeyPair},
 };
 
 #[cfg(all(feature = "aws-lc-rs", not(feature = "ring")))]
 use aws_lc_rs::{
     rand::SystemRandom,
-    signature::{RSA_PKCS1_SHA256, RsaKeyPair},
+    signature::{RSA_PKCS1_SHA256, RSA_PKCS1_SHA512, RsaKeyPair},
 };
 
 /// Service account JSON fields needed for JWT creation.
@@ -132,4 +132,28 @@ fn signature_len(key_pair: &RsaKeyPair) -> usize {
 #[cfg(all(feature = "aws-lc-rs", not(feature = "ring")))]
 fn signature_len(key_pair: &RsaKeyPair) -> usize {
     key_pair.public_modulus_len()
+}
+
+pub fn parse_pkcs8_pem(pem: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let stripped = pem
+        .replace("-----BEGIN PRIVATE KEY-----", "")
+        .replace("-----END PRIVATE KEY-----", "")
+        .replace("\n", "")
+        .replace("\r", "");
+    let der_bytes = base64::engine::general_purpose::STANDARD
+        .decode(stripped.trim())
+        .map_err(|e| format!("Invalid base64 in private key: {}", e))?;
+    Ok(der_bytes)
+}
+
+pub fn rsa_sha512_sign(
+    private_key_pem: &str,
+    data: &[u8],
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let der_bytes = parse_pkcs8_pem(private_key_pem)?;
+    let key_pair = RsaKeyPair::from_pkcs8(&der_bytes)?;
+    let mut signature = vec![0u8; signature_len(&key_pair)];
+    let rng = SystemRandom::new();
+    key_pair.sign(&RSA_PKCS1_SHA512, &rng, data, &mut signature)?;
+    Ok(signature)
 }

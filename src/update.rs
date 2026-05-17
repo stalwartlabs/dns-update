@@ -12,6 +12,9 @@
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use crate::providers::ovh::{OvhEndpoint, OvhProvider};
 
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use crate::providers::transip::TransipProvider;
+
 #[cfg(feature = "test_provider")]
 use crate::providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
 
@@ -36,6 +39,7 @@ use crate::{
         dnsmadeeasy::DnsMadeEasyProvider,
         duckdns::DuckDnsProvider,
         dynu::DynuProvider,
+        easydns::EasyDnsProvider,
         exoscale::ExoscaleProvider,
         freemyip::FreeMyIpProvider,
         gandiv5::GandiV5Provider,
@@ -46,7 +50,10 @@ use crate::{
         infomaniak::InfomaniakProvider,
         ionos::IonosProvider,
         ipv64::Ipv64Provider,
+        joker::JokerProvider,
         linode::LinodeProvider,
+        mythicbeasts::MythicBeastsProvider,
+        namecheap::NamecheapProvider,
         namedotcom::NameDotComProvider,
         namesilo::NameSiloProvider,
         netcup::NetcupProvider,
@@ -466,6 +473,76 @@ impl DnsUpdater {
         )?))
     }
 
+    /// Create a new DNS updater using the EasyDNS REST API.
+    pub fn new_easydns(
+        token: impl AsRef<str>,
+        key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::EasyDns(EasyDnsProvider::new(
+            token, key, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Joker DMAPI with an API key.
+    pub fn new_joker_api_key(
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Joker(JokerProvider::new_api_key(
+            api_key, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Joker DMAPI with username and password.
+    pub fn new_joker_password(
+        username: impl AsRef<str>,
+        password: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Joker(JokerProvider::new_password(
+            username, password, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Mythic Beasts DNSv2 API.
+    pub fn new_mythicbeasts(
+        username: impl AsRef<str>,
+        password: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::MythicBeasts(MythicBeastsProvider::new(
+            username, password, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Namecheap XML API.
+    pub fn new_namecheap(
+        api_user: impl AsRef<str>,
+        api_key: impl AsRef<str>,
+        client_ip: impl AsRef<str>,
+        username: Option<impl AsRef<str>>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Namecheap(NamecheapProvider::new(
+            api_user, api_key, client_ip, username, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the TransIP v6 API.
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+    pub fn new_transip(
+        login: impl AsRef<str>,
+        private_key_pem: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Transip(TransipProvider::new(
+            login,
+            private_key_pem,
+            timeout,
+        )?))
+    }
+
     /// Create a new DNS updater using the Mail-in-a-Box DNS API.
     pub fn new_mailinabox(
         base_url: impl AsRef<str>,
@@ -543,6 +620,14 @@ impl DnsUpdater {
             DnsUpdater::Infomaniak(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Netcup(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Netlify(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::EasyDns(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Joker(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::MythicBeasts(provider) => {
+                provider.create(name, record, ttl, origin).await
+            }
+            DnsUpdater::Namecheap(provider) => provider.create(name, record, ttl, origin).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Transip(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -603,6 +688,14 @@ impl DnsUpdater {
             DnsUpdater::Infomaniak(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Netcup(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Netlify(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::EasyDns(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Joker(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::MythicBeasts(provider) => {
+                provider.update(name, record, ttl, origin).await
+            }
+            DnsUpdater::Namecheap(provider) => provider.update(name, record, ttl, origin).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Transip(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -660,6 +753,12 @@ impl DnsUpdater {
             DnsUpdater::Infomaniak(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Netcup(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Netlify(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::EasyDns(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Joker(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::MythicBeasts(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Namecheap(provider) => provider.delete(name, origin, record).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Transip(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]

@@ -13,6 +13,9 @@
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use providers::ovh::OvhProvider;
 
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use providers::transip::TransipProvider;
+
 #[cfg(feature = "test_provider")]
 use providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
 
@@ -22,15 +25,17 @@ use providers::{
     cloudflare::CloudflareProvider, constellix::ConstellixProvider, ddnss::DdnssProvider,
     desec::DesecProvider, digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider,
     dnsmadeeasy::DnsMadeEasyProvider, duckdns::DuckDnsProvider, dynu::DynuProvider,
-    exoscale::ExoscaleProvider, freemyip::FreeMyIpProvider, gandiv5::GandiV5Provider,
-    gcore::GcoreProvider, godaddy::GodaddyProvider, hetzner::HetznerProvider,
-    hostingde::HostingDeProvider, infomaniak::InfomaniakProvider, ionos::IonosProvider,
-    ipv64::Ipv64Provider, linode::LinodeProvider, mailinabox::MailinaboxProvider,
-    namedotcom::NameDotComProvider, namesilo::NameSiloProvider, netcup::NetcupProvider,
-    netlify::NetlifyProvider, nifcloud::NifcloudProvider, pdns::PdnsProvider,
-    porkbun::PorkBunProvider, rfc2136::Rfc2136Provider, route53::Route53Provider,
-    scaleway::ScalewayProvider, spaceship::SpaceshipProvider, technitium::TechnitiumProvider,
-    vercel::VercelProvider, vultr::VultrProvider, websupport::WebSupportProvider,
+    easydns::EasyDnsProvider, exoscale::ExoscaleProvider, freemyip::FreeMyIpProvider,
+    gandiv5::GandiV5Provider, gcore::GcoreProvider, godaddy::GodaddyProvider,
+    hetzner::HetznerProvider, hostingde::HostingDeProvider, infomaniak::InfomaniakProvider,
+    ionos::IonosProvider, ipv64::Ipv64Provider, joker::JokerProvider, linode::LinodeProvider,
+    mailinabox::MailinaboxProvider, mythicbeasts::MythicBeastsProvider,
+    namecheap::NamecheapProvider, namedotcom::NameDotComProvider, namesilo::NameSiloProvider,
+    netcup::NetcupProvider, netlify::NetlifyProvider, nifcloud::NifcloudProvider,
+    pdns::PdnsProvider, porkbun::PorkBunProvider, rfc2136::Rfc2136Provider,
+    route53::Route53Provider, scaleway::ScalewayProvider, spaceship::SpaceshipProvider,
+    technitium::TechnitiumProvider, vercel::VercelProvider, vultr::VultrProvider,
+    websupport::WebSupportProvider,
 };
 use std::{
     borrow::Cow,
@@ -242,6 +247,12 @@ pub enum DnsUpdater {
     Bindman(BindmanProvider),
     Mailinabox(MailinaboxProvider),
     BluecatV2(BluecatV2Provider),
+    EasyDns(EasyDnsProvider),
+    Joker(JokerProvider),
+    MythicBeasts(MythicBeastsProvider),
+    Namecheap(NamecheapProvider),
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+    Transip(TransipProvider),
 }
 
 pub trait IntoFqdn<'x> {
