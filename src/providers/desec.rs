@@ -53,8 +53,9 @@ pub struct DesecApiResponse {
 #[derive(Deserialize)]
 struct DesecEmptyResponse {}
 
-/// The default endpoint for the desec API.
 const DEFAULT_API_ENDPOINT: &str = "https://desec.io/api/v1";
+
+const DESEC_MIN_TTL: u32 = 3600;
 
 impl DesecProvider {
     pub(crate) fn new(auth_token: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -83,9 +84,10 @@ impl DesecProvider {
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        let name = name.into_name();
-        let domain = origin.into_name();
+        let name = name.into_name().to_ascii_lowercase();
+        let domain = origin.into_name().to_ascii_lowercase();
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
+        let ttl = ttl.max(DESEC_MIN_TTL);
 
         let desec_record = DesecDnsRecordRepresentation::from(record);
         self.client
@@ -112,9 +114,10 @@ impl DesecProvider {
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        let name = name.into_name();
-        let domain = origin.into_name();
+        let name = name.into_name().to_ascii_lowercase();
+        let domain = origin.into_name().to_ascii_lowercase();
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
+        let ttl = ttl.max(DESEC_MIN_TTL);
 
         let desec_record = DesecDnsRecordRepresentation::from(record);
         self.client
@@ -142,8 +145,8 @@ impl DesecProvider {
         origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
     ) -> crate::Result<()> {
-        let name = name.into_name();
-        let domain = origin.into_name();
+        let name = name.into_name().to_ascii_lowercase();
+        let domain = origin.into_name().to_ascii_lowercase();
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
 
         let rr_type = &record_type.to_string();

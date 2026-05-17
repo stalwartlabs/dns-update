@@ -442,6 +442,152 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_create_record_lowercases_subname_and_domain() {
+        let mut server = mockito::Server::new_async().await;
+        let expected_request = json!({
+            "subname": "mail",
+            "type": "A",
+            "ttl": 3600,
+            "records": ["1.1.1.1"],
+        });
+
+        let mock = server
+            .mock("POST", "/domains/example.com/rrsets/")
+            .with_status(201)
+            .match_body(mockito::Matcher::Json(expected_request))
+            .match_header("authorization", "Token test_token")
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "mail",
+                    "name": "mail.example.com.",
+                    "records": ["1.1.1.1"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .create(
+                "Mail.Example.COM",
+                DnsRecord::A("1.1.1.1".parse().unwrap()),
+                3600,
+                "Example.COM",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_create_record_clamps_ttl_below_minimum() {
+        let mut server = mockito::Server::new_async().await;
+        let expected_request = json!({
+            "subname": "test",
+            "type": "A",
+            "ttl": 3600,
+            "records": ["1.1.1.1"],
+        });
+
+        let mock = server
+            .mock("POST", "/domains/example.com/rrsets/")
+            .with_status(201)
+            .match_body(mockito::Matcher::Json(expected_request))
+            .match_header("authorization", "Token test_token")
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "test",
+                    "name": "test.example.com.",
+                    "records": ["1.1.1.1"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .create(
+                "test.example.com",
+                DnsRecord::A("1.1.1.1".parse().unwrap()),
+                60,
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_update_record_lowercases_path_and_clamps_ttl() {
+        let mut server = mockito::Server::new_async().await;
+        let expected_request = json!({
+            "subname": "mail",
+            "type": "AAAA",
+            "ttl": 3600,
+            "records": ["2001:db8::1"],
+        });
+
+        let mock = server
+            .mock("PUT", "/domains/example.com/rrsets/mail/AAAA/")
+            .with_status(200)
+            .match_body(mockito::Matcher::Json(expected_request))
+            .match_header("authorization", "Token test_token")
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "mail",
+                    "name": "mail.example.com.",
+                    "records": ["2001:db8::1"],
+                    "ttl": 3600,
+                    "type": "AAAA",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .update(
+                "MAIL",
+                DnsRecord::AAAA("2001:db8::1".parse().unwrap()),
+                300,
+                "Example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_delete_record_lowercases_path() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("DELETE", "/domains/example.com/rrsets/mail/TXT/")
+            .with_status(204)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .delete("Mail.Example.com", "Example.com", DnsRecordType::TXT)
+            .await;
+
+        assert!(result.is_ok());
+        mock.assert();
+    }
+
+    #[tokio::test]
     #[ignore = "Requires desec API Token and domain configuration"]
     async fn integration_test() {
         let token = ""; // <-- Fill in your deSEC API token here

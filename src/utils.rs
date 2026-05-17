@@ -249,6 +249,22 @@ impl DnsRecord {
     }
 }
 
+impl Display for DnsRecord {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            DnsRecord::A(addr) => Display::fmt(addr, f),
+            DnsRecord::AAAA(addr) => Display::fmt(addr, f),
+            DnsRecord::CNAME(name) => f.write_str(name),
+            DnsRecord::NS(name) => f.write_str(name),
+            DnsRecord::MX(record) => Display::fmt(record, f),
+            DnsRecord::TXT(text) => f.write_str(text),
+            DnsRecord::SRV(record) => Display::fmt(record, f),
+            DnsRecord::TLSA(record) => Display::fmt(record, f),
+            DnsRecord::CAA(record) => Display::fmt(record, f),
+        }
+    }
+}
+
 impl DnsRecordType {
     pub fn as_str(&self) -> &'static str {
         match self {
