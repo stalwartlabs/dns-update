@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex};
 use crate::{
     DnsRecord, DnsRecordType, DnsUpdater, IntoFqdn, TsigAlgorithm,
     providers::{
+        alidns::AlidnsProvider,
         bunny::BunnyProvider,
         cloudflare::CloudflareProvider,
         desec::DesecProvider,
@@ -33,6 +34,7 @@ use crate::{
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
         spaceship::SpaceshipProvider,
+        tencentcloud::TencentCloudProvider,
     },
 };
 use std::time::Duration;
@@ -154,6 +156,42 @@ impl DnsUpdater {
         Ok(DnsUpdater::Route53(Route53Provider::new(config)))
     }
 
+    /// Create a new DNS updater using the Alibaba Cloud DNS API.
+    pub fn new_alidns(
+        access_key: impl AsRef<str>,
+        secret_key: impl AsRef<str>,
+        region: Option<impl AsRef<str>>,
+        security_token: Option<impl AsRef<str>>,
+        line: Option<impl AsRef<str>>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Alidns(AlidnsProvider::new(
+            access_key,
+            secret_key,
+            region,
+            security_token,
+            line,
+            timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Tencent Cloud DNSPod API.
+    pub fn new_tencentcloud(
+        secret_id: impl AsRef<str>,
+        secret_key: impl AsRef<str>,
+        region: Option<impl AsRef<str>>,
+        session_token: Option<impl AsRef<str>>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::TencentCloud(TencentCloudProvider::new(
+            secret_id,
+            secret_key,
+            region,
+            session_token,
+            timeout,
+        )?))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -175,6 +213,7 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         match self {
+            DnsUpdater::Alidns(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
@@ -186,6 +225,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Route53(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Spaceship(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::TencentCloud(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.create(name, record, ttl, origin).await
             }
@@ -205,6 +245,7 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         match self {
+            DnsUpdater::Alidns(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
@@ -216,6 +257,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Route53(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Spaceship(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::TencentCloud(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.update(name, record, ttl, origin).await
             }
@@ -234,6 +276,7 @@ impl DnsUpdater {
         record: DnsRecordType,
     ) -> crate::Result<()> {
         match self {
+            DnsUpdater::Alidns(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Cloudflare(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
@@ -245,6 +288,7 @@ impl DnsUpdater {
             DnsUpdater::Rfc2136(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Spaceship(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::TencentCloud(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
