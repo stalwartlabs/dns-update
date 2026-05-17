@@ -57,6 +57,8 @@ pub mod netcup;
 pub mod netlify;
 pub mod nifcloud;
 pub mod ns1;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+pub mod oraclecloud;
 pub mod ovh;
 pub mod pdns;
 #[cfg(feature = "test_provider")]

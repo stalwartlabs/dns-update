@@ -54,6 +54,8 @@ pub mod netcup_tests;
 pub mod netlify_tests;
 pub mod nifcloud_tests;
 pub mod ns1_tests;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+pub mod oraclecloud_tests;
 pub mod ovh_tests;
 pub mod pdns_tests;
 pub mod porkbun_tests;

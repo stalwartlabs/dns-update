@@ -57,18 +57,51 @@ fn base64_url_encode(input: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(input)
 }
 
+/// Parse a PKCS#8 PEM-encoded RSA private key into an `RsaKeyPair`.
+/// Supports both `BEGIN PRIVATE KEY` (PKCS#8) and `BEGIN RSA PRIVATE KEY` (PKCS#1).
+/// Encrypted PEMs (`BEGIN ENCRYPTED PRIVATE KEY`) are not supported.
+pub fn parse_rsa_pkcs8_pem(pem: &str) -> Result<RsaKeyPair, Box<dyn std::error::Error>> {
+    if pem.contains("ENCRYPTED PRIVATE KEY") {
+        return Err("encrypted PEM private keys are not supported".into());
+    }
+    if pem.contains("BEGIN RSA PRIVATE KEY") {
+        return Err(
+            "PKCS#1 (BEGIN RSA PRIVATE KEY) format is not supported, please convert to PKCS#8"
+                .into(),
+        );
+    }
+    let pem_content = pem
+        .replace("-----BEGIN PRIVATE KEY-----", "")
+        .replace("-----END PRIVATE KEY-----", "")
+        .replace("\n", "")
+        .replace("\r", "")
+        .replace(" ", "");
+    let der_bytes = base64::engine::general_purpose::STANDARD
+        .decode(pem_content.trim())
+        .map_err(|e| format!("Invalid base64 in private key: {}", e))?;
+    RsaKeyPair::from_pkcs8(&der_bytes).map_err(|e| format!("Invalid PKCS#8 RSA key: {}", e).into())
+}
+
+/// Sign `data` with RSA-SHA256 using a key pair, returning the raw signature bytes.
+pub fn rsa_sha256_sign(
+    key_pair: &RsaKeyPair,
+    data: &[u8],
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut signature = vec![0u8; signature_len(key_pair)];
+    let rng = SystemRandom::new();
+    key_pair.sign(&RSA_PKCS1_SHA256, &rng, data, &mut signature)?;
+    Ok(signature)
+}
+
 /// Create a signed JWT using the service account private key.
 /// Returns the JWT as a compact string.
 pub fn create_jwt(sa: &ServiceAccount, scopes: &str) -> Result<String, Box<dyn std::error::Error>> {
-    // Header
     let header = serde_json::json!({"alg": "RS256", "typ": "JWT"});
     let header_b64 = base64_url_encode(serde_json::to_string(&header)?.as_bytes());
 
-    // Timestamps
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-    let exp = now + 3600; // 1 hour validity
+    let exp = now + 3600;
 
-    // Claims
     let claims = JwtClaims {
         iss: sa.client_email.clone(),
         scope: scopes.to_string(),
@@ -80,25 +113,8 @@ pub fn create_jwt(sa: &ServiceAccount, scopes: &str) -> Result<String, Box<dyn s
 
     let signing_input = format!("{}.{}", header_b64, claims_b64);
 
-    // Sign using RSA SHA256
-    let pem_content = sa
-        .private_key
-        .replace("-----BEGIN PRIVATE KEY-----", "")
-        .replace("-----END PRIVATE KEY-----", "")
-        .replace("\n", "")
-        .replace("\r", "");
-    let der_bytes = base64::engine::general_purpose::STANDARD
-        .decode(pem_content.trim())
-        .map_err(|e| format!("Invalid base64 in private key: {}", e))?;
-    let key_pair = RsaKeyPair::from_pkcs8(&der_bytes)?;
-    let mut signature = vec![0u8; signature_len(&key_pair)];
-    let rng = SystemRandom::new();
-    key_pair.sign(
-        &RSA_PKCS1_SHA256,
-        &rng,
-        signing_input.as_bytes(),
-        &mut signature,
-    )?;
+    let key_pair = parse_rsa_pkcs8_pem(&sa.private_key)?;
+    let signature = rsa_sha256_sign(&key_pair, signing_input.as_bytes())?;
     let signature_b64 = base64_url_encode(&signature);
 
     Ok(format!("{}.{}", signing_input, signature_b64))
@@ -199,17 +215,3 @@ pub fn sign_jwt(
     Ok(format!("{}.{}", signing_input, signature_b64))
 }
 
-fn parse_rsa_pkcs8_pem(pem: &str) -> Result<RsaKeyPair, Box<dyn std::error::Error>> {
-    let content = pem
-        .replace("-----BEGIN PRIVATE KEY-----", "")
-        .replace("-----END PRIVATE KEY-----", "")
-        .replace("-----BEGIN RSA PRIVATE KEY-----", "")
-        .replace("-----END RSA PRIVATE KEY-----", "")
-        .replace("\n", "")
-        .replace("\r", "");
-    let der_bytes = base64::engine::general_purpose::STANDARD
-        .decode(content.trim())
-        .map_err(|e| format!("Invalid base64 in private key: {}", e))?;
-    let key_pair = RsaKeyPair::from_pkcs8(&der_bytes)?;
-    Ok(key_pair)
-}

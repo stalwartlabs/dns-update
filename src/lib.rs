@@ -11,6 +11,8 @@
  */
 
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use providers::oraclecloud::OracleCloudProvider;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use providers::ovh::OvhProvider;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use providers::volcengine::VolcengineProvider;
@@ -223,6 +225,8 @@ pub enum DnsUpdater {
     Nifcloud(NifcloudProvider),
     #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     Ovh(OvhProvider),
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+    OracleCloud(OracleCloudProvider),
     Bunny(BunnyProvider),
     Linode(LinodeProvider),
     Porkbun(PorkBunProvider),

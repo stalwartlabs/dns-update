@@ -10,6 +10,8 @@
  */
 
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use crate::providers::oraclecloud::{OracleCloudConfig, OracleCloudProvider};
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use crate::providers::ovh::{OvhEndpoint, OvhProvider};
 
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
@@ -168,6 +170,12 @@ impl DnsUpdater {
             endpoint,
             timeout,
         )?))
+    }
+
+    /// Create a new DNS updater using the Oracle Cloud Infrastructure DNS API.
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+    pub fn new_oraclecloud(config: OracleCloudConfig) -> crate::Result<Self> {
+        Ok(DnsUpdater::OracleCloud(OracleCloudProvider::new(config)?))
     }
 
     /// Create a new DNS updater using the Bunny API.
@@ -775,6 +783,8 @@ impl DnsUpdater {
             DnsUpdater::IbmCloud(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::OracleCloud(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Rfc2136(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Route53(provider) => provider.create(name, record, ttl, origin).await,
@@ -858,6 +868,8 @@ impl DnsUpdater {
             DnsUpdater::IbmCloud(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::OracleCloud(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Route53(provider) => provider.update(name, record, ttl, origin).await,
@@ -940,6 +952,8 @@ impl DnsUpdater {
             DnsUpdater::IbmCloud(provider) => provider.delete(name, origin, record).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::OracleCloud(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Rfc2136(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
