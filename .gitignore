@@ -1,6 +1,7 @@
 /target
 _ignore
 Cargo.lock
+/.claude
 
 .idea/
 
