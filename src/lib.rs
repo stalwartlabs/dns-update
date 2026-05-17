@@ -18,16 +18,18 @@ use providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
 
 pub use hickory_proto::dnssec;
 use providers::{
-    bunny::BunnyProvider, cloudflare::CloudflareProvider, ddnss::DdnssProvider,
-    desec::DesecProvider, digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider,
-    duckdns::DuckDnsProvider, dynu::DynuProvider, freemyip::FreeMyIpProvider,
+    bunny::BunnyProvider, cloudflare::CloudflareProvider, constellix::ConstellixProvider,
+    ddnss::DdnssProvider, desec::DesecProvider, digitalocean::DigitalOceanProvider,
+    dnsimple::DNSimpleProvider, dnsmadeeasy::DnsMadeEasyProvider, duckdns::DuckDnsProvider,
+    dynu::DynuProvider, exoscale::ExoscaleProvider, freemyip::FreeMyIpProvider,
     gandiv5::GandiV5Provider, gcore::GcoreProvider, godaddy::GodaddyProvider,
     hetzner::HetznerProvider, hostingde::HostingDeProvider, infomaniak::InfomaniakProvider,
     ionos::IonosProvider, ipv64::Ipv64Provider, linode::LinodeProvider,
     namedotcom::NameDotComProvider, namesilo::NameSiloProvider, netcup::NetcupProvider,
-    netlify::NetlifyProvider, porkbun::PorkBunProvider, rfc2136::Rfc2136Provider,
-    route53::Route53Provider, scaleway::ScalewayProvider, spaceship::SpaceshipProvider,
-    vercel::VercelProvider, vultr::VultrProvider,
+    netlify::NetlifyProvider, nifcloud::NifcloudProvider, porkbun::PorkBunProvider,
+    rfc2136::Rfc2136Provider, route53::Route53Provider, scaleway::ScalewayProvider,
+    spaceship::SpaceshipProvider, vercel::VercelProvider, vultr::VultrProvider,
+    websupport::WebSupportProvider,
 };
 use std::{
     borrow::Cow,
@@ -197,12 +199,17 @@ pub enum DnsUpdater {
     Cloudflare(CloudflareProvider),
     DigitalOcean(DigitalOceanProvider),
     Desec(DesecProvider),
+    Constellix(ConstellixProvider),
+    DnsMadeEasy(DnsMadeEasyProvider),
+    Exoscale(ExoscaleProvider),
+    Nifcloud(NifcloudProvider),
     #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     Ovh(OvhProvider),
     Bunny(BunnyProvider),
     Linode(LinodeProvider),
     Porkbun(PorkBunProvider),
     Spaceship(SpaceshipProvider),
+    WebSupport(WebSupportProvider),
     DNSimple(DNSimpleProvider),
     GandiV5(GandiV5Provider),
     Godaddy(GodaddyProvider),
