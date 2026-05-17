@@ -14,6 +14,8 @@ pub mod cloudflare_tests;
 pub mod desec_tests;
 pub mod dnsimple_tests;
 pub mod google_cloud_dns_tests;
+pub mod infoblox_tests;
+pub mod inwx_tests;
 #[cfg(test)]
 pub mod lib_tests;
 pub mod ovh_tests;
@@ -23,3 +25,4 @@ pub mod rfc2136_tests;
 #[cfg(test)]
 pub mod route53_tests;
 pub mod spaceship_tests;
+pub mod ultradns_tests;

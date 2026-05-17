@@ -19,6 +19,8 @@ pub mod dnsimple;
 pub mod google_cloud_dns;
 #[cfg(feature = "test_provider")]
 pub mod in_memory;
+pub mod infoblox;
+pub mod inwx;
 pub mod ovh;
 #[cfg(feature = "test_provider")]
 pub mod pebble;
@@ -26,6 +28,7 @@ pub mod porkbun;
 pub mod rfc2136;
 pub mod route53;
 pub mod spaceship;
+pub mod ultradns;
 
 impl DnsRecord {
     pub fn priority(&self) -> Option<u16> {
