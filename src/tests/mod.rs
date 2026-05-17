@@ -11,11 +11,15 @@
 
 pub mod bunny_test;
 pub mod cloudflare_tests;
+pub mod constellix_tests;
 pub mod desec_tests;
 pub mod dnsimple_tests;
+pub mod dnsmadeeasy_tests;
+pub mod exoscale_tests;
 pub mod google_cloud_dns_tests;
 #[cfg(test)]
 pub mod lib_tests;
+pub mod nifcloud_tests;
 pub mod ovh_tests;
 pub mod porkbun_tests;
 #[cfg(test)]
@@ -23,3 +27,4 @@ pub mod rfc2136_tests;
 #[cfg(test)]
 pub mod route53_tests;
 pub mod spaceship_tests;
+pub mod websupport_tests;

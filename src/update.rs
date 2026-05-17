@@ -26,13 +26,18 @@ use crate::{
     providers::{
         bunny::BunnyProvider,
         cloudflare::CloudflareProvider,
+        constellix::ConstellixProvider,
         desec::DesecProvider,
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
+        dnsmadeeasy::DnsMadeEasyProvider,
+        exoscale::ExoscaleProvider,
+        nifcloud::NifcloudProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
         spaceship::SpaceshipProvider,
+        websupport::WebSupportProvider,
     },
 };
 use std::time::Duration;
@@ -82,6 +87,28 @@ impl DnsUpdater {
         Ok(DnsUpdater::Desec(DesecProvider::new(auth_token, timeout)))
     }
 
+    /// Create a new DNS updater using the Constellix API.
+    pub fn new_constellix(
+        api_key: impl AsRef<str>,
+        secret_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Constellix(ConstellixProvider::new(
+            api_key, secret_key, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the DNSMadeEasy API.
+    pub fn new_dnsmadeeasy(
+        api_key: impl AsRef<str>,
+        api_secret: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::DnsMadeEasy(DnsMadeEasyProvider::new(
+            api_key, api_secret, timeout,
+        )?))
+    }
+
     /// Create a new DNS updater using the OVH API.
     #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     pub fn new_ovh(
@@ -116,6 +143,39 @@ impl DnsUpdater {
             secret_api_key,
             timeout,
         )))
+    }
+
+    /// Create a new DNS updater using the Exoscale DNS API.
+    pub fn new_exoscale(
+        api_key: impl AsRef<str>,
+        api_secret: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Exoscale(ExoscaleProvider::new(
+            api_key, api_secret, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Nifcloud DNS API.
+    pub fn new_nifcloud(
+        access_key: impl AsRef<str>,
+        secret_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Nifcloud(NifcloudProvider::new(
+            access_key, secret_key, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the WebSupport API.
+    pub fn new_websupport(
+        api_key: impl AsRef<str>,
+        secret: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::WebSupport(WebSupportProvider::new(
+            api_key, secret, timeout,
+        )?))
     }
 
     /// Create a new DNS updater using the Spaceship API.
@@ -177,15 +237,20 @@ impl DnsUpdater {
         match self {
             DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Constellix(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::DnsMadeEasy(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Exoscale(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Nifcloud(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Rfc2136(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Route53(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Spaceship(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::WebSupport(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.create(name, record, ttl, origin).await
             }
@@ -207,15 +272,20 @@ impl DnsUpdater {
         match self {
             DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Constellix(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::DnsMadeEasy(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Exoscale(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Nifcloud(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Route53(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Spaceship(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::WebSupport(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.update(name, record, ttl, origin).await
             }
@@ -236,15 +306,20 @@ impl DnsUpdater {
         match self {
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Cloudflare(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Constellix(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::DnsMadeEasy(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Exoscale(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Nifcloud(provider) => provider.delete(name, origin, record).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Rfc2136(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Spaceship(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::WebSupport(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,

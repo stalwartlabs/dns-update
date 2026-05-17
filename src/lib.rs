@@ -18,9 +18,12 @@ use providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
 
 pub use hickory_proto::dnssec;
 use providers::{
-    bunny::BunnyProvider, cloudflare::CloudflareProvider, desec::DesecProvider,
-    digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider, porkbun::PorkBunProvider,
+    bunny::BunnyProvider, cloudflare::CloudflareProvider, constellix::ConstellixProvider,
+    desec::DesecProvider, digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider,
+    dnsmadeeasy::DnsMadeEasyProvider, exoscale::ExoscaleProvider, nifcloud::NifcloudProvider,
+    porkbun::PorkBunProvider,
     rfc2136::Rfc2136Provider, route53::Route53Provider, spaceship::SpaceshipProvider,
+    websupport::WebSupportProvider,
 };
 use std::{
     borrow::Cow,
@@ -190,11 +193,16 @@ pub enum DnsUpdater {
     Cloudflare(CloudflareProvider),
     DigitalOcean(DigitalOceanProvider),
     Desec(DesecProvider),
+    Constellix(ConstellixProvider),
+    DnsMadeEasy(DnsMadeEasyProvider),
+    Exoscale(ExoscaleProvider),
+    Nifcloud(NifcloudProvider),
     #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     Ovh(OvhProvider),
     Bunny(BunnyProvider),
     Porkbun(PorkBunProvider),
     Spaceship(SpaceshipProvider),
+    WebSupport(WebSupportProvider),
     DNSimple(DNSimpleProvider),
     GoogleCloudDns(providers::google_cloud_dns::GoogleCloudDnsProvider),
     #[cfg(feature = "test_provider")]
