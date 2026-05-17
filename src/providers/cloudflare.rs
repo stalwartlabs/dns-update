@@ -13,6 +13,7 @@ use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
+    borrow::Cow,
     net::{Ipv4Addr, Ipv6Addr},
     time::Duration,
 };
@@ -20,6 +21,7 @@ use std::{
 #[derive(Clone)]
 pub struct CloudflareProvider {
     client: HttpClientBuilder,
+    endpoint: Cow<'static, str>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -106,6 +108,8 @@ struct ApiResult<T> {
     result: T,
 }
 
+const DEFAULT_API_ENDPOINT: &str = "https://api.cloudflare.com/client/v4";
+
 #[derive(Deserialize, Serialize, Debug)]
 pub struct ApiError {
     pub code: u16,
@@ -128,7 +132,18 @@ impl CloudflareProvider {
         }
         .with_timeout(timeout);
 
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            endpoint: Cow::Borrowed(DEFAULT_API_ENDPOINT),
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_endpoint(self, endpoint: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            endpoint: endpoint.into(),
+            ..self
+        }
     }
 
     async fn obtain_zone_id(&self, origin: impl IntoFqdn<'_>) -> crate::Result<String> {
@@ -138,7 +153,8 @@ impl CloudflareProvider {
             let zones = self
                 .client
                 .get(format!(
-                    "https://api.cloudflare.com/client/v4/zones?{}",
+                    "{}/zones?{}",
+                    self.endpoint,
                     Query::name(candidate).serialize()
                 ))
                 .send_with_retry::<ApiResult<Vec<IdMap>>>(3)
@@ -168,7 +184,8 @@ impl CloudflareProvider {
         let name = name.into_name();
         self.client
             .get(format!(
-                "https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?{}",
+                "{}/zones/{zone_id}/dns_records?{}",
+                self.endpoint,
                 Query::name_and_type(name.as_ref(), record_type).serialize()
             ))
             .send_with_retry::<ApiResult<Vec<IdMap>>>(3)
@@ -198,7 +215,8 @@ impl CloudflareProvider {
     ) -> crate::Result<()> {
         self.client
             .post(format!(
-                "https://api.cloudflare.com/client/v4/zones/{}/dns_records",
+                "{}/zones/{}/dns_records",
+                self.endpoint,
                 self.obtain_zone_id(origin).await?
             ))
             .with_body(CreateDnsRecordParams {
@@ -227,7 +245,8 @@ impl CloudflareProvider {
             .await?;
         self.client
             .patch(format!(
-                "https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}",
+                "{}/zones/{zone_id}/dns_records/{record_id}",
+                self.endpoint,
             ))
             .with_body(UpdateDnsRecordParams {
                 ttl: ttl.into(),
@@ -251,7 +270,8 @@ impl CloudflareProvider {
 
         self.client
             .delete(format!(
-                "https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records/{record_id}",
+                "{}/zones/{zone_id}/dns_records/{record_id}",
+                self.endpoint,
             ))
             .send_with_retry::<ApiResult<Value>>(3)
             .await
