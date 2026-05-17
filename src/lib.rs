@@ -48,8 +48,9 @@ use providers::{
 };
 
 use providers::{
-    azuredns::AzureDnsProvider, baiducloud::BaiduCloudProvider, huaweicloud::HuaweiCloudProvider,
-    ibmcloud::IbmCloudProvider,
+    arvancloud::ArvanCloudProvider, azuredns::AzureDnsProvider, baiducloud::BaiduCloudProvider,
+    domeneshop::DomeneshopProvider, huaweicloud::HuaweiCloudProvider,
+    ibmcloud::IbmCloudProvider, safedns::SafeDnsProvider,
 };
 use std::{
     borrow::Cow,
@@ -284,6 +285,9 @@ pub enum DnsUpdater {
     Volcengine(VolcengineProvider),
     #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     YandexCloud(YandexCloudProvider),
+    Domeneshop(DomeneshopProvider),
+    Safedns(SafeDnsProvider),
+    ArvanCloud(ArvanCloudProvider),
 }
 
 pub trait IntoFqdn<'x> {

@@ -34,6 +34,7 @@ use crate::{
         bindman::BindmanProvider,
         bluecatv2::{BluecatV2Config, BluecatV2Provider},
         azuredns::{AzureDnsConfig, AzureDnsProvider},
+        arvancloud::ArvanCloudProvider,
         bunny::BunnyProvider,
         cloudflare::CloudflareProvider,
         cloudns::ClouDnsProvider,
@@ -77,6 +78,8 @@ use crate::{
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
         scaleway::ScalewayProvider,
+        domeneshop::DomeneshopProvider,
+        safedns::SafeDnsProvider,
         spaceship::SpaceshipProvider,
         technitium::TechnitiumProvider,
         tencentcloud::TencentCloudProvider,
@@ -412,6 +415,37 @@ impl DnsUpdater {
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::HostingDe(HostingDeProvider::new(
+            api_key, timeout,
+        )))
+    }
+
+    /// Create a new DNS updater using the Domeneshop API.
+    pub fn new_domeneshop(
+        api_token: impl AsRef<str>,
+        api_secret: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Domeneshop(DomeneshopProvider::new(
+            api_token, api_secret, timeout,
+        )))
+    }
+
+    /// Create a new DNS updater using the ANS SafeDNS API.
+    pub fn new_safedns(
+        auth_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Safedns(SafeDnsProvider::new(
+            auth_token, timeout,
+        )))
+    }
+
+    /// Create a new DNS updater using the ArvanCloud API.
+    pub fn new_arvancloud(
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::ArvanCloud(ArvanCloudProvider::new(
             api_key, timeout,
         )))
     }
@@ -830,6 +864,9 @@ impl DnsUpdater {
             DnsUpdater::ClouDns(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Glesys(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Dreamhost(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Domeneshop(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Safedns(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::ArvanCloud(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -915,6 +952,9 @@ impl DnsUpdater {
             DnsUpdater::ClouDns(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Glesys(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Dreamhost(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Domeneshop(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Safedns(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::ArvanCloud(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -995,6 +1035,9 @@ impl DnsUpdater {
             DnsUpdater::ClouDns(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Glesys(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Dreamhost(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Domeneshop(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Safedns(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::ArvanCloud(provider) => provider.delete(name, origin, record).await,
         }
     }
 }
