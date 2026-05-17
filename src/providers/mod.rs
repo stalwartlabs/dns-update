@@ -13,12 +13,16 @@ use crate::DnsRecord;
 
 pub mod bunny;
 pub mod cloudflare;
+pub mod ddnss;
 pub mod desec;
 pub mod digitalocean;
 pub mod dnsimple;
 pub mod gandiv5;
 pub mod gcore;
 pub mod godaddy;
+pub mod duckdns;
+pub mod dynu;
+pub mod freemyip;
 pub mod google_cloud_dns;
 pub mod hetzner;
 pub mod namedotcom;
@@ -26,6 +30,7 @@ pub mod namesilo;
 #[cfg(feature = "test_provider")]
 pub mod in_memory;
 pub mod linode;
+pub mod ipv64;
 pub mod ovh;
 #[cfg(feature = "test_provider")]
 pub mod pebble;

@@ -18,13 +18,14 @@ use providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
 
 pub use hickory_proto::dnssec;
 use providers::{
-    bunny::BunnyProvider, cloudflare::CloudflareProvider, desec::DesecProvider,
-    digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider, gandiv5::GandiV5Provider,
-    gcore::GcoreProvider, godaddy::GodaddyProvider, hetzner::HetznerProvider,
-    linode::LinodeProvider, namedotcom::NameDotComProvider, namesilo::NameSiloProvider,
-    porkbun::PorkBunProvider, rfc2136::Rfc2136Provider, route53::Route53Provider,
-    scaleway::ScalewayProvider, spaceship::SpaceshipProvider, vercel::VercelProvider,
-    vultr::VultrProvider,
+    bunny::BunnyProvider, cloudflare::CloudflareProvider, ddnss::DdnssProvider,
+    desec::DesecProvider, digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider,
+    duckdns::DuckDnsProvider, dynu::DynuProvider, freemyip::FreeMyIpProvider,
+    gandiv5::GandiV5Provider, gcore::GcoreProvider, godaddy::GodaddyProvider,
+    hetzner::HetznerProvider, ipv64::Ipv64Provider, linode::LinodeProvider,
+    namedotcom::NameDotComProvider, namesilo::NameSiloProvider, porkbun::PorkBunProvider,
+    rfc2136::Rfc2136Provider, route53::Route53Provider, scaleway::ScalewayProvider,
+    spaceship::SpaceshipProvider, vercel::VercelProvider, vultr::VultrProvider,
 };
 use std::{
     borrow::Cow,
@@ -206,6 +207,11 @@ pub enum DnsUpdater {
     Hetzner(HetznerProvider),
     NameDotCom(NameDotComProvider),
     NameSilo(NameSiloProvider),
+    DuckDns(DuckDnsProvider),
+    FreeMyIp(FreeMyIpProvider),
+    Ipv64(Ipv64Provider),
+    Ddnss(DdnssProvider),
+    Dynu(DynuProvider),
     GoogleCloudDns(providers::google_cloud_dns::GoogleCloudDnsProvider),
     #[cfg(feature = "test_provider")]
     Pebble(PebbleProvider),

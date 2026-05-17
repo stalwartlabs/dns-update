@@ -26,6 +26,7 @@ use crate::{
     providers::{
         bunny::BunnyProvider,
         cloudflare::CloudflareProvider,
+        ddnss::DdnssProvider,
         desec::DesecProvider,
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
@@ -36,6 +37,10 @@ use crate::{
         linode::LinodeProvider,
         namedotcom::NameDotComProvider,
         namesilo::NameSiloProvider,
+        duckdns::DuckDnsProvider,
+        dynu::DynuProvider,
+        freemyip::FreeMyIpProvider,
+        ipv64::Ipv64Provider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
@@ -211,6 +216,46 @@ impl DnsUpdater {
         )?))
     }
 
+    /// Create a new DNS updater using the DuckDNS API.
+    pub fn new_duckdns(
+        token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::DuckDns(DuckDnsProvider::new(token, timeout)?))
+    }
+
+    /// Create a new DNS updater using the freemyip.com API.
+    pub fn new_freemyip(
+        token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::FreeMyIp(FreeMyIpProvider::new(token, timeout)?))
+    }
+
+    /// Create a new DNS updater using the IPv64 API.
+    pub fn new_ipv64(
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Ipv64(Ipv64Provider::new(api_key, timeout)?))
+    }
+
+    /// Create a new DNS updater using the DDNSS.de API.
+    pub fn new_ddnss(
+        key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Ddnss(DdnssProvider::new(key, timeout)?))
+    }
+
+    /// Create a new DNS updater using the Dynu API.
+    pub fn new_dynu(
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Dynu(DynuProvider::new(api_key, timeout)?))
+    }
+
     /// Create a new DNS updater using the Google Cloud DNS API.
     pub fn new_google_cloud_dns(
         config: crate::providers::google_cloud_dns::GoogleCloudDnsConfig,
@@ -280,6 +325,7 @@ impl DnsUpdater {
         match self {
             DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Ddnss(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.create(name, record, ttl, origin).await,
@@ -290,6 +336,10 @@ impl DnsUpdater {
             DnsUpdater::Linode(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::NameDotCom(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::NameSilo(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::DuckDns(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Dynu(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::FreeMyIp(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Ipv64(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
@@ -320,6 +370,7 @@ impl DnsUpdater {
         match self {
             DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Ddnss(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.update(name, record, ttl, origin).await,
@@ -330,6 +381,10 @@ impl DnsUpdater {
             DnsUpdater::Linode(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::NameDotCom(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::NameSilo(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::DuckDns(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Dynu(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::FreeMyIp(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Ipv64(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
@@ -359,6 +414,7 @@ impl DnsUpdater {
         match self {
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Cloudflare(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Ddnss(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
@@ -369,6 +425,10 @@ impl DnsUpdater {
             DnsUpdater::Linode(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::NameDotCom(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::NameSilo(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::DuckDns(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Dynu(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::FreeMyIp(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Ipv64(provider) => provider.delete(name, origin, record).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
