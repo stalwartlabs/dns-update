@@ -40,6 +40,8 @@ use providers::{
     tencentcloud::TencentCloudProvider, vercel::VercelProvider, vultr::VultrProvider,
     websupport::WebSupportProvider,
 };
+
+use providers::{baiducloud::BaiduCloudProvider, huaweicloud::HuaweiCloudProvider};
 use std::{
     borrow::Cow,
     net::{Ipv4Addr, Ipv6Addr},
@@ -236,6 +238,8 @@ pub enum DnsUpdater {
     Infomaniak(InfomaniakProvider),
     Netcup(NetcupProvider),
     Netlify(NetlifyProvider),
+    HuaweiCloud(HuaweiCloudProvider),
+    BaiduCloud(BaiduCloudProvider),
     #[cfg(feature = "test_provider")]
     Pebble(PebbleProvider),
     #[cfg(feature = "test_provider")]

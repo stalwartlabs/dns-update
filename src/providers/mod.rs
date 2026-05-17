@@ -12,6 +12,7 @@
 use crate::DnsRecord;
 
 pub mod alidns;
+pub mod baiducloud;
 pub mod bindman;
 pub mod bluecatv2;
 pub mod bunny;
@@ -36,6 +37,7 @@ pub mod godaddy;
 pub mod google_cloud_dns;
 pub mod hetzner;
 pub mod hostingde;
+pub mod huaweicloud;
 #[cfg(feature = "test_provider")]
 pub mod in_memory;
 pub mod infomaniak;

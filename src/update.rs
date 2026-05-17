@@ -28,6 +28,7 @@ use crate::{
     DnsRecord, DnsRecordType, DnsUpdater, IntoFqdn, TsigAlgorithm,
     providers::{
         alidns::AlidnsProvider,
+        baiducloud::BaiduCloudProvider,
         bindman::BindmanProvider,
         bluecatv2::{BluecatV2Config, BluecatV2Provider},
         bunny::BunnyProvider,
@@ -51,6 +52,7 @@ use crate::{
         godaddy::GodaddyProvider,
         hetzner::HetznerProvider,
         hostingde::HostingDeProvider,
+        huaweicloud::HuaweiCloudProvider,
         infomaniak::InfomaniakProvider,
         ionos::IonosProvider,
         ipv64::Ipv64Provider,
@@ -520,6 +522,21 @@ impl DnsUpdater {
         )?))
     }
 
+    /// Create a new DNS updater using the Huawei Cloud DNS API.
+    pub fn new_huaweicloud(
+        access_key: impl AsRef<str>,
+        secret_key: impl AsRef<str>,
+        region: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::HuaweiCloud(HuaweiCloudProvider::new(
+            access_key.as_ref(),
+            secret_key.as_ref(),
+            region.as_ref(),
+            timeout,
+        )?))
+    }
+
     /// Create a new DNS updater using the ClouDNS API.
     pub fn new_cloudns(
         auth_id: Option<impl AsRef<str>>,
@@ -548,6 +565,19 @@ impl DnsUpdater {
             secret_key,
             region,
             session_token,
+            timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Baidu Cloud DNS API.
+    pub fn new_baiducloud(
+        access_key: impl AsRef<str>,
+        secret_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::BaiduCloud(BaiduCloudProvider::new(
+            access_key.as_ref(),
+            secret_key.as_ref(),
             timeout,
         )?))
     }
@@ -730,6 +760,8 @@ impl DnsUpdater {
             DnsUpdater::Namecheap(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Transip(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::HuaweiCloud(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::BaiduCloud(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -805,6 +837,8 @@ impl DnsUpdater {
             DnsUpdater::Namecheap(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Transip(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::HuaweiCloud(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::BaiduCloud(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -875,6 +909,8 @@ impl DnsUpdater {
             DnsUpdater::Namecheap(provider) => provider.delete(name, origin, record).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Transip(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::HuaweiCloud(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::BaiduCloud(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]

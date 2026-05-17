@@ -10,6 +10,7 @@
  */
 
 pub mod alidns_tests;
+pub mod baiducloud_tests;
 pub mod bindman_tests;
 pub mod bluecatv2_tests;
 pub mod bunny_test;
@@ -33,6 +34,7 @@ pub mod godaddy_tests;
 pub mod google_cloud_dns_tests;
 pub mod hetzner_tests;
 pub mod hostingde_tests;
+pub mod huaweicloud_tests;
 pub mod infomaniak_tests;
 pub mod ionos_tests;
 pub mod ipv64_tests;
