@@ -21,6 +21,7 @@ pub mod cloudflare_tests;
 pub mod cloudns_tests;
 pub mod constellix_tests;
 pub mod ddnss_tests;
+pub mod cpanel_tests;
 pub mod desec_tests;
 pub mod dnsimple_tests;
 pub mod dnsmadeeasy_tests;
@@ -63,6 +64,7 @@ pub mod ns1_tests;
 pub mod oraclecloud_tests;
 pub mod ovh_tests;
 pub mod pdns_tests;
+pub mod plesk_tests;
 pub mod porkbun_tests;
 #[cfg(test)]
 pub mod rfc2136_tests;

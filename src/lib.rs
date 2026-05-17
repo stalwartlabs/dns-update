@@ -49,8 +49,9 @@ use providers::{
 
 use providers::{
     arvancloud::ArvanCloudProvider, autodns::AutodnsProvider, azuredns::AzureDnsProvider,
-    baiducloud::BaiduCloudProvider, domeneshop::DomeneshopProvider, hostinger::HostingerProvider,
-    huaweicloud::HuaweiCloudProvider, hurricane::HurricaneProvider, ibmcloud::IbmCloudProvider,
+    baiducloud::BaiduCloudProvider, cpanel::CpanelProvider, domeneshop::DomeneshopProvider,
+    hostinger::HostingerProvider, huaweicloud::HuaweiCloudProvider,
+    hurricane::HurricaneProvider, ibmcloud::IbmCloudProvider, plesk::PleskProvider,
     safedns::SafeDnsProvider,
 };
 use std::{
@@ -245,6 +246,8 @@ pub enum DnsUpdater {
     Ipv64(Ipv64Provider),
     Ddnss(DdnssProvider),
     Dynu(DynuProvider),
+    Plesk(PleskProvider),
+    Cpanel(CpanelProvider),
     GoogleCloudDns(providers::google_cloud_dns::GoogleCloudDnsProvider),
     Ionos(IonosProvider),
     HostingDe(HostingDeProvider),

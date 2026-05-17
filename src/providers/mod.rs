@@ -23,6 +23,7 @@ pub mod cloudflare;
 pub mod cloudns;
 pub mod constellix;
 pub mod ddnss;
+pub mod cpanel;
 pub mod desec;
 pub mod digitalocean;
 pub mod dnsimple;
@@ -68,6 +69,7 @@ pub mod ovh;
 pub mod pdns;
 #[cfg(feature = "test_provider")]
 pub mod pebble;
+pub mod plesk;
 pub mod porkbun;
 pub mod rfc2136;
 pub mod route53;

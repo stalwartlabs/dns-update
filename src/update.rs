@@ -77,6 +77,8 @@ use crate::{
         ibmcloud::IbmCloudProvider,
         hostinger::HostingerProvider,
         hurricane::HurricaneProvider,
+        cpanel::CpanelProvider,
+        plesk::PleskProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
@@ -807,6 +809,29 @@ impl DnsUpdater {
         )?))
     }
 
+    /// Create a new DNS updater using the Plesk REST API (`X-API-Key` auth).
+    pub fn new_plesk(
+        base_url: impl AsRef<str>,
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Plesk(PleskProvider::new(
+            base_url, api_key, timeout,
+        )))
+    }
+
+    /// Create a new DNS updater using the cPanel UAPI (API token auth).
+    pub fn new_cpanel(
+        base_url: impl AsRef<str>,
+        username: impl AsRef<str>,
+        token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Cpanel(CpanelProvider::new(
+            base_url, username, token, timeout,
+        )))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -865,6 +890,8 @@ impl DnsUpdater {
             DnsUpdater::Vultr(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::WebSupport(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::TencentCloud(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Plesk(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Cpanel(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.create(name, record, ttl, origin).await
             }
@@ -956,6 +983,8 @@ impl DnsUpdater {
             DnsUpdater::Vultr(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::WebSupport(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::TencentCloud(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Plesk(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Cpanel(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.update(name, record, ttl, origin).await
             }
@@ -1046,6 +1075,8 @@ impl DnsUpdater {
             DnsUpdater::Vultr(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::WebSupport(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::TencentCloud(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Plesk(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Cpanel(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Ionos(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::HostingDe(provider) => provider.delete(name, origin, record).await,
