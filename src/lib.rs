@@ -18,18 +18,19 @@ use providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
 
 pub use hickory_proto::dnssec;
 use providers::{
-    bunny::BunnyProvider, cloudflare::CloudflareProvider, constellix::ConstellixProvider,
-    ddnss::DdnssProvider, desec::DesecProvider, digitalocean::DigitalOceanProvider,
-    dnsimple::DNSimpleProvider, dnsmadeeasy::DnsMadeEasyProvider, duckdns::DuckDnsProvider,
-    dynu::DynuProvider, exoscale::ExoscaleProvider, freemyip::FreeMyIpProvider,
-    gandiv5::GandiV5Provider, gcore::GcoreProvider, godaddy::GodaddyProvider,
-    hetzner::HetznerProvider, hostingde::HostingDeProvider, infomaniak::InfomaniakProvider,
-    ionos::IonosProvider, ipv64::Ipv64Provider, linode::LinodeProvider,
+    bindman::BindmanProvider, bluecatv2::BluecatV2Provider, bunny::BunnyProvider,
+    cloudflare::CloudflareProvider, constellix::ConstellixProvider, ddnss::DdnssProvider,
+    desec::DesecProvider, digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider,
+    dnsmadeeasy::DnsMadeEasyProvider, duckdns::DuckDnsProvider, dynu::DynuProvider,
+    exoscale::ExoscaleProvider, freemyip::FreeMyIpProvider, gandiv5::GandiV5Provider,
+    gcore::GcoreProvider, godaddy::GodaddyProvider, hetzner::HetznerProvider,
+    hostingde::HostingDeProvider, infomaniak::InfomaniakProvider, ionos::IonosProvider,
+    ipv64::Ipv64Provider, linode::LinodeProvider, mailinabox::MailinaboxProvider,
     namedotcom::NameDotComProvider, namesilo::NameSiloProvider, netcup::NetcupProvider,
-    netlify::NetlifyProvider, nifcloud::NifcloudProvider, porkbun::PorkBunProvider,
-    rfc2136::Rfc2136Provider, route53::Route53Provider, scaleway::ScalewayProvider,
-    spaceship::SpaceshipProvider, vercel::VercelProvider, vultr::VultrProvider,
-    websupport::WebSupportProvider,
+    netlify::NetlifyProvider, nifcloud::NifcloudProvider, pdns::PdnsProvider,
+    porkbun::PorkBunProvider, rfc2136::Rfc2136Provider, route53::Route53Provider,
+    scaleway::ScalewayProvider, spaceship::SpaceshipProvider, technitium::TechnitiumProvider,
+    vercel::VercelProvider, vultr::VultrProvider, websupport::WebSupportProvider,
 };
 use std::{
     borrow::Cow,
@@ -236,6 +237,11 @@ pub enum DnsUpdater {
     Gcore(GcoreProvider),
     Vercel(VercelProvider),
     Vultr(VultrProvider),
+    Pdns(PdnsProvider),
+    Technitium(TechnitiumProvider),
+    Bindman(BindmanProvider),
+    Mailinabox(MailinaboxProvider),
+    BluecatV2(BluecatV2Provider),
 }
 
 pub trait IntoFqdn<'x> {

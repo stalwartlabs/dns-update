@@ -11,6 +11,8 @@
 
 use crate::DnsRecord;
 
+pub mod bindman;
+pub mod bluecatv2;
 pub mod bunny;
 pub mod cloudflare;
 pub mod constellix;
@@ -40,7 +42,9 @@ pub mod namesilo;
 pub mod netcup;
 pub mod netlify;
 pub mod nifcloud;
+pub mod mailinabox;
 pub mod ovh;
+pub mod pdns;
 #[cfg(feature = "test_provider")]
 pub mod pebble;
 pub mod porkbun;
@@ -51,6 +55,7 @@ pub mod spaceship;
 pub mod vercel;
 pub mod vultr;
 pub mod websupport;
+pub mod technitium;
 
 impl DnsRecord {
     pub fn priority(&self) -> Option<u16> {

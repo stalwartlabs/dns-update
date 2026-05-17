@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+pub mod bindman_tests;
+pub mod bluecatv2_tests;
 pub mod bunny_test;
 pub mod cloudflare_tests;
 pub mod ddnss_tests;
@@ -37,7 +39,9 @@ pub mod ionos_tests;
 pub mod netcup_tests;
 pub mod netlify_tests;
 pub mod nifcloud_tests;
+pub mod mailinabox_tests;
 pub mod ovh_tests;
+pub mod pdns_tests;
 pub mod porkbun_tests;
 #[cfg(test)]
 pub mod rfc2136_tests;
@@ -48,3 +52,4 @@ pub mod spaceship_tests;
 pub mod vercel_tests;
 pub mod vultr_tests;
 pub mod websupport_tests;
+pub mod technitium_tests;
