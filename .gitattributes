@@ -2,3 +2,4 @@ src/lib.rs merge=union
 src/update.rs merge=union
 src/providers/mod.rs merge=union
 src/tests/mod.rs merge=union
+src/jwt.rs merge=union
