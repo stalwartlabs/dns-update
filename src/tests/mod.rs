@@ -23,3 +23,7 @@ pub mod rfc2136_tests;
 #[cfg(test)]
 pub mod route53_tests;
 pub mod spaceship_tests;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+pub mod volcengine_tests;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+pub mod yandexcloud_tests;

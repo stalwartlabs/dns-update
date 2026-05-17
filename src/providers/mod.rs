@@ -26,6 +26,10 @@ pub mod porkbun;
 pub mod rfc2136;
 pub mod route53;
 pub mod spaceship;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+pub mod volcengine;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+pub mod yandexcloud;
 
 impl DnsRecord {
     pub fn priority(&self) -> Option<u16> {

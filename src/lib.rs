@@ -12,6 +12,10 @@
 
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use providers::ovh::OvhProvider;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use providers::volcengine::VolcengineProvider;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use providers::yandexcloud::YandexCloudProvider;
 
 #[cfg(feature = "test_provider")]
 use providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
@@ -202,6 +206,10 @@ pub enum DnsUpdater {
     #[cfg(feature = "test_provider")]
     InMemory(InMemoryProvider),
     Route53(Route53Provider),
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+    Volcengine(VolcengineProvider),
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+    YandexCloud(YandexCloudProvider),
 }
 
 pub trait IntoFqdn<'x> {
