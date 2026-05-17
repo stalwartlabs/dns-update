@@ -26,8 +26,12 @@ pub mod namedotcom_tests;
 pub mod namesilo_tests;
 pub mod duckdns_tests;
 pub mod dynu_tests;
+pub mod easydns_tests;
 pub mod freemyip_tests;
 pub mod ipv64_tests;
+pub mod joker_tests;
+pub mod mythicbeasts_tests;
+pub mod namecheap_tests;
 #[cfg(test)]
 pub mod lib_tests;
 pub mod linode_tests;
@@ -45,6 +49,8 @@ pub mod rfc2136_tests;
 pub mod route53_tests;
 pub mod scaleway_tests;
 pub mod spaceship_tests;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+pub mod transip_tests;
 pub mod vercel_tests;
 pub mod vultr_tests;
 pub mod websupport_tests;
