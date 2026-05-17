@@ -49,6 +49,8 @@ pub mod joker_tests;
 pub mod ibmcloud_tests;
 pub mod hostinger_tests;
 pub mod hurricane_tests;
+pub mod infoblox_tests;
+pub mod inwx_tests;
 #[cfg(test)]
 pub mod lib_tests;
 pub mod linode_tests;
@@ -88,3 +90,4 @@ pub mod websupport_tests;
 pub mod volcengine_tests;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod yandexcloud_tests;
+pub mod ultradns_tests;

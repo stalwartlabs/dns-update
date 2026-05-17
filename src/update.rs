@@ -81,6 +81,8 @@ use crate::{
         plesk::PleskProvider,
         edgedns::{EdgeDnsConfig, EdgeDnsProvider},
         lightsail::{LightsailConfig, LightsailProvider},
+        infoblox::{InfobloxConfig, InfobloxProvider},
+        inwx::InwxProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
@@ -93,6 +95,7 @@ use crate::{
         vercel::VercelProvider,
         vultr::VultrProvider,
         websupport::WebSupportProvider,
+        ultradns::UltraDnsProvider,
     },
 };
 use std::collections::HashMap;
@@ -555,6 +558,23 @@ impl DnsUpdater {
         )?))
     }
 
+    /// Create a new DNS updater using the INWX JSON-RPC API.
+    pub fn new_inwx(
+        username: impl Into<String>,
+        password: impl Into<String>,
+        shared_secret: Option<String>,
+        sandbox: bool,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Inwx(InwxProvider::new(
+            username,
+            password,
+            shared_secret,
+            sandbox,
+            timeout,
+        )?))
+    }
+
     /// Create a new DNS updater using the Alibaba Cloud DNS API.
     pub fn new_alidns(
         access_key: impl AsRef<str>,
@@ -844,6 +864,23 @@ impl DnsUpdater {
         Ok(DnsUpdater::EdgeDns(EdgeDnsProvider::new(config)?))
     }
 
+    /// Create a new DNS updater using the UltraDNS REST API.
+    pub fn new_ultradns(
+        username: impl Into<String>,
+        password: impl Into<String>,
+        endpoint: Option<String>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::UltraDns(UltraDnsProvider::new(
+            username, password, endpoint, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Infoblox NIOS WAPI.
+    pub fn new_infoblox(config: InfobloxConfig) -> crate::Result<Self> {
+        Ok(DnsUpdater::Infoblox(InfobloxProvider::new(config)?))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -931,6 +968,9 @@ impl DnsUpdater {
             DnsUpdater::Autodns(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Lightsail(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::EdgeDns(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Inwx(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::UltraDns(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Infoblox(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -1026,6 +1066,9 @@ impl DnsUpdater {
             DnsUpdater::Autodns(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Lightsail(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::EdgeDns(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Inwx(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::UltraDns(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Infoblox(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -1116,6 +1159,9 @@ impl DnsUpdater {
             DnsUpdater::Autodns(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Lightsail(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::EdgeDns(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Inwx(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::UltraDns(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Infoblox(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]

@@ -67,6 +67,8 @@ pub mod ns1;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod oraclecloud;
 pub mod lightsail;
+pub mod infoblox;
+pub mod inwx;
 pub mod ovh;
 pub mod pdns;
 #[cfg(feature = "test_provider")]
@@ -89,6 +91,7 @@ pub mod websupport;
 pub mod volcengine;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod yandexcloud;
+pub mod ultradns;
 
 impl DnsRecord {
     pub fn priority(&self) -> Option<u16> {
