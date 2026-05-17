@@ -24,17 +24,21 @@ use std::sync::{Arc, Mutex};
 use crate::{
     DnsRecord, DnsRecordType, DnsUpdater, IntoFqdn, TsigAlgorithm,
     providers::{
+        autodns::AutodnsProvider,
         bunny::BunnyProvider,
         cloudflare::CloudflareProvider,
         desec::DesecProvider,
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
+        hostinger::HostingerProvider,
+        hurricane::HurricaneProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
         spaceship::SpaceshipProvider,
     },
 };
+use std::collections::HashMap;
 use std::time::Duration;
 
 impl DnsUpdater {
@@ -154,6 +158,39 @@ impl DnsUpdater {
         Ok(DnsUpdater::Route53(Route53Provider::new(config)))
     }
 
+    /// Create a new DNS updater using the Hurricane Electric free DNS service.
+    pub fn new_hurricane(
+        credentials: HashMap<String, String>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Hurricane(HurricaneProvider::new(
+            credentials,
+            timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Hostinger DNS API.
+    pub fn new_hostinger(
+        api_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Hostinger(HostingerProvider::new(
+            api_token, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the InterNetX AutoDNS API.
+    pub fn new_autodns(
+        username: impl AsRef<str>,
+        password: impl AsRef<str>,
+        context: Option<u32>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Autodns(AutodnsProvider::new(
+            username, password, context, timeout,
+        )?))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -189,6 +226,9 @@ impl DnsUpdater {
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.create(name, record, ttl, origin).await
             }
+            DnsUpdater::Hurricane(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Hostinger(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Autodns(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -219,6 +259,9 @@ impl DnsUpdater {
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.update(name, record, ttl, origin).await
             }
+            DnsUpdater::Hurricane(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Hostinger(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Autodns(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -246,6 +289,9 @@ impl DnsUpdater {
             DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Spaceship(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Hurricane(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Hostinger(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Autodns(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]

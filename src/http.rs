@@ -84,6 +84,13 @@ impl HttpClientBuilder {
         self
     }
 
+    pub fn set_header(mut self, name: &'static str, value: impl AsRef<str>) -> Self {
+        if let Ok(value) = HeaderValue::from_str(value.as_ref()) {
+            self.headers.insert(name, value);
+        }
+        self
+    }
+
     pub fn with_timeout(mut self, timeout: Option<Duration>) -> Self {
         if let Some(timeout) = timeout {
             self.timeout = timeout;
