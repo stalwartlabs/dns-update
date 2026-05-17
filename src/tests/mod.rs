@@ -14,6 +14,7 @@ pub mod cloudflare_tests;
 pub mod desec_tests;
 pub mod dnsimple_tests;
 pub mod gandiv5_tests;
+pub mod gcore_tests;
 pub mod godaddy_tests;
 pub mod google_cloud_dns_tests;
 pub mod hetzner_tests;
@@ -21,10 +22,14 @@ pub mod namedotcom_tests;
 pub mod namesilo_tests;
 #[cfg(test)]
 pub mod lib_tests;
+pub mod linode_tests;
 pub mod ovh_tests;
 pub mod porkbun_tests;
 #[cfg(test)]
 pub mod rfc2136_tests;
 #[cfg(test)]
 pub mod route53_tests;
+pub mod scaleway_tests;
 pub mod spaceship_tests;
+pub mod vercel_tests;
+pub mod vultr_tests;

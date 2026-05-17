@@ -20,9 +20,11 @@ pub use hickory_proto::dnssec;
 use providers::{
     bunny::BunnyProvider, cloudflare::CloudflareProvider, desec::DesecProvider,
     digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider, gandiv5::GandiV5Provider,
-    godaddy::GodaddyProvider, hetzner::HetznerProvider, namedotcom::NameDotComProvider,
-    namesilo::NameSiloProvider, porkbun::PorkBunProvider, rfc2136::Rfc2136Provider,
-    route53::Route53Provider, spaceship::SpaceshipProvider,
+    gcore::GcoreProvider, godaddy::GodaddyProvider, hetzner::HetznerProvider,
+    linode::LinodeProvider, namedotcom::NameDotComProvider, namesilo::NameSiloProvider,
+    porkbun::PorkBunProvider, rfc2136::Rfc2136Provider, route53::Route53Provider,
+    scaleway::ScalewayProvider, spaceship::SpaceshipProvider, vercel::VercelProvider,
+    vultr::VultrProvider,
 };
 use std::{
     borrow::Cow,
@@ -195,6 +197,7 @@ pub enum DnsUpdater {
     #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
     Ovh(OvhProvider),
     Bunny(BunnyProvider),
+    Linode(LinodeProvider),
     Porkbun(PorkBunProvider),
     Spaceship(SpaceshipProvider),
     DNSimple(DNSimpleProvider),
@@ -209,6 +212,10 @@ pub enum DnsUpdater {
     #[cfg(feature = "test_provider")]
     InMemory(InMemoryProvider),
     Route53(Route53Provider),
+    Scaleway(ScalewayProvider),
+    Gcore(GcoreProvider),
+    Vercel(VercelProvider),
+    Vultr(VultrProvider),
 }
 
 pub trait IntoFqdn<'x> {

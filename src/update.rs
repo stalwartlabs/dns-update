@@ -30,14 +30,19 @@ use crate::{
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
         gandiv5::GandiV5Provider,
+        gcore::GcoreProvider,
         godaddy::GodaddyProvider,
         hetzner::HetznerProvider,
+        linode::LinodeProvider,
         namedotcom::NameDotComProvider,
         namesilo::NameSiloProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
+        scaleway::ScalewayProvider,
         spaceship::SpaceshipProvider,
+        vercel::VercelProvider,
+        vultr::VultrProvider,
     },
 };
 use std::time::Duration;
@@ -108,6 +113,14 @@ impl DnsUpdater {
     /// Create a new DNS updater using the Bunny API.
     pub fn new_bunny(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
         Ok(DnsUpdater::Bunny(BunnyProvider::new(api_key, timeout)?))
+    }
+
+    /// Create a new DNS updater using the Linode API.
+    pub fn new_linode(
+        auth_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Linode(LinodeProvider::new(auth_token, timeout)))
     }
 
     /// Create a new DNS updater using the Porkbun API.
@@ -212,6 +225,38 @@ impl DnsUpdater {
         Ok(DnsUpdater::Route53(Route53Provider::new(config)))
     }
 
+    /// Create a new DNS updater using the Vultr API.
+    pub fn new_vultr(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
+        Ok(DnsUpdater::Vultr(VultrProvider::new(api_key, timeout)))
+    }
+
+    /// Create a new DNS updater using the Scaleway Domains API.
+    pub fn new_scaleway(
+        api_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Scaleway(ScalewayProvider::new(api_token, timeout)))
+    }
+
+    /// Create a new DNS updater using the Gcore DNS API.
+    pub fn new_gcore(
+        api_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Gcore(GcoreProvider::new(api_token, timeout)))
+    }
+
+    /// Create a new DNS updater using the Vercel API.
+    pub fn new_vercel(
+        auth_token: impl AsRef<str>,
+        team_id: Option<impl AsRef<str>>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Vercel(VercelProvider::new(
+            auth_token, team_id, timeout,
+        )))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -239,8 +284,10 @@ impl DnsUpdater {
             DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::GandiV5(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Gcore(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Godaddy(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Hetzner(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Linode(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::NameDotCom(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::NameSilo(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
@@ -248,7 +295,10 @@ impl DnsUpdater {
             DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Rfc2136(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Route53(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Scaleway(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Spaceship(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Vercel(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Vultr(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.create(name, record, ttl, origin).await
             }
@@ -274,8 +324,10 @@ impl DnsUpdater {
             DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DNSimple(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::GandiV5(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Gcore(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Godaddy(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Hetzner(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Linode(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::NameDotCom(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::NameSilo(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
@@ -283,7 +335,10 @@ impl DnsUpdater {
             DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Route53(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Scaleway(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Spaceship(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Vercel(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Vultr(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.update(name, record, ttl, origin).await
             }
@@ -308,8 +363,10 @@ impl DnsUpdater {
             DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::GandiV5(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Gcore(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Godaddy(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Hetzner(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Linode(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::NameDotCom(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::NameSilo(provider) => provider.delete(name, origin, record).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
@@ -317,7 +374,10 @@ impl DnsUpdater {
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Rfc2136(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Scaleway(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Spaceship(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Vercel(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Vultr(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
