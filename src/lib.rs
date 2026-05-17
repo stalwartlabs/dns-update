@@ -50,9 +50,9 @@ use providers::{
 use providers::{
     arvancloud::ArvanCloudProvider, autodns::AutodnsProvider, azuredns::AzureDnsProvider,
     baiducloud::BaiduCloudProvider, cpanel::CpanelProvider, domeneshop::DomeneshopProvider,
-    hostinger::HostingerProvider, huaweicloud::HuaweiCloudProvider,
-    hurricane::HurricaneProvider, ibmcloud::IbmCloudProvider, plesk::PleskProvider,
-    safedns::SafeDnsProvider,
+    edgedns::EdgeDnsProvider, hostinger::HostingerProvider, huaweicloud::HuaweiCloudProvider,
+    hurricane::HurricaneProvider, ibmcloud::IbmCloudProvider, lightsail::LightsailProvider,
+    plesk::PleskProvider, safedns::SafeDnsProvider,
 };
 use std::{
     borrow::Cow,
@@ -261,6 +261,8 @@ pub enum DnsUpdater {
     Hurricane(HurricaneProvider),
     Hostinger(HostingerProvider),
     Autodns(AutodnsProvider),
+    Lightsail(LightsailProvider),
+    EdgeDns(EdgeDnsProvider),
     #[cfg(feature = "test_provider")]
     Pebble(PebbleProvider),
     #[cfg(feature = "test_provider")]

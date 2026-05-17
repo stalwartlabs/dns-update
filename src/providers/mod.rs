@@ -39,6 +39,7 @@ pub mod gcore;
 pub mod glesys;
 pub mod godaddy;
 pub mod domeneshop;
+pub mod edgedns;
 pub mod google_cloud_dns;
 pub mod hetzner;
 pub mod hostingde;
@@ -65,6 +66,7 @@ pub mod nifcloud;
 pub mod ns1;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod oraclecloud;
+pub mod lightsail;
 pub mod ovh;
 pub mod pdns;
 #[cfg(feature = "test_provider")]
