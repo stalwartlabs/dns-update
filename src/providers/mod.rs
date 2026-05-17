@@ -17,6 +17,7 @@ pub mod bindman;
 pub mod bluecatv2;
 pub mod azuredns;
 pub mod arvancloud;
+pub mod autodns;
 pub mod bunny;
 pub mod cloudflare;
 pub mod cloudns;
@@ -42,6 +43,8 @@ pub mod hetzner;
 pub mod hostingde;
 pub mod huaweicloud;
 pub mod ibmcloud;
+pub mod hostinger;
+pub mod hurricane;
 #[cfg(feature = "test_provider")]
 pub mod in_memory;
 pub mod infomaniak;

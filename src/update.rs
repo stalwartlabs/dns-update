@@ -35,6 +35,7 @@ use crate::{
         bluecatv2::{BluecatV2Config, BluecatV2Provider},
         azuredns::{AzureDnsConfig, AzureDnsProvider},
         arvancloud::ArvanCloudProvider,
+        autodns::AutodnsProvider,
         bunny::BunnyProvider,
         cloudflare::CloudflareProvider,
         cloudns::ClouDnsProvider,
@@ -74,6 +75,8 @@ use crate::{
         ns1::Ns1Provider,
         pdns::PdnsProvider,
         ibmcloud::IbmCloudProvider,
+        hostinger::HostingerProvider,
+        hurricane::HurricaneProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
@@ -88,6 +91,7 @@ use crate::{
         websupport::WebSupportProvider,
     },
 };
+use std::collections::HashMap;
 use std::time::Duration;
 
 impl DnsUpdater {
@@ -770,6 +774,39 @@ impl DnsUpdater {
         )?))
     }
 
+    /// Create a new DNS updater using the Hurricane Electric free DNS service.
+    pub fn new_hurricane(
+        credentials: HashMap<String, String>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Hurricane(HurricaneProvider::new(
+            credentials,
+            timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Hostinger DNS API.
+    pub fn new_hostinger(
+        api_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Hostinger(HostingerProvider::new(
+            api_token, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the InterNetX AutoDNS API.
+    pub fn new_autodns(
+        username: impl AsRef<str>,
+        password: impl AsRef<str>,
+        context: Option<u32>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Autodns(AutodnsProvider::new(
+            username, password, context, timeout,
+        )?))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -850,6 +887,9 @@ impl DnsUpdater {
             DnsUpdater::Volcengine(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::YandexCloud(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Hurricane(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Hostinger(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Autodns(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -938,6 +978,9 @@ impl DnsUpdater {
             DnsUpdater::Volcengine(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::YandexCloud(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Hurricane(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Hostinger(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Autodns(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -1021,6 +1064,9 @@ impl DnsUpdater {
             DnsUpdater::Volcengine(provider) => provider.delete(name, origin, record).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::YandexCloud(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Hurricane(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Hostinger(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Autodns(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]

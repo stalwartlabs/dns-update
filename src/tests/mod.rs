@@ -15,6 +15,7 @@ pub mod bindman_tests;
 pub mod bluecatv2_tests;
 pub mod azuredns_tests;
 pub mod arvancloud_tests;
+pub mod autodns_tests;
 pub mod bunny_test;
 pub mod cloudflare_tests;
 pub mod cloudns_tests;
@@ -43,6 +44,8 @@ pub mod ionos_tests;
 pub mod ipv64_tests;
 pub mod joker_tests;
 pub mod ibmcloud_tests;
+pub mod hostinger_tests;
+pub mod hurricane_tests;
 #[cfg(test)]
 pub mod lib_tests;
 pub mod linode_tests;
