@@ -9,10 +9,12 @@
  * except according to those terms.
  */
 
+pub mod arvancloud_tests;
 pub mod bunny_test;
 pub mod cloudflare_tests;
 pub mod desec_tests;
 pub mod dnsimple_tests;
+pub mod domeneshop_tests;
 pub mod google_cloud_dns_tests;
 #[cfg(test)]
 pub mod lib_tests;
@@ -22,4 +24,5 @@ pub mod porkbun_tests;
 pub mod rfc2136_tests;
 #[cfg(test)]
 pub mod route53_tests;
+pub mod safedns_tests;
 pub mod spaceship_tests;

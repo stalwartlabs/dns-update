@@ -24,14 +24,17 @@ use std::sync::{Arc, Mutex};
 use crate::{
     DnsRecord, DnsRecordType, DnsUpdater, IntoFqdn, TsigAlgorithm,
     providers::{
+        arvancloud::ArvanCloudProvider,
         bunny::BunnyProvider,
         cloudflare::CloudflareProvider,
         desec::DesecProvider,
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
+        domeneshop::DomeneshopProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
+        safedns::SafeDnsProvider,
         spaceship::SpaceshipProvider,
     },
 };
@@ -154,6 +157,37 @@ impl DnsUpdater {
         Ok(DnsUpdater::Route53(Route53Provider::new(config)))
     }
 
+    /// Create a new DNS updater using the Domeneshop API.
+    pub fn new_domeneshop(
+        api_token: impl AsRef<str>,
+        api_secret: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Domeneshop(DomeneshopProvider::new(
+            api_token, api_secret, timeout,
+        )))
+    }
+
+    /// Create a new DNS updater using the ANS SafeDNS API.
+    pub fn new_safedns(
+        auth_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Safedns(SafeDnsProvider::new(
+            auth_token, timeout,
+        )))
+    }
+
+    /// Create a new DNS updater using the ArvanCloud API.
+    pub fn new_arvancloud(
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::ArvanCloud(ArvanCloudProvider::new(
+            api_key, timeout,
+        )))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -193,6 +227,9 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Domeneshop(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Safedns(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::ArvanCloud(provider) => provider.create(name, record, ttl, origin).await,
         }
     }
 
@@ -223,6 +260,9 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Domeneshop(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Safedns(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::ArvanCloud(provider) => provider.update(name, record, ttl, origin).await,
         }
     }
 
@@ -250,6 +290,9 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Domeneshop(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Safedns(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::ArvanCloud(provider) => provider.delete(name, origin, record).await,
         }
     }
 }

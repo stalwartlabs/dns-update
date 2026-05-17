@@ -11,11 +11,13 @@
 
 use crate::DnsRecord;
 
+pub mod arvancloud;
 pub mod bunny;
 pub mod cloudflare;
 pub mod desec;
 pub mod digitalocean;
 pub mod dnsimple;
+pub mod domeneshop;
 pub mod google_cloud_dns;
 #[cfg(feature = "test_provider")]
 pub mod in_memory;
@@ -25,6 +27,7 @@ pub mod pebble;
 pub mod porkbun;
 pub mod rfc2136;
 pub mod route53;
+pub mod safedns;
 pub mod spaceship;
 
 impl DnsRecord {
