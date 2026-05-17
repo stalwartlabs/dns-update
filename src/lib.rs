@@ -12,6 +12,10 @@
 
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use providers::ovh::OvhProvider;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use providers::volcengine::VolcengineProvider;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+use providers::yandexcloud::YandexCloudProvider;
 
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 use providers::transip::TransipProvider;
@@ -267,6 +271,10 @@ pub enum DnsUpdater {
     Dreamhost(DreamhostProvider),
     Alidns(AlidnsProvider),
     TencentCloud(TencentCloudProvider),
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+    Volcengine(VolcengineProvider),
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+    YandexCloud(YandexCloudProvider),
 }
 
 pub trait IntoFqdn<'x> {

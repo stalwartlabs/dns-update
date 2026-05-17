@@ -690,6 +690,26 @@ impl DnsUpdater {
         )))
     }
 
+    /// Create a new DNS updater using the Volcano Engine API.
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+    pub fn new_volcengine(
+        config: crate::providers::volcengine::VolcengineConfig,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Volcengine(
+            crate::providers::volcengine::VolcengineProvider::new(config)?,
+        ))
+    }
+
+    /// Create a new DNS updater using the Yandex Cloud DNS API.
+    #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+    pub fn new_yandexcloud(
+        config: crate::providers::yandexcloud::YandexCloudConfig,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::YandexCloud(
+            crate::providers::yandexcloud::YandexCloudProvider::new(config)?,
+        ))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -762,6 +782,10 @@ impl DnsUpdater {
             DnsUpdater::Transip(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::HuaweiCloud(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::BaiduCloud(provider) => provider.create(name, record, ttl, origin).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Volcengine(provider) => provider.create(name, record, ttl, origin).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::YandexCloud(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -839,6 +863,10 @@ impl DnsUpdater {
             DnsUpdater::Transip(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::HuaweiCloud(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::BaiduCloud(provider) => provider.update(name, record, ttl, origin).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Volcengine(provider) => provider.update(name, record, ttl, origin).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::YandexCloud(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -911,6 +939,10 @@ impl DnsUpdater {
             DnsUpdater::Transip(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::HuaweiCloud(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::BaiduCloud(provider) => provider.delete(name, origin, record).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Volcengine(provider) => provider.delete(name, origin, record).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::YandexCloud(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]

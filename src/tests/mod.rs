@@ -68,3 +68,7 @@ pub mod transip_tests;
 pub mod vercel_tests;
 pub mod vultr_tests;
 pub mod websupport_tests;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+pub mod volcengine_tests;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+pub mod yandexcloud_tests;

@@ -18,14 +18,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "ring")]
 use ring::{
     rand::SystemRandom,
-    signature::{RSA_PKCS1_SHA256, RSA_PKCS1_SHA512, RsaKeyPair},
+    signature::{RSA_PKCS1_SHA256, RSA_PKCS1_SHA512, RSA_PSS_SHA256, RsaKeyPair},
 };
 
 #[cfg(all(feature = "aws-lc-rs", not(feature = "ring")))]
 use aws_lc_rs::{
     rand::SystemRandom,
-    signature::{RSA_PKCS1_SHA256, RSA_PKCS1_SHA512, RsaKeyPair},
+    signature::{RSA_PKCS1_SHA256, RSA_PKCS1_SHA512, RSA_PSS_SHA256, RsaKeyPair},
 };
+
+#[derive(Debug, Clone, Copy)]
+pub enum JwtSignAlgorithm {
+    Rs256,
+    Ps256,
+}
 
 /// Service account JSON fields needed for JWT creation.
 #[derive(Debug, Deserialize)]
@@ -156,4 +162,54 @@ pub fn rsa_sha512_sign(
     let rng = SystemRandom::new();
     key_pair.sign(&RSA_PKCS1_SHA512, &rng, data, &mut signature)?;
     Ok(signature)
+}
+
+pub fn sign_jwt(
+    header: &serde_json::Value,
+    claims: &serde_json::Value,
+    private_key_pem: &str,
+    algorithm: JwtSignAlgorithm,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let header_b64 = base64_url_encode(serde_json::to_string(header)?.as_bytes());
+    let claims_b64 = base64_url_encode(serde_json::to_string(claims)?.as_bytes());
+    let signing_input = format!("{}.{}", header_b64, claims_b64);
+
+    let key_pair = parse_rsa_pkcs8_pem(private_key_pem)?;
+    let mut signature = vec![0u8; signature_len(&key_pair)];
+    let rng = SystemRandom::new();
+    match algorithm {
+        JwtSignAlgorithm::Rs256 => {
+            key_pair.sign(
+                &RSA_PKCS1_SHA256,
+                &rng,
+                signing_input.as_bytes(),
+                &mut signature,
+            )?;
+        }
+        JwtSignAlgorithm::Ps256 => {
+            key_pair.sign(
+                &RSA_PSS_SHA256,
+                &rng,
+                signing_input.as_bytes(),
+                &mut signature,
+            )?;
+        }
+    }
+    let signature_b64 = base64_url_encode(&signature);
+    Ok(format!("{}.{}", signing_input, signature_b64))
+}
+
+fn parse_rsa_pkcs8_pem(pem: &str) -> Result<RsaKeyPair, Box<dyn std::error::Error>> {
+    let content = pem
+        .replace("-----BEGIN PRIVATE KEY-----", "")
+        .replace("-----END PRIVATE KEY-----", "")
+        .replace("-----BEGIN RSA PRIVATE KEY-----", "")
+        .replace("-----END RSA PRIVATE KEY-----", "")
+        .replace("\n", "")
+        .replace("\r", "");
+    let der_bytes = base64::engine::general_purpose::STANDARD
+        .decode(content.trim())
+        .map_err(|e| format!("Invalid base64 in private key: {}", e))?;
+    let key_pair = RsaKeyPair::from_pkcs8(&der_bytes)?;
+    Ok(key_pair)
 }

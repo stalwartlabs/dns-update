@@ -71,6 +71,10 @@ pub mod transip;
 pub mod vercel;
 pub mod vultr;
 pub mod websupport;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+pub mod volcengine;
+#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+pub mod yandexcloud;
 
 impl DnsRecord {
     pub fn priority(&self) -> Option<u16> {
