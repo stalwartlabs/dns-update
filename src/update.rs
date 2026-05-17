@@ -41,6 +41,11 @@ use crate::{
         dynu::DynuProvider,
         freemyip::FreeMyIpProvider,
         ipv64::Ipv64Provider,
+        hostingde::HostingDeProvider,
+        infomaniak::InfomaniakProvider,
+        ionos::IonosProvider,
+        netcup::NetcupProvider,
+        netlify::NetlifyProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
@@ -302,6 +307,61 @@ impl DnsUpdater {
         )))
     }
 
+    /// Create a new DNS updater using the IONOS DNS API.
+    pub fn new_ionos(
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Ionos(IonosProvider::new(api_key, timeout)))
+    }
+
+    /// Create a new DNS updater using the hosting.de API.
+    pub fn new_hostingde(
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::HostingDe(HostingDeProvider::new(
+            api_key, timeout,
+        )))
+    }
+
+    /// Create a new DNS updater using the Infomaniak API.
+    pub fn new_infomaniak(
+        access_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Infomaniak(InfomaniakProvider::new(
+            access_token,
+            timeout,
+        )))
+    }
+
+    /// Create a new DNS updater using the Netcup CCP API.
+    pub fn new_netcup(
+        customer_number: impl AsRef<str>,
+        api_key: impl AsRef<str>,
+        api_password: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Netcup(NetcupProvider::new(
+            customer_number,
+            api_key,
+            api_password,
+            timeout,
+        )))
+    }
+
+    /// Create a new DNS updater using the Netlify API.
+    pub fn new_netlify(
+        access_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Netlify(NetlifyProvider::new(
+            access_token,
+            timeout,
+        )))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -352,6 +412,11 @@ impl DnsUpdater {
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.create(name, record, ttl, origin).await
             }
+            DnsUpdater::Ionos(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::HostingDe(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Infomaniak(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Netcup(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Netlify(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -397,6 +462,11 @@ impl DnsUpdater {
             DnsUpdater::GoogleCloudDns(provider) => {
                 provider.update(name, record, ttl, origin).await
             }
+            DnsUpdater::Ionos(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::HostingDe(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Infomaniak(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Netcup(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Netlify(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
@@ -439,6 +509,11 @@ impl DnsUpdater {
             DnsUpdater::Vercel(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Vultr(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Ionos(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::HostingDe(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Infomaniak(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Netcup(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Netlify(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]

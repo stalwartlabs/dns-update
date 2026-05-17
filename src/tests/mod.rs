@@ -28,6 +28,11 @@ pub mod ipv64_tests;
 #[cfg(test)]
 pub mod lib_tests;
 pub mod linode_tests;
+pub mod hostingde_tests;
+pub mod infomaniak_tests;
+pub mod ionos_tests;
+pub mod netcup_tests;
+pub mod netlify_tests;
 pub mod ovh_tests;
 pub mod porkbun_tests;
 #[cfg(test)]

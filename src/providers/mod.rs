@@ -31,6 +31,11 @@ pub mod namesilo;
 pub mod in_memory;
 pub mod linode;
 pub mod ipv64;
+pub mod hostingde;
+pub mod infomaniak;
+pub mod ionos;
+pub mod netcup;
+pub mod netlify;
 pub mod ovh;
 #[cfg(feature = "test_provider")]
 pub mod pebble;

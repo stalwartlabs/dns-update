@@ -22,10 +22,12 @@ use providers::{
     desec::DesecProvider, digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider,
     duckdns::DuckDnsProvider, dynu::DynuProvider, freemyip::FreeMyIpProvider,
     gandiv5::GandiV5Provider, gcore::GcoreProvider, godaddy::GodaddyProvider,
-    hetzner::HetznerProvider, ipv64::Ipv64Provider, linode::LinodeProvider,
-    namedotcom::NameDotComProvider, namesilo::NameSiloProvider, porkbun::PorkBunProvider,
-    rfc2136::Rfc2136Provider, route53::Route53Provider, scaleway::ScalewayProvider,
-    spaceship::SpaceshipProvider, vercel::VercelProvider, vultr::VultrProvider,
+    hetzner::HetznerProvider, hostingde::HostingDeProvider, infomaniak::InfomaniakProvider,
+    ionos::IonosProvider, ipv64::Ipv64Provider, linode::LinodeProvider,
+    namedotcom::NameDotComProvider, namesilo::NameSiloProvider, netcup::NetcupProvider,
+    netlify::NetlifyProvider, porkbun::PorkBunProvider, rfc2136::Rfc2136Provider,
+    route53::Route53Provider, scaleway::ScalewayProvider, spaceship::SpaceshipProvider,
+    vercel::VercelProvider, vultr::VultrProvider,
 };
 use std::{
     borrow::Cow,
@@ -213,6 +215,11 @@ pub enum DnsUpdater {
     Ddnss(DdnssProvider),
     Dynu(DynuProvider),
     GoogleCloudDns(providers::google_cloud_dns::GoogleCloudDnsProvider),
+    Ionos(IonosProvider),
+    HostingDe(HostingDeProvider),
+    Infomaniak(InfomaniakProvider),
+    Netcup(NetcupProvider),
+    Netlify(NetlifyProvider),
     #[cfg(feature = "test_provider")]
     Pebble(PebbleProvider),
     #[cfg(feature = "test_provider")]
