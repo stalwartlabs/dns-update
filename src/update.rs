@@ -31,6 +31,7 @@ use crate::{
         baiducloud::BaiduCloudProvider,
         bindman::BindmanProvider,
         bluecatv2::{BluecatV2Config, BluecatV2Provider},
+        azuredns::{AzureDnsConfig, AzureDnsProvider},
         bunny::BunnyProvider,
         cloudflare::CloudflareProvider,
         cloudns::ClouDnsProvider,
@@ -69,6 +70,7 @@ use crate::{
         nifcloud::NifcloudProvider,
         ns1::Ns1Provider,
         pdns::PdnsProvider,
+        ibmcloud::IbmCloudProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
@@ -710,6 +712,22 @@ impl DnsUpdater {
         ))
     }
 
+    /// Create a new DNS updater using the Azure DNS REST API with OAuth2 client credentials.
+    pub fn new_azuredns(config: AzureDnsConfig) -> crate::Result<Self> {
+        Ok(DnsUpdater::AzureDns(AzureDnsProvider::new(config)?))
+    }
+
+    /// Create a new DNS updater using the IBM Cloud (SoftLayer classic) DNS API.
+    pub fn new_ibmcloud(
+        username: impl AsRef<str>,
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::IbmCloud(IbmCloudProvider::new(
+            username, api_key, timeout,
+        )?))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -732,6 +750,7 @@ impl DnsUpdater {
     ) -> crate::Result<()> {
         match self {
             DnsUpdater::Alidns(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::AzureDns(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Ddnss(provider) => provider.create(name, record, ttl, origin).await,
@@ -753,6 +772,7 @@ impl DnsUpdater {
             DnsUpdater::DnsMadeEasy(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Exoscale(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Nifcloud(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::IbmCloud(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
@@ -813,6 +833,7 @@ impl DnsUpdater {
     ) -> crate::Result<()> {
         match self {
             DnsUpdater::Alidns(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::AzureDns(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Ddnss(provider) => provider.update(name, record, ttl, origin).await,
@@ -834,6 +855,7 @@ impl DnsUpdater {
             DnsUpdater::DnsMadeEasy(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Exoscale(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Nifcloud(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::IbmCloud(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
@@ -893,6 +915,7 @@ impl DnsUpdater {
     ) -> crate::Result<()> {
         match self {
             DnsUpdater::Alidns(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::AzureDns(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Cloudflare(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Ddnss(provider) => provider.delete(name, origin, record).await,
@@ -914,6 +937,7 @@ impl DnsUpdater {
             DnsUpdater::DnsMadeEasy(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Exoscale(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Nifcloud(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::IbmCloud(provider) => provider.delete(name, origin, record).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,

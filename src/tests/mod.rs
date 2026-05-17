@@ -13,6 +13,7 @@ pub mod alidns_tests;
 pub mod baiducloud_tests;
 pub mod bindman_tests;
 pub mod bluecatv2_tests;
+pub mod azuredns_tests;
 pub mod bunny_test;
 pub mod cloudflare_tests;
 pub mod cloudns_tests;
@@ -39,6 +40,7 @@ pub mod infomaniak_tests;
 pub mod ionos_tests;
 pub mod ipv64_tests;
 pub mod joker_tests;
+pub mod ibmcloud_tests;
 #[cfg(test)]
 pub mod lib_tests;
 pub mod linode_tests;

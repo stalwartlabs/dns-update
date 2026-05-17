@@ -45,7 +45,10 @@ use providers::{
     websupport::WebSupportProvider,
 };
 
-use providers::{baiducloud::BaiduCloudProvider, huaweicloud::HuaweiCloudProvider};
+use providers::{
+    azuredns::AzureDnsProvider, baiducloud::BaiduCloudProvider, huaweicloud::HuaweiCloudProvider,
+    ibmcloud::IbmCloudProvider,
+};
 use std::{
     borrow::Cow,
     net::{Ipv4Addr, Ipv6Addr},
@@ -244,6 +247,8 @@ pub enum DnsUpdater {
     Netlify(NetlifyProvider),
     HuaweiCloud(HuaweiCloudProvider),
     BaiduCloud(BaiduCloudProvider),
+    AzureDns(AzureDnsProvider),
+    IbmCloud(IbmCloudProvider),
     #[cfg(feature = "test_provider")]
     Pebble(PebbleProvider),
     #[cfg(feature = "test_provider")]
