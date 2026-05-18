@@ -27,7 +27,7 @@ use providers::{in_memory::InMemoryProvider, pebble::PebbleProvider};
 
 pub use hickory_proto::dnssec;
 use providers::{
-    alidns::AlidnsProvider, bindman::BindmanProvider, bluecatv2::BluecatV2Provider,
+    alidns::AlidnsProvider, bluecatv2::BluecatV2Provider,
     bunny::BunnyProvider, cloudflare::CloudflareProvider, cloudns::ClouDnsProvider,
     constellix::ConstellixProvider, ddnss::DdnssProvider, desec::DesecProvider,
     digitalocean::DigitalOceanProvider, dnsimple::DNSimpleProvider,
@@ -37,12 +37,11 @@ use providers::{
     glesys::GlesysProvider, godaddy::GodaddyProvider, hetzner::HetznerProvider,
     hostingde::HostingDeProvider, infomaniak::InfomaniakProvider, ionos::IonosProvider,
     ipv64::Ipv64Provider, joker::JokerProvider, linode::LinodeProvider,
-    luadns::LuaDnsProvider, mailinabox::MailinaboxProvider, mythicbeasts::MythicBeastsProvider,
+    luadns::LuaDnsProvider, mythicbeasts::MythicBeastsProvider,
     namecheap::NamecheapProvider, namedotcom::NameDotComProvider, namesilo::NameSiloProvider,
     netcup::NetcupProvider, netlify::NetlifyProvider, nifcloud::NifcloudProvider,
-    ns1::Ns1Provider, pdns::PdnsProvider, porkbun::PorkBunProvider,
-    rfc2136::Rfc2136Provider, route53::Route53Provider, scaleway::ScalewayProvider,
-    spaceship::SpaceshipProvider, technitium::TechnitiumProvider,
+    ns1::Ns1Provider, porkbun::PorkBunProvider, rfc2136::Rfc2136Provider,
+    route53::Route53Provider, scaleway::ScalewayProvider, spaceship::SpaceshipProvider,
     tencentcloud::TencentCloudProvider, vercel::VercelProvider, vultr::VultrProvider,
     websupport::WebSupportProvider,
 };
@@ -273,10 +272,6 @@ pub enum DnsUpdater {
     Gcore(GcoreProvider),
     Vercel(VercelProvider),
     Vultr(VultrProvider),
-    Pdns(PdnsProvider),
-    Technitium(TechnitiumProvider),
-    Bindman(BindmanProvider),
-    Mailinabox(MailinaboxProvider),
     BluecatV2(BluecatV2Provider),
     EasyDns(EasyDnsProvider),
     Joker(JokerProvider),

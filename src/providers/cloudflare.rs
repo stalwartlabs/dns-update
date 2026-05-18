@@ -117,20 +117,10 @@ pub struct ApiError {
 }
 
 impl CloudflareProvider {
-    pub(crate) fn new(
-        secret: impl AsRef<str>,
-        email: Option<impl AsRef<str>>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        let client = if let Some(email) = email {
-            HttpClientBuilder::default()
-                .with_header("X-Auth-Email", email.as_ref())
-                .with_header("X-Auth-Key", secret.as_ref())
-        } else {
-            HttpClientBuilder::default()
-                .with_header("Authorization", format!("Bearer {}", secret.as_ref()))
-        }
-        .with_timeout(timeout);
+    pub(crate) fn new(secret: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
+        let client = HttpClientBuilder::default()
+            .with_header("Authorization", format!("Bearer {}", secret.as_ref()))
+            .with_timeout(timeout);
 
         Ok(Self {
             client,

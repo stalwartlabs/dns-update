@@ -11,7 +11,6 @@
 
 pub mod alidns_tests;
 pub mod baiducloud_tests;
-pub mod bindman_tests;
 pub mod bluecatv2_tests;
 pub mod azuredns_tests;
 pub mod arvancloud_tests;
@@ -55,7 +54,6 @@ pub mod inwx_tests;
 pub mod lib_tests;
 pub mod linode_tests;
 pub mod luadns_tests;
-pub mod mailinabox_tests;
 pub mod mythicbeasts_tests;
 pub mod namecheap_tests;
 pub mod namedotcom_tests;
@@ -69,7 +67,6 @@ pub mod oraclecloud_tests;
 #[cfg(test)]
 pub mod lightsail_tests;
 pub mod ovh_tests;
-pub mod pdns_tests;
 pub mod plesk_tests;
 pub mod porkbun_tests;
 #[cfg(test)]
@@ -79,7 +76,6 @@ pub mod route53_tests;
 pub mod scaleway_tests;
 pub mod safedns_tests;
 pub mod spaceship_tests;
-pub mod technitium_tests;
 pub mod tencentcloud_tests;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod transip_tests;

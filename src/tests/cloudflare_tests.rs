@@ -23,7 +23,7 @@ mod tests {
     const RECORD_ID: &str = "def456recordid";
 
     fn setup_provider(endpoint: String) -> CloudflareProvider {
-        CloudflareProvider::new("test_token", None::<&str>, Some(Duration::from_secs(1)))
+        CloudflareProvider::new("test_token", Some(Duration::from_secs(1)))
             .unwrap()
             .with_endpoint(endpoint)
     }
@@ -408,52 +408,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_email_and_key_auth_uses_x_auth_headers() {
-        let mut server = mockito::Server::new_async().await;
-        let zone = server
-            .mock("GET", "/zones")
-            .match_query(Matcher::UrlEncoded("name".into(), "example.com".into()))
-            .match_header("x-auth-email", "user@example.com")
-            .match_header("x-auth-key", "the-key")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(format!(
-                r#"{{"errors":[],"success":true,"result":[{{"id":"{ZONE_ID}","name":"example.com"}}]}}"#
-            ))
-            .create();
-
-        let create = server
-            .mock("POST", format!("/zones/{ZONE_ID}/dns_records").as_str())
-            .match_header("x-auth-email", "user@example.com")
-            .match_header("x-auth-key", "the-key")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(ok_body())
-            .create();
-
-        let provider = CloudflareProvider::new(
-            "the-key",
-            Some("user@example.com"),
-            Some(Duration::from_secs(1)),
-        )
-        .unwrap()
-        .with_endpoint(server.url());
-
-        let result = provider
-            .create(
-                "test.example.com",
-                DnsRecord::A("1.1.1.1".parse().unwrap()),
-                3600,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok(), "create returned: {result:?}");
-        zone.assert();
-        create.assert();
-    }
-
-    #[tokio::test]
     #[ignore = "Requires Cloudflare API token, zone, and FQDN"]
     async fn integration_test() {
         let token = std::env::var("CLOUDFLARE_API_TOKEN").unwrap_or_default();
@@ -473,8 +427,7 @@ mod tests {
             "Set CLOUDFLARE_FQDN to run this test (e.g. test.example.com)"
         );
 
-        let updater =
-            DnsUpdater::new_cloudflare(token, None::<&str>, Some(Duration::from_secs(30))).unwrap();
+        let updater = DnsUpdater::new_cloudflare(token, Some(Duration::from_secs(30))).unwrap();
 
         let create_result = updater
             .create(&fqdn, DnsRecord::A([1, 1, 1, 1].into()), 300, &origin)

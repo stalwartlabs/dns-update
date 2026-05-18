@@ -30,25 +30,27 @@ use crate::{
     DnsRecord, DnsRecordType, DnsUpdater, IntoFqdn, TsigAlgorithm,
     providers::{
         alidns::AlidnsProvider,
-        baiducloud::BaiduCloudProvider,
-        bindman::BindmanProvider,
-        bluecatv2::{BluecatV2Config, BluecatV2Provider},
-        azuredns::{AzureDnsConfig, AzureDnsProvider},
         arvancloud::ArvanCloudProvider,
         autodns::AutodnsProvider,
+        azuredns::{AzureDnsConfig, AzureDnsProvider},
+        baiducloud::BaiduCloudProvider,
+        bluecatv2::{BluecatV2Config, BluecatV2Provider},
         bunny::BunnyProvider,
         cloudflare::CloudflareProvider,
         cloudns::ClouDnsProvider,
         constellix::ConstellixProvider,
+        cpanel::CpanelProvider,
         ddnss::DdnssProvider,
         desec::DesecProvider,
         digitalocean::DigitalOceanProvider,
         dnsimple::DNSimpleProvider,
         dnsmadeeasy::DnsMadeEasyProvider,
+        domeneshop::DomeneshopProvider,
         dreamhost::DreamhostProvider,
         duckdns::DuckDnsProvider,
         dynu::DynuProvider,
         easydns::EasyDnsProvider,
+        edgedns::{EdgeDnsConfig, EdgeDnsProvider},
         exoscale::ExoscaleProvider,
         freemyip::FreeMyIpProvider,
         gandiv5::GandiV5Provider,
@@ -57,14 +59,19 @@ use crate::{
         godaddy::GodaddyProvider,
         hetzner::HetznerProvider,
         hostingde::HostingDeProvider,
+        hostinger::HostingerProvider,
         huaweicloud::HuaweiCloudProvider,
+        hurricane::HurricaneProvider,
+        ibmcloud::IbmCloudProvider,
+        infoblox::{InfobloxConfig, InfobloxProvider},
         infomaniak::InfomaniakProvider,
+        inwx::InwxProvider,
         ionos::IonosProvider,
         ipv64::Ipv64Provider,
-        joker::JokerProvider,
+        joker::{JokerAuth, JokerProvider},
+        lightsail::{LightsailConfig, LightsailProvider},
         linode::LinodeProvider,
         luadns::LuaDnsProvider,
-        mailinabox::MailinaboxProvider,
         mythicbeasts::MythicBeastsProvider,
         namecheap::NamecheapProvider,
         namedotcom::NameDotComProvider,
@@ -73,29 +80,18 @@ use crate::{
         netlify::NetlifyProvider,
         nifcloud::NifcloudProvider,
         ns1::Ns1Provider,
-        pdns::PdnsProvider,
-        ibmcloud::IbmCloudProvider,
-        hostinger::HostingerProvider,
-        hurricane::HurricaneProvider,
-        cpanel::CpanelProvider,
         plesk::PleskProvider,
-        edgedns::{EdgeDnsConfig, EdgeDnsProvider},
-        lightsail::{LightsailConfig, LightsailProvider},
-        infoblox::{InfobloxConfig, InfobloxProvider},
-        inwx::InwxProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
-        scaleway::ScalewayProvider,
-        domeneshop::DomeneshopProvider,
         safedns::SafeDnsProvider,
+        scaleway::ScalewayProvider,
         spaceship::SpaceshipProvider,
-        technitium::TechnitiumProvider,
         tencentcloud::TencentCloudProvider,
+        ultradns::UltraDnsProvider,
         vercel::VercelProvider,
         vultr::VultrProvider,
         websupport::WebSupportProvider,
-        ultradns::UltraDnsProvider,
     },
 };
 use std::collections::HashMap;
@@ -120,15 +116,14 @@ impl DnsUpdater {
     /// Create a new DNS updater using the Cloudflare API.
     pub fn new_cloudflare(
         secret: impl AsRef<str>,
-        email: Option<impl AsRef<str>>,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::Cloudflare(CloudflareProvider::new(
-            secret, email, timeout,
+            secret, timeout,
         )?))
     }
 
-    /// Create a new DNS updater using the Cloudflare API.
+    /// Create a new DNS updater using the DigitalOcean API.
     pub fn new_digitalocean(
         auth_token: impl AsRef<str>,
         timeout: Option<Duration>,
@@ -327,42 +322,27 @@ impl DnsUpdater {
     }
 
     /// Create a new DNS updater using the DuckDNS API.
-    pub fn new_duckdns(
-        token: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
+    pub fn new_duckdns(token: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
         Ok(DnsUpdater::DuckDns(DuckDnsProvider::new(token, timeout)?))
     }
 
     /// Create a new DNS updater using the freemyip.com API.
-    pub fn new_freemyip(
-        token: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
+    pub fn new_freemyip(token: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
         Ok(DnsUpdater::FreeMyIp(FreeMyIpProvider::new(token, timeout)?))
     }
 
     /// Create a new DNS updater using the IPv64 API.
-    pub fn new_ipv64(
-        api_key: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
+    pub fn new_ipv64(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
         Ok(DnsUpdater::Ipv64(Ipv64Provider::new(api_key, timeout)?))
     }
 
     /// Create a new DNS updater using the DDNSS.de API.
-    pub fn new_ddnss(
-        key: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
+    pub fn new_ddnss(key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
         Ok(DnsUpdater::Ddnss(DdnssProvider::new(key, timeout)?))
     }
 
     /// Create a new DNS updater using the Dynu API.
-    pub fn new_dynu(
-        api_key: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
+    pub fn new_dynu(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
         Ok(DnsUpdater::Dynu(DynuProvider::new(api_key, timeout)?))
     }
 
@@ -390,14 +370,13 @@ impl DnsUpdater {
         api_token: impl AsRef<str>,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Scaleway(ScalewayProvider::new(api_token, timeout)))
+        Ok(DnsUpdater::Scaleway(ScalewayProvider::new(
+            api_token, timeout,
+        )))
     }
 
     /// Create a new DNS updater using the Gcore DNS API.
-    pub fn new_gcore(
-        api_token: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
+    pub fn new_gcore(api_token: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
         Ok(DnsUpdater::Gcore(GcoreProvider::new(api_token, timeout)))
     }
 
@@ -413,10 +392,7 @@ impl DnsUpdater {
     }
 
     /// Create a new DNS updater using the IONOS DNS API.
-    pub fn new_ionos(
-        api_key: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
+    pub fn new_ionos(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
         Ok(DnsUpdater::Ionos(IonosProvider::new(api_key, timeout)))
     }
 
@@ -473,10 +449,7 @@ impl DnsUpdater {
     }
 
     /// Create a new DNS updater using the NS1 API.
-    pub fn new_ns1(
-        api_key: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
+    pub fn new_ns1(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
         Ok(DnsUpdater::Ns1(Ns1Provider::new(api_key, timeout)))
     }
 
@@ -508,21 +481,6 @@ impl DnsUpdater {
         )))
     }
 
-    /// Create a new DNS updater using the PowerDNS HTTP API.
-    pub fn new_pdns(
-        api_key: impl AsRef<str>,
-        endpoint: Option<impl AsRef<str>>,
-        server_name: Option<impl AsRef<str>>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Pdns(PdnsProvider::new(
-            api_key,
-            endpoint,
-            server_name,
-            timeout,
-        )))
-    }
-
     /// Create a new DNS updater using the Netlify API.
     pub fn new_netlify(
         access_token: impl AsRef<str>,
@@ -532,30 +490,6 @@ impl DnsUpdater {
             access_token,
             timeout,
         )))
-    }
-
-    /// Create a new DNS updater using the Technitium DNS Server API.
-    pub fn new_technitium(
-        base_url: impl AsRef<str>,
-        api_token: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Technitium(TechnitiumProvider::new(
-            base_url, api_token, timeout,
-        )?))
-    }
-
-    /// Create a new DNS updater using the Bindman webhook API.
-    pub fn new_bindman(
-        manager_url: impl AsRef<str>,
-        basic_auth: Option<(impl AsRef<str>, impl AsRef<str>)>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Bindman(BindmanProvider::new(
-            manager_url,
-            basic_auth,
-            timeout,
-        )?))
     }
 
     /// Create a new DNS updater using the INWX JSON-RPC API.
@@ -665,25 +599,9 @@ impl DnsUpdater {
         )?))
     }
 
-    /// Create a new DNS updater using the Joker DMAPI with an API key.
-    pub fn new_joker_api_key(
-        api_key: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Joker(JokerProvider::new_api_key(
-            api_key, timeout,
-        )?))
-    }
-
-    /// Create a new DNS updater using the Joker DMAPI with username and password.
-    pub fn new_joker_password(
-        username: impl AsRef<str>,
-        password: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Joker(JokerProvider::new_password(
-            username, password, timeout,
-        )?))
+    /// Create a new DNS updater using the Joker DMAPI.
+    pub fn new_joker(auth: JokerAuth, timeout: Option<Duration>) -> crate::Result<Self> {
+        Ok(DnsUpdater::Joker(JokerProvider::new(auth, timeout)?))
     }
 
     /// Create a new DNS updater using the Mythic Beasts DNSv2 API.
@@ -721,18 +639,6 @@ impl DnsUpdater {
             login,
             private_key_pem,
             timeout,
-        )?))
-    }
-
-    /// Create a new DNS updater using the Mail-in-a-Box DNS API.
-    pub fn new_mailinabox(
-        base_url: impl AsRef<str>,
-        email: impl AsRef<str>,
-        password: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Mailinabox(MailinaboxProvider::new(
-            base_url, email, password, timeout,
         )?))
     }
 
@@ -951,9 +857,7 @@ impl DnsUpdater {
             DnsUpdater::Netlify(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::EasyDns(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Joker(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::MythicBeasts(provider) => {
-                provider.create(name, record, ttl, origin).await
-            }
+            DnsUpdater::MythicBeasts(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Namecheap(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Transip(provider) => provider.create(name, record, ttl, origin).await,
@@ -975,10 +879,6 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Pdns(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Technitium(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Bindman(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Mailinabox(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::BluecatV2(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Ns1(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::LuaDns(provider) => provider.create(name, record, ttl, origin).await,
@@ -1049,9 +949,7 @@ impl DnsUpdater {
             DnsUpdater::Netlify(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::EasyDns(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Joker(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::MythicBeasts(provider) => {
-                provider.update(name, record, ttl, origin).await
-            }
+            DnsUpdater::MythicBeasts(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Namecheap(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::Transip(provider) => provider.update(name, record, ttl, origin).await,
@@ -1073,10 +971,6 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Pdns(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Technitium(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Bindman(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Mailinabox(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::BluecatV2(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Ns1(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::LuaDns(provider) => provider.update(name, record, ttl, origin).await,
@@ -1166,10 +1060,6 @@ impl DnsUpdater {
             DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::InMemory(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Pdns(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Technitium(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Bindman(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Mailinabox(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::BluecatV2(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Ns1(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::LuaDns(provider) => provider.delete(name, origin, record).await,

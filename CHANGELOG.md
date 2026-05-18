@@ -1,4 +1,4 @@
-dns-update 0.3.2
+dns-update 0.4.0
 ================================
 - Added 62 new DNS provider integrations:
    - Akamai Edge DNS
@@ -8,7 +8,6 @@ dns-update 0.3.2
    - AWS Lightsail
    - Azure DNS
    - Baidu Cloud DNS
-   - Bindman
    - BlueCat Address Manager v2
    - ClouDNS
    - Constellix
@@ -40,7 +39,6 @@ dns-update 0.3.2
    - Joker
    - Linode
    - LuaDNS
-   - Mail-in-a-Box
    - Mythic Beasts
    - Name.com
    - Namecheap
@@ -51,10 +49,8 @@ dns-update 0.3.2
    - NS1
    - Oracle Cloud DNS
    - Plesk
-   - PowerDNS
    - SafeDNS
    - Scaleway
-   - Technitium DNS Server
    - Tencent Cloud DNSPod
    - TransIP
    - UltraDNS
@@ -63,6 +59,7 @@ dns-update 0.3.2
    - Vultr
    - Websupport
    - Yandex Cloud DNS
+- Removed legacy `X-Auth-*` Cloudflare authentication method.
 
 dns-update 0.3.1
 ================================

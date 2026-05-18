@@ -1,7 +1,6 @@
 # dns-update
 
 [![crates.io](https://img.shields.io/crates/v/dns-update)](https://crates.io/crates/dns-update)
-[![build](https://github.com/stalwartlabs/dns-update/actions/workflows/rust.yml/badge.svg)](https://github.com/stalwartlabs/dns-update/actions/workflows/rust.yml)
 [![docs.rs](https://img.shields.io/docsrs/dns-update)](https://docs.rs/dns-update)
 [![crates.io](https://img.shields.io/crates/l/dns-update)](http://www.apache.org/licenses/LICENSE-2.0)
 
@@ -18,7 +17,6 @@ and over 70 cloud, registrar, and self-hosted DNS provider APIs. It was designed
 | [AutoDNS](https://www.internetx.com/) | `new_autodns` | InterNetX |
 | [Azure DNS](https://azure.microsoft.com/services/dns/) | `new_azuredns` | OAuth2 client credentials |
 | [Baidu Cloud DNS](https://cloud.baidu.com/product/dns) | `new_baiducloud` | BCE-Auth-V1 |
-| [Bindman](https://github.com/labbsr0x/bindman-dns-webhook) | `new_bindman` | BIND webhook |
 | [BlueCat Address Manager v2](https://www.bluecatnetworks.com/) | `new_bluecatv2` | OAuth |
 | [Bunny DNS](https://bunny.net/dns/) | `new_bunny` | |
 | [Cloudflare](https://www.cloudflare.com/) | `new_cloudflare` | API token or X-Auth-* |
@@ -54,11 +52,10 @@ and over 70 cloud, registrar, and self-hosted DNS provider APIs. It was designed
 | [INWX](https://www.inwx.com/) | `new_inwx` | JSON-RPC |
 | [IONOS](https://www.ionos.com/) | `new_ionos` | |
 | [IPv64](https://ipv64.net/) | `new_ipv64` | TXT only |
-| [Joker](https://joker.com/) | `new_joker_api_key` / `new_joker_password` | DMAPI |
+| [Joker](https://joker.com/) | `new_joker` | DMAPI, API key or username/password |
 | [AWS Lightsail](https://aws.amazon.com/lightsail/) | `new_lightsail` | AWS Sigv4 |
 | [Linode](https://www.linode.com/) | `new_linode` | |
 | [LuaDNS](https://www.luadns.com/) | `new_luadns` | |
-| [Mail-in-a-Box](https://mailinabox.email/) | `new_mailinabox` | |
 | [Mythic Beasts](https://www.mythic-beasts.com/) | `new_mythicbeasts` | OAuth2 |
 | [Namecheap](https://www.namecheap.com/) | `new_namecheap` | XML API |
 | [Name.com](https://www.name.com/) | `new_namedotcom` | |
@@ -69,14 +66,12 @@ and over 70 cloud, registrar, and self-hosted DNS provider APIs. It was designed
 | [NS1](https://ns1.com/) | `new_ns1` | |
 | [Oracle Cloud DNS](https://www.oracle.com/cloud/networking/dns/) | `new_oraclecloud` | RSA-SHA256 HTTP Signatures |
 | [OVH](https://www.ovh.com/) | `new_ovh` | |
-| [PowerDNS](https://www.powerdns.com/) | `new_pdns` | |
 | [Plesk](https://www.plesk.com/) | `new_plesk` | REST API, X-API-Key |
 | [Porkbun](https://porkbun.com/) | `new_porkbun` | |
 | [AWS Route 53](https://aws.amazon.com/route53/) | `new_route53` | AWS Sigv4 |
 | [ANS SafeDNS](https://www.ans.co.uk/) | `new_safedns` | |
 | [Scaleway](https://www.scaleway.com/) | `new_scaleway` | |
 | [Spaceship](https://www.spaceship.com/) | `new_spaceship` | |
-| [Technitium DNS Server](https://technitium.com/dns/) | `new_technitium` | |
 | [Tencent Cloud DNSPod](https://cloud.tencent.com/product/dns) | `new_tencentcloud` | TC3-HMAC-SHA256 |
 | [TransIP](https://www.transip.eu/) | `new_transip` | RSA-SHA512 JWT |
 | [UltraDNS](https://vercara.com/authoritative-dns) | `new_ultradns` | OAuth2 |

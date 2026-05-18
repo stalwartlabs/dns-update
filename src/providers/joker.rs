@@ -19,18 +19,56 @@ use std::time::{Duration, Instant};
 const DEFAULT_API_ENDPOINT: &str = "https://dmapi.joker.com/request";
 
 #[derive(Clone)]
-pub struct JokerProvider {
-    auth: Arc<Mutex<AuthState>>,
-    credentials: Credentials,
-    endpoint: String,
-    timeout: Option<Duration>,
+pub enum JokerAuth {
+    ApiKey(String),
+    UsernamePassword { username: String, password: String },
+}
+
+impl JokerAuth {
+    pub fn api_key(key: impl Into<String>) -> Self {
+        Self::ApiKey(key.into())
+    }
+
+    pub fn username_password(username: impl Into<String>, password: impl Into<String>) -> Self {
+        Self::UsernamePassword {
+            username: username.into(),
+            password: password.into(),
+        }
+    }
+
+    fn login_params(&self) -> Vec<(&'static str, String)> {
+        match self {
+            Self::ApiKey(key) => vec![("api-key", key.clone())],
+            Self::UsernamePassword { username, password } => vec![
+                ("username", username.clone()),
+                ("password", password.clone()),
+            ],
+        }
+    }
+
+    fn validate(&self) -> crate::Result<()> {
+        match self {
+            Self::ApiKey(key) if key.is_empty() => {
+                Err(Error::Api("Joker API key must not be empty".to_string()))
+            }
+            Self::UsernamePassword { username, password }
+                if username.is_empty() || password.is_empty() =>
+            {
+                Err(Error::Api(
+                    "Joker username and password must not be empty".to_string(),
+                ))
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 #[derive(Clone)]
-struct Credentials {
-    api_key: Option<String>,
-    username: Option<String>,
-    password: Option<String>,
+pub struct JokerProvider {
+    auth: Arc<Mutex<AuthState>>,
+    credentials: JokerAuth,
+    endpoint: String,
+    timeout: Option<Duration>,
 }
 
 struct AuthState {
@@ -38,47 +76,11 @@ struct AuthState {
 }
 
 impl JokerProvider {
-    pub(crate) fn new_api_key(
-        api_key: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        let key = api_key.as_ref().to_string();
-        if key.is_empty() {
-            return Err(Error::Api(
-                "Joker API key must not be empty".to_string(),
-            ));
-        }
+    pub(crate) fn new(auth: JokerAuth, timeout: Option<Duration>) -> crate::Result<Self> {
+        auth.validate()?;
         Ok(Self {
             auth: Arc::new(Mutex::new(AuthState { session: None })),
-            credentials: Credentials {
-                api_key: Some(key),
-                username: None,
-                password: None,
-            },
-            endpoint: DEFAULT_API_ENDPOINT.to_string(),
-            timeout,
-        })
-    }
-
-    pub(crate) fn new_password(
-        username: impl AsRef<str>,
-        password: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        let username = username.as_ref().to_string();
-        let password = password.as_ref().to_string();
-        if username.is_empty() || password.is_empty() {
-            return Err(Error::Api(
-                "Joker username and password must not be empty".to_string(),
-            ));
-        }
-        Ok(Self {
-            auth: Arc::new(Mutex::new(AuthState { session: None })),
-            credentials: Credentials {
-                api_key: None,
-                username: Some(username),
-                password: Some(password),
-            },
+            credentials: auth,
             endpoint: DEFAULT_API_ENDPOINT.to_string(),
             timeout,
         })
@@ -112,20 +114,7 @@ impl JokerProvider {
             }
         }
 
-        let params = if let Some(key) = &self.credentials.api_key {
-            vec![("api-key", key.clone())]
-        } else {
-            vec![
-                (
-                    "username",
-                    self.credentials.username.clone().unwrap_or_default(),
-                ),
-                (
-                    "password",
-                    self.credentials.password.clone().unwrap_or_default(),
-                ),
-            ]
-        };
+        let params = self.credentials.login_params();
 
         let body = serde_urlencoded::to_string(&params)
             .map_err(|e| Error::Serialize(e.to_string()))?;

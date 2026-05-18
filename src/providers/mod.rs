@@ -13,7 +13,6 @@ use crate::DnsRecord;
 
 pub mod alidns;
 pub mod baiducloud;
-pub mod bindman;
 pub mod bluecatv2;
 pub mod azuredns;
 pub mod arvancloud;
@@ -55,7 +54,6 @@ pub mod ipv64;
 pub mod joker;
 pub mod linode;
 pub mod luadns;
-pub mod mailinabox;
 pub mod mythicbeasts;
 pub mod namecheap;
 pub mod namedotcom;
@@ -70,7 +68,6 @@ pub mod lightsail;
 pub mod infoblox;
 pub mod inwx;
 pub mod ovh;
-pub mod pdns;
 #[cfg(feature = "test_provider")]
 pub mod pebble;
 pub mod plesk;
@@ -80,7 +77,6 @@ pub mod route53;
 pub mod scaleway;
 pub mod safedns;
 pub mod spaceship;
-pub mod technitium;
 pub mod tencentcloud;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod transip;

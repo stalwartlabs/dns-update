@@ -275,18 +275,6 @@ look at how Route53 already does it before writing your own helper.
 - The `test_provider` feature unlocks `InMemoryProvider` and `PebbleProvider`
   for downstream consumers writing their own tests.
 
-## Goals / open work
-
-The README and our coordination notes target porting more of lego's ~214
-provider directories. We already cover bunny, cloudflare, desec, digitalocean,
-dnsimple, google_cloud_dns (lego: `gcloud`), ovh, porkbun, rfc2136
-(lego: `dnsupdate` / direct), route53, spaceship. Most outstanding work is
-straightforward HTTP-token providers; the harder ones are AWS-Sigv4-signed
-APIs (alidns, tencentcloud, huaweicloud, baiducloud, azuredns) and providers
-that ship their own SDK in Go (yandexcloud, oraclecloud, ibmcloud) - those
-should be skipped when porting would require a new dependency, per the
-project's "no new deps unless really necessary" rule.
-
 ## Misc
 
 - `examples/` has small `main.rs` programs that exercise the public API.

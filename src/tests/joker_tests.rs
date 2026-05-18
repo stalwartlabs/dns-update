@@ -13,13 +13,13 @@
 mod tests {
     use crate::{
         DnsRecord, DnsRecordType, DnsUpdater, Error,
-        providers::joker::JokerProvider,
+        providers::joker::{JokerAuth, JokerProvider},
     };
     use mockito::Matcher;
     use std::time::Duration;
 
     fn provider(endpoint: String) -> JokerProvider {
-        JokerProvider::new_api_key("api-key-1", Some(Duration::from_secs(1)))
+        JokerProvider::new(JokerAuth::api_key("api-key-1"), Some(Duration::from_secs(1)))
             .unwrap()
             .with_endpoint(endpoint)
     }
@@ -139,7 +139,7 @@ mod tests {
         assert!(!key.is_empty() && !origin.is_empty() && !fqdn.is_empty());
 
         let updater =
-            DnsUpdater::new_joker_api_key(key, Some(Duration::from_secs(30))).unwrap();
+            DnsUpdater::new_joker(JokerAuth::api_key(key), Some(Duration::from_secs(30))).unwrap();
         updater
             .create(&fqdn, DnsRecord::TXT("x".to_string()), 300, &origin)
             .await
