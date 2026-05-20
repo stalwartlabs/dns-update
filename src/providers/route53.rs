@@ -10,6 +10,7 @@
  */
 
 use crate::crypto::{hmac_sha256, sha256_digest};
+use crate::utils::txt_chunks_to_text;
 use crate::{DnsRecord, DnsRecordType, IntoFqdn};
 use quick_xml::de::from_str;
 use quick_xml::se::to_string;
@@ -410,7 +411,11 @@ impl Route53Provider {
             DnsRecord::CNAME(name) => name.clone(),
             DnsRecord::NS(name) => name.clone(),
             DnsRecord::MX(mx) => mx.to_string(),
-            DnsRecord::TXT(text) => format!("\"{}\"", text.replace('\"', "\\\"")),
+            DnsRecord::TXT(text) => {
+                let mut value = String::new();
+                txt_chunks_to_text(&mut value, text, " ");
+                value
+            }
             DnsRecord::SRV(srv) => srv.to_string(),
             DnsRecord::TLSA(tlsa) => tlsa.to_string(),
             DnsRecord::CAA(caa) => caa.to_string(),
@@ -640,5 +645,85 @@ mod tests {
         let out = to_string(&req).unwrap();
         println!("SERIALIZED: {}", out);
         assert!(out.starts_with("<ChangeResourceRecordSetsRequest"));
+    }
+
+    #[test]
+    fn test_long_txt_is_chunked_per_rfc1035() {
+        let provider = Route53Provider::new(Route53Config {
+            access_key_id: "test".to_string(),
+            secret_access_key: "test".to_string(),
+            session_token: None,
+            region: Some("us-east-1".to_string()),
+            hosted_zone_id: Some("Z123".to_string()),
+            private_zone_only: Some(false),
+        });
+
+        let long_txt = "x".repeat(400);
+        let rrset = provider
+            .record_to_rrset(
+                "selector._domainkey.example.com.",
+                &DnsRecord::TXT(long_txt),
+                300,
+            )
+            .unwrap();
+        let value = &rrset.resource_records.resource_records[0].value;
+
+        let chunks: Vec<&str> = value
+            .strip_prefix('"')
+            .and_then(|s| s.strip_suffix('"'))
+            .expect("value must be wrapped in quotes")
+            .split("\" \"")
+            .collect();
+        assert_eq!(chunks.len(), 2, "400-byte TXT must split into 2 chunks");
+        assert!(
+            chunks.iter().all(|c| c.len() <= 255),
+            "each character-string must be at most 255 bytes, got {:?}",
+            chunks.iter().map(|c| c.len()).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            chunks.iter().map(|c| c.len()).sum::<usize>(),
+            400,
+            "no bytes may be lost"
+        );
+        assert!(
+            chunks.iter().all(|c| c.bytes().all(|b| b == b'x')),
+            "no extraneous characters introduced between chunks"
+        );
+    }
+
+    #[test]
+    fn test_short_txt_is_quoted_and_escaped() {
+        let provider = Route53Provider::new(Route53Config {
+            access_key_id: "test".to_string(),
+            secret_access_key: "test".to_string(),
+            session_token: None,
+            region: Some("us-east-1".to_string()),
+            hosted_zone_id: Some("Z123".to_string()),
+            private_zone_only: Some(false),
+        });
+
+        let rrset = provider
+            .record_to_rrset(
+                "example.com.",
+                &DnsRecord::TXT("v=spf1 -all".to_string()),
+                300,
+            )
+            .unwrap();
+        assert_eq!(
+            rrset.resource_records.resource_records[0].value,
+            "\"v=spf1 -all\""
+        );
+
+        let rrset = provider
+            .record_to_rrset(
+                "example.com.",
+                &DnsRecord::TXT("with \"quote\" inside".to_string()),
+                300,
+            )
+            .unwrap();
+        assert_eq!(
+            rrset.resource_records.resource_records[0].value,
+            "\"with \\\"quote\\\" inside\""
+        );
     }
 }

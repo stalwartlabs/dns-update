@@ -90,21 +90,50 @@ impl DesecProvider {
         let ttl = ttl.max(DESEC_MIN_TTL);
 
         let desec_record = DesecDnsRecordRepresentation::from(record);
-        self.client
-            .post(format!(
+
+        let rrset_url = format!(
+            "{endpoint}/domains/{domain}/rrsets/{subdomain}/{rr_type}/",
+            endpoint = self.endpoint,
+            domain = &domain,
+            subdomain = &subdomain,
+            rr_type = &desec_record.record_type,
+        );
+
+        let (mut records, existed) = match self
+            .client
+            .get(rrset_url.clone())
+            .send_with_retry::<DesecApiResponse>(3)
+            .await
+        {
+            Ok(existing) => (existing.records, true),
+            Err(crate::Error::NotFound) => (Vec::new(), false),
+            Err(err) => return Err(err),
+        };
+
+        if !records.iter().any(|r| r == &desec_record.content) {
+            records.push(desec_record.content);
+        }
+
+        let params = DnsRecordParams {
+            subname: &subdomain,
+            rr_type: &desec_record.record_type,
+            ttl: Some(ttl),
+            records,
+        };
+
+        if existed {
+            self.client.put(rrset_url)
+        } else {
+            self.client.post(format!(
                 "{endpoint}/domains/{domain}/rrsets/",
                 endpoint = self.endpoint,
                 domain = domain
             ))
-            .with_body(DnsRecordParams {
-                subname: &subdomain,
-                rr_type: &desec_record.record_type,
-                ttl: Some(ttl),
-                records: vec![desec_record.content],
-            })?
-            .send_with_retry::<DesecApiResponse>(3)
-            .await
-            .map(|_| ())
+        }
+        .with_body(params)?
+        .send_with_retry::<DesecApiResponse>(3)
+        .await
+        .map(|_| ())
     }
 
     pub(crate) async fn update(
@@ -161,6 +190,10 @@ impl DesecProvider {
             .send_with_retry::<DesecEmptyResponse>(3)
             .await
             .map(|_| ())
+            .or_else(|err| match err {
+                crate::Error::NotFound => Ok(()),
+                err => Err(err),
+            })
     }
 }
 

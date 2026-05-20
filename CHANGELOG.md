@@ -1,3 +1,8 @@
+dns-update 0.4.1
+================================
+- Route53: chunk TXT records into 255-byte character-strings.
+- DeSEC: Use `PATCH` instead of `POST` for create.
+
 dns-update 0.4.0
 ================================
 - Added 62 new DNS provider integrations:

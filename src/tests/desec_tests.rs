@@ -15,6 +15,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_record_success() {
         let mut server = mockito::Server::new_async().await;
+        let _get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/A/")
+            .with_status(404)
+            .create();
         let expected_request = json!({
             "subname": "test",
             "type": "A",
@@ -60,6 +64,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_mx_record_success() {
         let mut server = mockito::Server::new_async().await;
+        let _get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/MX/")
+            .with_status(404)
+            .create();
         let expected_request = json!({
             "subname": "test",
             "type": "MX",
@@ -108,6 +116,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_record_unauthorized() {
         let mut server = mockito::Server::new_async().await;
+        let _get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/A/")
+            .with_status(404)
+            .create();
         let expected_request = json!({
             "subname": "test",
             "type": "A",
@@ -202,6 +214,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_tlsa_record_success() {
         let mut server = mockito::Server::new_async().await;
+        let _get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/_443._tcp.test/TLSA/")
+            .with_status(404)
+            .create();
         let expected_request = json!({
             "subname": "_443._tcp.test",
             "type": "TLSA",
@@ -300,6 +316,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_caa_issue_record_success() {
         let mut server = mockito::Server::new_async().await;
+        let _get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/CAA/")
+            .with_status(404)
+            .create();
         let expected_request = json!({
             "subname": "test",
             "type": "CAA",
@@ -396,6 +416,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_caa_iodef_record_success() {
         let mut server = mockito::Server::new_async().await;
+        let _get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/CAA/")
+            .with_status(404)
+            .create();
         let expected_request = json!({
             "subname": "test",
             "type": "CAA",
@@ -444,6 +468,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_record_lowercases_subname_and_domain() {
         let mut server = mockito::Server::new_async().await;
+        let _get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/mail/A/")
+            .with_status(404)
+            .create();
         let expected_request = json!({
             "subname": "mail",
             "type": "A",
@@ -487,6 +515,10 @@ mod tests {
     #[tokio::test]
     async fn test_create_record_clamps_ttl_below_minimum() {
         let mut server = mockito::Server::new_async().await;
+        let _get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/A/")
+            .with_status(404)
+            .create();
         let expected_request = json!({
             "subname": "test",
             "type": "A",
@@ -581,6 +613,143 @@ mod tests {
         let provider = setup_provider(server.url().as_str());
         let result = provider
             .delete("Mail.Example.com", "Example.com", DnsRecordType::TXT)
+            .await;
+
+        assert!(result.is_ok());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_create_record_appends_to_existing_rrset() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/_acme-challenge/TXT/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "_acme-challenge",
+                    "name": "_acme-challenge.example.com.",
+                    "records": ["\"token-a\""],
+                    "ttl": 3600,
+                    "type": "TXT",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+        let expected_request = json!({
+            "subname": "_acme-challenge",
+            "type": "TXT",
+            "ttl": 3600,
+            "records": ["\"token-a\"", "\"token-b\""],
+        });
+        let put_mock = server
+            .mock("PUT", "/domains/example.com/rrsets/_acme-challenge/TXT/")
+            .with_status(200)
+            .match_header("authorization", "Token test_token")
+            .match_body(mockito::Matcher::Json(expected_request))
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "_acme-challenge",
+                    "name": "_acme-challenge.example.com.",
+                    "records": ["\"token-a\"", "\"token-b\""],
+                    "ttl": 3600,
+                    "type": "TXT",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .create(
+                "_acme-challenge.example.com",
+                DnsRecord::TXT("token-b".to_string()),
+                3600,
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        get_mock.assert();
+        put_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_create_record_idempotent_when_value_present() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/_acme-challenge/TXT/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "_acme-challenge",
+                    "name": "_acme-challenge.example.com.",
+                    "records": ["\"token-a\""],
+                    "ttl": 3600,
+                    "type": "TXT",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+        let expected_request = json!({
+            "subname": "_acme-challenge",
+            "type": "TXT",
+            "ttl": 3600,
+            "records": ["\"token-a\""],
+        });
+        let put_mock = server
+            .mock("PUT", "/domains/example.com/rrsets/_acme-challenge/TXT/")
+            .with_status(200)
+            .match_body(mockito::Matcher::Json(expected_request))
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "_acme-challenge",
+                    "name": "_acme-challenge.example.com.",
+                    "records": ["\"token-a\""],
+                    "ttl": 3600,
+                    "type": "TXT",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .create(
+                "_acme-challenge.example.com",
+                DnsRecord::TXT("token-a".to_string()),
+                3600,
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        get_mock.assert();
+        put_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_delete_record_not_found_is_ok() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("DELETE", "/domains/example.com/rrsets/test/TXT/")
+            .with_status(404)
+            .with_body(r#"{ "detail": "Not found." }"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .delete("test", "example.com", DnsRecordType::TXT)
             .await;
 
         assert!(result.is_ok());
