@@ -61,62 +61,162 @@ impl PebbleProvider {
         Self { client, base_url }
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        record_type: DnsRecordType,
         _ttl: u32,
+        records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
         let host = name.into_fqdn().into_owned();
-        self.set_record(&host, record).await
+        self.clear_record(&host, record_type).await?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        match record_type {
+            DnsRecordType::A | DnsRecordType::AAAA => {
+                let addresses = records
+                    .iter()
+                    .map(|r| match r {
+                        DnsRecord::A(addr) => addr.to_string(),
+                        DnsRecord::AAAA(addr) => addr.to_string(),
+                        _ => unreachable!(),
+                    })
+                    .collect();
+                self.add_addresses(&host, record_type, addresses).await
+            }
+            DnsRecordType::CAA => {
+                let policies = records
+                    .iter()
+                    .map(|r| match r {
+                        DnsRecord::CAA(caa) => {
+                            let (_, tag, value) = caa.clone().decompose();
+                            CaaPolicy { tag, value }
+                        }
+                        _ => unreachable!(),
+                    })
+                    .collect();
+                self.client
+                    .post(format!("{}/add-caa", self.base_url))
+                    .with_body(AddCaa { host, policies })?
+                    .send_raw()
+                    .await
+                    .map(|_| ())
+            }
+            DnsRecordType::TXT | DnsRecordType::CNAME => {
+                if records.len() > 1 {
+                    return Err(Error::Api(format!(
+                        "Pebble only supports a single {record_type} record per owner"
+                    )));
+                }
+                self.set_singular(&host, records.into_iter().next().unwrap())
+                    .await
+            }
+            other => Err(Error::Api(format!(
+                "{other} records are not supported by Pebble"
+            ))),
+        }
     }
 
-    pub(crate) async fn update(
+    pub(crate) async fn add_to_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        record_type: DnsRecordType,
         _ttl: u32,
+        records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
         let host = name.into_fqdn().into_owned();
-        // Clear existing record first, then set the new one
-        self.clear_record(&host, record.as_type()).await?;
-        self.set_record(&host, record).await
+        match record_type {
+            DnsRecordType::A | DnsRecordType::AAAA => {
+                let addresses = records
+                    .into_iter()
+                    .map(|r| match r {
+                        DnsRecord::A(addr) => addr.to_string(),
+                        DnsRecord::AAAA(addr) => addr.to_string(),
+                        _ => unreachable!(),
+                    })
+                    .collect();
+                self.add_addresses(&host, record_type, addresses).await
+            }
+            DnsRecordType::CAA => {
+                let policies = records
+                    .into_iter()
+                    .map(|r| match r {
+                        DnsRecord::CAA(caa) => {
+                            let (_, tag, value) = caa.decompose();
+                            CaaPolicy { tag, value }
+                        }
+                        _ => unreachable!(),
+                    })
+                    .collect();
+                self.client
+                    .post(format!("{}/add-caa", self.base_url))
+                    .with_body(AddCaa { host, policies })?
+                    .send_raw()
+                    .await
+                    .map(|_| ())
+            }
+            DnsRecordType::TXT | DnsRecordType::CNAME => {
+                if records.len() > 1 {
+                    return Err(Error::Api(format!(
+                        "Pebble only supports a single {record_type} record per owner"
+                    )));
+                }
+                self.set_singular(&host, records.into_iter().next().unwrap())
+                    .await
+            }
+            other => Err(Error::Api(format!(
+                "{other} records are not supported by Pebble"
+            ))),
+        }
     }
 
-    pub(crate) async fn delete(
+    pub(crate) async fn remove_from_rrset(
         &self,
         name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
-        record: DnsRecordType,
     ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
         let host = name.into_fqdn().into_owned();
-        self.clear_record(&host, record).await
+        self.clear_record(&host, record_type).await
     }
 
-    async fn set_record(&self, host: &str, record: DnsRecord) -> crate::Result<()> {
+    async fn add_addresses(
+        &self,
+        host: &str,
+        record_type: DnsRecordType,
+        addresses: Vec<String>,
+    ) -> crate::Result<()> {
+        let endpoint = match record_type {
+            DnsRecordType::A => "add-a",
+            DnsRecordType::AAAA => "add-aaaa",
+            _ => unreachable!(),
+        };
+        self.client
+            .post(format!("{}/{endpoint}", self.base_url))
+            .with_body(AddA {
+                host: host.to_string(),
+                addresses,
+            })?
+            .send_raw()
+            .await
+            .map(|_| ())
+    }
+
+    async fn set_singular(&self, host: &str, record: DnsRecord) -> crate::Result<()> {
         match record {
-            DnsRecord::A(addr) => self
-                .client
-                .post(format!("{}/add-a", self.base_url))
-                .with_body(AddA {
-                    host: host.to_string(),
-                    addresses: vec![addr.to_string()],
-                })?
-                .send_raw()
-                .await
-                .map(|_| ()),
-            DnsRecord::AAAA(addr) => self
-                .client
-                .post(format!("{}/add-aaaa", self.base_url))
-                .with_body(AddA {
-                    host: host.to_string(),
-                    addresses: vec![addr.to_string()],
-                })?
-                .send_raw()
-                .await
-                .map(|_| ()),
             DnsRecord::CNAME(target) => self
                 .client
                 .post(format!("{}/set-cname", self.base_url))
@@ -137,30 +237,10 @@ impl PebbleProvider {
                 .send_raw()
                 .await
                 .map(|_| ()),
-            DnsRecord::CAA(caa) => {
-                let (_, tag, value) = caa.decompose();
-                self.client
-                    .post(format!("{}/add-caa", self.base_url))
-                    .with_body(AddCaa {
-                        host: host.to_string(),
-                        policies: vec![CaaPolicy { tag, value }],
-                    })?
-                    .send_raw()
-                    .await
-                    .map(|_| ())
-            }
-            DnsRecord::NS(_) => Err(Error::Api(
-                "NS records are not supported by Pebble".to_string(),
-            )),
-            DnsRecord::MX(_) => Err(Error::Api(
-                "MX records are not supported by Pebble".to_string(),
-            )),
-            DnsRecord::SRV(_) => Err(Error::Api(
-                "SRV records are not supported by Pebble".to_string(),
-            )),
-            DnsRecord::TLSA(_) => Err(Error::Api(
-                "TLSA records are not supported by Pebble".to_string(),
-            )),
+            other => Err(Error::Api(format!(
+                "{} records are not supported by Pebble",
+                other.as_type()
+            ))),
         }
     }
 
@@ -187,4 +267,17 @@ impl PebbleProvider {
             .await
             .map(|_| ())
     }
+}
+
+fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
+    for r in records {
+        if r.as_type() != expected {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected.as_str(),
+                r.as_type().as_str(),
+            )));
+        }
+    }
+    Ok(())
 }

@@ -811,7 +811,10 @@ impl DnsUpdater {
             DnsUpdater::Alidns(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::AzureDns(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Cloudflare(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Cloudflare(_) => Err(crate::Error::Api(
+                "Cloudflare uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
+                    .to_string(),
+            )),
             DnsUpdater::Ddnss(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
@@ -837,7 +840,10 @@ impl DnsUpdater {
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::OracleCloud(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Rfc2136(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Rfc2136(_) => Err(crate::Error::Api(
+                "RFC 2136 uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
+                    .to_string(),
+            )),
             DnsUpdater::Route53(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Scaleway(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Spaceship(provider) => provider.create(name, record, ttl, origin).await,
@@ -876,9 +882,14 @@ impl DnsUpdater {
             DnsUpdater::UltraDns(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Infoblox(provider) => provider.create(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
-            DnsUpdater::Pebble(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::Pebble(_) => Err(crate::Error::Api(
+                "Pebble uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)".to_string(),
+            )),
             #[cfg(feature = "test_provider")]
-            DnsUpdater::InMemory(provider) => provider.create(name, record, ttl, origin).await,
+            DnsUpdater::InMemory(_) => Err(crate::Error::Api(
+                "InMemory uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
+                    .to_string(),
+            )),
             DnsUpdater::BluecatV2(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::Ns1(provider) => provider.create(name, record, ttl, origin).await,
             DnsUpdater::LuaDns(provider) => provider.create(name, record, ttl, origin).await,
@@ -903,7 +914,10 @@ impl DnsUpdater {
             DnsUpdater::Alidns(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::AzureDns(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Cloudflare(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Cloudflare(_) => Err(crate::Error::Api(
+                "Cloudflare uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
+                    .to_string(),
+            )),
             DnsUpdater::Ddnss(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
@@ -929,7 +943,10 @@ impl DnsUpdater {
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::OracleCloud(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Rfc2136(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Rfc2136(_) => Err(crate::Error::Api(
+                "RFC 2136 uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
+                    .to_string(),
+            )),
             DnsUpdater::Route53(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Scaleway(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Spaceship(provider) => provider.update(name, record, ttl, origin).await,
@@ -968,9 +985,14 @@ impl DnsUpdater {
             DnsUpdater::UltraDns(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Infoblox(provider) => provider.update(name, record, ttl, origin).await,
             #[cfg(feature = "test_provider")]
-            DnsUpdater::Pebble(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::Pebble(_) => Err(crate::Error::Api(
+                "Pebble uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)".to_string(),
+            )),
             #[cfg(feature = "test_provider")]
-            DnsUpdater::InMemory(provider) => provider.update(name, record, ttl, origin).await,
+            DnsUpdater::InMemory(_) => Err(crate::Error::Api(
+                "InMemory uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
+                    .to_string(),
+            )),
             DnsUpdater::BluecatV2(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::Ns1(provider) => provider.update(name, record, ttl, origin).await,
             DnsUpdater::LuaDns(provider) => provider.update(name, record, ttl, origin).await,
@@ -994,7 +1016,10 @@ impl DnsUpdater {
             DnsUpdater::Alidns(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::AzureDns(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Cloudflare(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Cloudflare(_) => Err(crate::Error::Api(
+                "Cloudflare uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
+                    .to_string(),
+            )),
             DnsUpdater::Ddnss(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin, record).await,
@@ -1020,7 +1045,10 @@ impl DnsUpdater {
             #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
             DnsUpdater::OracleCloud(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Rfc2136(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Rfc2136(_) => Err(crate::Error::Api(
+                "RFC 2136 uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
+                    .to_string(),
+            )),
             DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Scaleway(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Spaceship(provider) => provider.delete(name, origin, record).await,
@@ -1057,9 +1085,14 @@ impl DnsUpdater {
             DnsUpdater::UltraDns(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Infoblox(provider) => provider.delete(name, origin, record).await,
             #[cfg(feature = "test_provider")]
-            DnsUpdater::Pebble(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::Pebble(_) => Err(crate::Error::Api(
+                "Pebble uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)".to_string(),
+            )),
             #[cfg(feature = "test_provider")]
-            DnsUpdater::InMemory(provider) => provider.delete(name, origin, record).await,
+            DnsUpdater::InMemory(_) => Err(crate::Error::Api(
+                "InMemory uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
+                    .to_string(),
+            )),
             DnsUpdater::BluecatV2(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Ns1(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::LuaDns(provider) => provider.delete(name, origin, record).await,
@@ -1069,6 +1102,113 @@ impl DnsUpdater {
             DnsUpdater::Domeneshop(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::Safedns(provider) => provider.delete(name, origin, record).await,
             DnsUpdater::ArvanCloud(provider) => provider.delete(name, origin, record).await,
+        }
+    }
+
+    /// Atomically replace the RRSet
+    pub async fn set_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        match self {
+            DnsUpdater::Rfc2136(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Cloudflare(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            #[cfg(feature = "test_provider")]
+            DnsUpdater::Pebble(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            #[cfg(feature = "test_provider")]
+            DnsUpdater::InMemory(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            _ => unreachable!("set_rrset not yet implemented for this provider"),
+        }
+    }
+
+    /// Add records to the RRSet
+    pub async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        match self {
+            DnsUpdater::Rfc2136(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Cloudflare(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            #[cfg(feature = "test_provider")]
+            DnsUpdater::Pebble(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            #[cfg(feature = "test_provider")]
+            DnsUpdater::InMemory(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            _ => unreachable!("add_to_rrset not yet implemented for this provider"),
+        }
+    }
+
+    /// Remove the listed records from the RRSet
+    pub async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        match self {
+            DnsUpdater::Rfc2136(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Cloudflare(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            #[cfg(feature = "test_provider")]
+            DnsUpdater::Pebble(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            #[cfg(feature = "test_provider")]
+            DnsUpdater::InMemory(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            _ => unreachable!("remove_from_rrset not yet implemented for this provider"),
         }
     }
 }

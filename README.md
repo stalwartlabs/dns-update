@@ -81,52 +81,88 @@ and over 70 cloud, registrar, and self-hosted DNS provider APIs. It was designed
 | [Websupport](https://www.websupport.sk/) | `new_websupport` | HMAC-SHA1 |
 | [Yandex Cloud DNS](https://cloud.yandex.com/services/dns) | `new_yandexcloud` | PS256 JWT |
 
-## Usage Example
+## API
 
-Using RFC2136 with TSIG:
+Every provider exposes three RRSet-oriented methods on `DnsUpdater`. All three operate on the full RRSet at `(name, type)` and are idempotent.
 
 ```rust,ignore
-        // Create a new RFC2136 client
-        let client = DnsUpdater::new_rfc2136_tsig("tcp://127.0.0.1:53", "<KEY_NAME>", STANDARD.decode("<TSIG_KEY>").unwrap(), TsigAlgorithm::HmacSha512).unwrap();
-
-        // Create a new TXT record
-        client.create(
-            "test._domainkey.example.org",
-            DnsRecord::TXT {
-                content: "v=DKIM1; k=rsa; h=sha256; p=test".to_string(),
-            },
-            300,
-            "example.org",
-        )
-        .await
-        .unwrap();
-
-        // Delete the record
-        client.delete("test._domainkey.example.org", "example.org").await.unwrap();
+async fn set_rrset(name, type, ttl, records: Vec<DnsRecord>, origin) -> Result<()>
+async fn add_to_rrset(name, type, ttl, records: Vec<DnsRecord>, origin) -> Result<()>
+async fn remove_from_rrset(name, type, records: Vec<DnsRecord>, origin) -> Result<()>
 ```
 
-Using a cloud provider such as Cloudflare:
+- `set_rrset` replaces the RRSet at `(name, type)` with exactly `records`.
+  An empty `Vec` deletes the RRSet. Other types at the same owner are
+  never touched.
+- `add_to_rrset` ensures `records` are present at the owner without
+  removing anything else.
+- `remove_from_rrset` removes only the listed values; other values at the
+  same owner are preserved.
+
+## Usage Example
+
+Publishing a TXT record using RFC 2136 over TSIG:
 
 ```rust,ignore
-        // Create a new Cloudflare client
-        let client =
-            DnsUpdater::new_cloudflare("<API_TOKEN>", None::<String>, Some(Duration::from_secs(60)))
-                .unwrap();
+let client = DnsUpdater::new_rfc2136_tsig(
+    "tcp://127.0.0.1:53",
+    "<KEY_NAME>",
+    STANDARD.decode("<TSIG_KEY>").unwrap(),
+    TsigAlgorithm::HmacSha512,
+)
+.unwrap();
 
-        // Create a new TXT record
-        client.create(
-            "test._domainkey.example.org",
-            DnsRecord::TXT {
-                content: "v=DKIM1; k=rsa; h=sha256; p=test".to_string(),
-            },
-            300,
-            "example.org",
-        )
-        .await
-        .unwrap();
+// Publish the entire RRSet at this owner in one atomic operation. Empty
+// Vec deletes the RRSet. Rerunning with the same input is a no-op.
+client
+    .set_rrset(
+        "test._domainkey.example.org",
+        DnsRecordType::TXT,
+        300,
+        vec![DnsRecord::TXT("v=DKIM1; k=rsa; h=sha256; p=test".to_string())],
+        "example.org",
+    )
+    .await
+    .unwrap();
 
-        // Delete the record
-        client.delete("test._domainkey.example.org", "example.org").await.unwrap();
+// Delete the RRSet.
+client
+    .set_rrset(
+        "test._domainkey.example.org",
+        DnsRecordType::TXT,
+        0,
+        vec![],
+        "example.org",
+    )
+    .await
+    .unwrap();
+```
+
+`add_to_rrset` is for "publish this value alongside whatever else is there"
+(e.g. an ACME challenge token that should coexist with the user's DKIM/SPF
+TXTs at the same owner):
+
+```rust,ignore
+client
+    .add_to_rrset(
+        "_acme-challenge.example.org",
+        DnsRecordType::TXT,
+        60,
+        vec![DnsRecord::TXT("challenge-token".to_string())],
+        "example.org",
+    )
+    .await
+    .unwrap();
+
+client
+    .remove_from_rrset(
+        "_acme-challenge.example.org",
+        DnsRecordType::TXT,
+        vec![DnsRecord::TXT("challenge-token".to_string())],
+        "example.org",
+    )
+    .await
+    .unwrap();
 ```
 
 ## License

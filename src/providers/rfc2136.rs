@@ -26,7 +26,7 @@ use hickory_proto::rr::rdata::caa::KeyValue;
 use hickory_proto::rr::rdata::tlsa::{CertUsage, Matching, Selector};
 use hickory_proto::rr::rdata::tsig::TsigAlgorithm;
 use hickory_proto::rr::rdata::{A, AAAA, CAA, CNAME, MX, NS, SRV, TLSA, TXT};
-use hickory_proto::rr::{Name, RData, Record, RecordType, TSigner};
+use hickory_proto::rr::{Name, RData, Record, RecordSet, RecordType, TSigner};
 use std::net::{AddrParseError, SocketAddr};
 
 #[derive(Clone)]
@@ -88,86 +88,103 @@ impl Rfc2136Provider {
         }
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let (_rr_type, rdata) = convert_record(record)?;
-        let record = Record::from_rdata(
-            Name::from_str_relaxed(name.into_name().as_ref())?,
-            ttl,
-            rdata,
-        );
-
-        let mut client = self.connect().await?;
-        let result = client
-            .append(
-                record,
-                Name::from_str_relaxed(origin.into_fqdn().as_ref())?,
-                false,
-            )
-            .await?;
-        if result.response_code == ResponseCode::NoError {
-            Ok(())
-        } else {
-            Err(crate::Error::Response(result.response_code.to_string()))
-        }
-    }
-
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let (_rr_type, rdata) = convert_record(record)?;
-        let record = Record::from_rdata(
-            Name::from_str_relaxed(name.into_name().as_ref())?,
-            ttl,
-            rdata,
-        );
-
-        let mut client = self.connect().await?;
-        let result = client
-            .append(
-                record,
-                Name::from_str_relaxed(origin.into_fqdn().as_ref())?,
-                false,
-            )
-            .await?;
-        if result.response_code == ResponseCode::NoError {
-            Ok(())
-        } else {
-            Err(crate::Error::Response(result.response_code.to_string()))
-        }
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        let record = Record::update0(
-            Name::from_str_relaxed(name.into_name().as_ref())?,
-            0,
-            record_type.into(),
-        );
+        let owner = Name::from_str_relaxed(name.into_name().as_ref())?;
+        let zone = Name::from_str_relaxed(origin.into_fqdn().as_ref())?;
+        let rtype: RecordType = record_type.into();
 
         let mut client = self.connect().await?;
-        let result = client
-            .delete_rrset(record, Name::from_str_relaxed(origin.into_fqdn().as_ref())?)
-            .await?;
-        if result.response_code == ResponseCode::NoError {
-            Ok(())
-        } else {
-            Err(crate::Error::Response(result.response_code.to_string()))
+
+        let delete = Record::update0(owner.clone(), 0, rtype);
+        let result = client.delete_rrset(delete, zone.clone()).await?;
+        if result.response_code != ResponseCode::NoError {
+            return Err(Error::Response(result.response_code.to_string()));
         }
+
+        if records.is_empty() {
+            return Ok(());
+        }
+
+        let rrset = build_rrset(owner, rtype, ttl, records)?;
+        let result = client.append(rrset, zone, false).await?;
+        if result.response_code != ResponseCode::NoError {
+            return Err(Error::Response(result.response_code.to_string()));
+        }
+        Ok(())
     }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let owner = Name::from_str_relaxed(name.into_name().as_ref())?;
+        let zone = Name::from_str_relaxed(origin.into_fqdn().as_ref())?;
+        let rtype: RecordType = record_type.into();
+        let rrset = build_rrset(owner, rtype, ttl, records)?;
+
+        let mut client = self.connect().await?;
+        let result = client.append(rrset, zone, false).await?;
+        if result.response_code != ResponseCode::NoError {
+            return Err(Error::Response(result.response_code.to_string()));
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let owner = Name::from_str_relaxed(name.into_name().as_ref())?;
+        let zone = Name::from_str_relaxed(origin.into_fqdn().as_ref())?;
+        let rtype: RecordType = record_type.into();
+        let rrset = build_rrset(owner, rtype, 0, records)?;
+
+        let mut client = self.connect().await?;
+        let result = client.delete_by_rdata(rrset, zone).await?;
+        if result.response_code != ResponseCode::NoError {
+            return Err(Error::Response(result.response_code.to_string()));
+        }
+        Ok(())
+    }
+}
+
+fn build_rrset(
+    name: Name,
+    rtype: RecordType,
+    ttl: u32,
+    records: Vec<DnsRecord>,
+) -> crate::Result<RecordSet> {
+    let mut rrset = RecordSet::with_ttl(name, rtype, ttl);
+    for record in records {
+        let (record_type, rdata) = convert_record(record)?;
+        if record_type != rtype {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {rtype}, got {record_type}"
+            )));
+        }
+        rrset.add_rdata(rdata);
+    }
+    Ok(rrset)
 }
 
 impl From<DnsRecordType> for RecordType {

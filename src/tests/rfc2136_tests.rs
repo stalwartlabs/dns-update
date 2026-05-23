@@ -131,7 +131,7 @@ async fn query_records(name: &str, rtype: RecordType) -> Vec<RData> {
 /// Sign a `delete-name` update for `name` to clean up after each test.
 async fn cleanup_name(name: &str, rtype: DnsRecordType) {
     let provider = udp_provider();
-    let _ = provider.delete(name, zone(), rtype).await;
+    let _ = provider.set_rrset(name, rtype, 0, vec![], zone()).await;
 }
 
 fn unique_label(prefix: &str) -> String {
@@ -211,9 +211,15 @@ async fn udp_create_a_record() {
     let provider = udp_provider();
     let name = format!("{}.{}", unique_label("a"), zone());
     provider
-        .create(&name, DnsRecord::A(Ipv4Addr::new(10, 0, 0, 1)), 60, zone())
+        .set_rrset(
+            &name,
+            DnsRecordType::A,
+            60,
+            vec![DnsRecord::A(Ipv4Addr::new(10, 0, 0, 1))],
+            zone(),
+        )
         .await
-        .expect("create A");
+        .expect("set A");
 
     let answers = wait_for_record(&name, RecordType::A, 20).await;
     assert!(answers.iter().any(|d| matches!(d, RData::A(a) if a.0 == Ipv4Addr::new(10, 0, 0, 1))));
@@ -229,9 +235,15 @@ async fn tcp_create_a_record() {
     let provider = tcp_provider();
     let name = format!("{}.{}", unique_label("a-tcp"), zone());
     provider
-        .create(&name, DnsRecord::A(Ipv4Addr::new(10, 0, 0, 2)), 60, zone())
+        .set_rrset(
+            &name,
+            DnsRecordType::A,
+            60,
+            vec![DnsRecord::A(Ipv4Addr::new(10, 0, 0, 2))],
+            zone(),
+        )
         .await
-        .expect("create A via TCP (TSIG signed)");
+        .expect("set A via TCP (TSIG signed)");
 
     let answers = wait_for_record(&name, RecordType::A, 20).await;
     assert!(
@@ -253,9 +265,15 @@ async fn udp_create_aaaa_record() {
     let name = format!("{}.{}", unique_label("aaaa"), zone());
     let addr: Ipv6Addr = "2001:db8::1".parse().unwrap();
     provider
-        .create(&name, DnsRecord::AAAA(addr), 60, zone())
+        .set_rrset(
+            &name,
+            DnsRecordType::AAAA,
+            60,
+            vec![DnsRecord::AAAA(addr)],
+            zone(),
+        )
         .await
-        .expect("create AAAA");
+        .expect("set AAAA");
 
     let answers = wait_for_record(&name, RecordType::AAAA, 20).await;
     assert!(answers.iter().any(|d| matches!(d, RData::AAAA(a) if a.0 == addr)));
@@ -272,9 +290,15 @@ async fn udp_create_cname_record() {
     let name = format!("{}.{}", unique_label("cname"), zone());
     let target = format!("ns1.{}.", zone());
     provider
-        .create(&name, DnsRecord::CNAME(target.clone()), 60, zone())
+        .set_rrset(
+            &name,
+            DnsRecordType::CNAME,
+            60,
+            vec![DnsRecord::CNAME(target.clone())],
+            zone(),
+        )
         .await
-        .expect("create CNAME");
+        .expect("set CNAME");
 
     let answers = wait_for_record(&name, RecordType::CNAME, 20).await;
     assert!(answers.iter().any(|d| matches!(d, RData::CNAME(c) if c.0.to_ascii() == target)));
@@ -291,17 +315,18 @@ async fn udp_create_mx_record() {
     let name = format!("{}.{}", unique_label("mx"), zone());
     let exchange = format!("mail.{}.", zone());
     provider
-        .create(
+        .set_rrset(
             &name,
-            DnsRecord::MX(MXRecord {
+            DnsRecordType::MX,
+            60,
+            vec![DnsRecord::MX(MXRecord {
                 exchange: exchange.clone(),
                 priority: 20,
-            }),
-            60,
+            })],
             zone(),
         )
         .await
-        .expect("create MX");
+        .expect("set MX");
 
     let answers = wait_for_record(&name, RecordType::MX, 20).await;
     assert!(answers.iter().any(|d| match d {
@@ -321,19 +346,20 @@ async fn udp_create_srv_record() {
     let name = format!("_imap._tcp.{}.{}", unique_label("srv"), zone());
     let target = format!("mail.{}.", zone());
     provider
-        .create(
+        .set_rrset(
             &name,
-            DnsRecord::SRV(SRVRecord {
+            DnsRecordType::SRV,
+            60,
+            vec![DnsRecord::SRV(SRVRecord {
                 target: target.clone(),
                 priority: 0,
                 weight: 5,
                 port: 143,
-            }),
-            60,
+            })],
             zone(),
         )
         .await
-        .expect("create SRV");
+        .expect("set SRV");
 
     let answers = wait_for_record(&name, RecordType::SRV, 20).await;
     assert!(answers.iter().any(|d| match d {
@@ -357,9 +383,15 @@ async fn udp_create_short_txt_record() {
     let name = format!("{}.{}", unique_label("txt"), zone());
     let value = "v=test1; short".to_string();
     provider
-        .create(&name, DnsRecord::TXT(value.clone()), 60, zone())
+        .set_rrset(
+            &name,
+            DnsRecordType::TXT,
+            60,
+            vec![DnsRecord::TXT(value.clone())],
+            zone(),
+        )
         .await
-        .expect("create TXT");
+        .expect("set TXT");
 
     let answers = wait_for_record(&name, RecordType::TXT, 20).await;
     let txt = answers.iter().find_map(|d| match d {
@@ -386,9 +418,15 @@ async fn udp_create_long_txt_record_chunked() {
     let name = format!("{}.{}", unique_label("txt-long"), zone());
     let value: String = (0..600).map(|i| (b'a' + (i % 26) as u8) as char).collect();
     provider
-        .create(&name, DnsRecord::TXT(value.clone()), 60, zone())
+        .set_rrset(
+            &name,
+            DnsRecordType::TXT,
+            60,
+            vec![DnsRecord::TXT(value.clone())],
+            zone(),
+        )
         .await
-        .expect("create long TXT");
+        .expect("set long TXT");
 
     let answers = wait_for_record(&name, RecordType::TXT, 20).await;
     let txt = answers
@@ -419,19 +457,20 @@ async fn udp_create_tlsa_record() {
     let name = format!("_25._tcp.{}.{}", unique_label("tlsa"), zone());
     let cert: Vec<u8> = (0..32).collect();
     provider
-        .create(
+        .set_rrset(
             &name,
-            DnsRecord::TLSA(TLSARecord {
+            DnsRecordType::TLSA,
+            60,
+            vec![DnsRecord::TLSA(TLSARecord {
                 cert_usage: TlsaCertUsage::DaneEe,
                 selector: TlsaSelector::Spki,
                 matching: TlsaMatching::Sha256,
                 cert_data: cert.clone(),
-            }),
-            60,
+            })],
             zone(),
         )
         .await
-        .expect("create TLSA");
+        .expect("set TLSA");
 
     let answers = wait_for_record(&name, RecordType::TLSA, 20).await;
     assert!(answers.iter().any(|d| match d {
@@ -442,11 +481,10 @@ async fn udp_create_tlsa_record() {
 }
 
 #[tokio::test]
-async fn udp_create_multiple_tlsa_at_same_owner() {
-    // Regression: previously `create` used RFC 2136 prerequisite "RRSet must not
-    // exist", which made it impossible to publish more than one TLSA record at
-    // the same _port._tcp.<host> owner (e.g. DANE-EE + DANE-TA). The second
-    // create returned YXRRSET. After the fix, `create` appends to the RRSet.
+async fn udp_add_to_rrset_appends_two_tlsa_at_same_owner() {
+    // Regression: two add_to_rrset calls at the same (name, TLSA) owner must
+    // both succeed and coexist. This is the same scenario where the old
+    // single-record create API hit YXRRSET on the second call.
     if !enabled() {
         return;
     }
@@ -457,34 +495,36 @@ async fn udp_create_multiple_tlsa_at_same_owner() {
     let intermediate: Vec<u8> = (32..64).collect();
 
     provider
-        .create(
+        .add_to_rrset(
             &name,
-            DnsRecord::TLSA(TLSARecord {
+            DnsRecordType::TLSA,
+            60,
+            vec![DnsRecord::TLSA(TLSARecord {
                 cert_usage: TlsaCertUsage::DaneEe,
                 selector: TlsaSelector::Spki,
                 matching: TlsaMatching::Sha256,
                 cert_data: leaf.clone(),
-            }),
-            60,
+            })],
             zone(),
         )
         .await
-        .expect("create first TLSA");
+        .expect("add first TLSA");
 
     provider
-        .create(
+        .add_to_rrset(
             &name,
-            DnsRecord::TLSA(TLSARecord {
+            DnsRecordType::TLSA,
+            60,
+            vec![DnsRecord::TLSA(TLSARecord {
                 cert_usage: TlsaCertUsage::DaneTa,
                 selector: TlsaSelector::Spki,
                 matching: TlsaMatching::Sha256,
                 cert_data: intermediate.clone(),
-            }),
-            60,
+            })],
             zone(),
         )
         .await
-        .expect("create second TLSA at same owner");
+        .expect("add second TLSA at same owner");
 
     let answers = wait_for_record(&name, RecordType::TLSA, 20).await;
     let datas: Vec<&Vec<u8>> = answers
@@ -514,21 +554,22 @@ async fn udp_create_caa_record() {
     let provider = udp_provider();
     let name = format!("{}.{}", unique_label("caa"), zone());
     provider
-        .create(
+        .set_rrset(
             &name,
-            DnsRecord::CAA(CAARecord::Issue {
+            DnsRecordType::CAA,
+            60,
+            vec![DnsRecord::CAA(CAARecord::Issue {
                 issuer_critical: false,
                 name: Some("letsencrypt.org".to_string()),
                 options: vec![KeyValue {
                     key: "validationmethods".to_string(),
                     value: "dns-01".to_string(),
                 }],
-            }),
-            60,
+            })],
             zone(),
         )
         .await
-        .expect("create CAA");
+        .expect("set CAA");
 
     let answers = wait_for_record(&name, RecordType::CAA, 20).await;
     assert!(!answers.is_empty(), "CAA record not visible after create");
@@ -545,15 +586,21 @@ async fn udp_delete_record_round_trip() {
     let name = format!("{}.{}", unique_label("del"), zone());
 
     provider
-        .create(&name, DnsRecord::A(Ipv4Addr::new(10, 0, 0, 99)), 60, zone())
+        .set_rrset(
+            &name,
+            DnsRecordType::A,
+            60,
+            vec![DnsRecord::A(Ipv4Addr::new(10, 0, 0, 99))],
+            zone(),
+        )
         .await
-        .expect("create");
+        .expect("set A");
     assert!(!wait_for_record(&name, RecordType::A, 20).await.is_empty());
 
     provider
-        .delete(&name, zone(), DnsRecordType::A)
+        .set_rrset(&name, DnsRecordType::A, 0, vec![], zone())
         .await
-        .expect("delete");
+        .expect("clear A");
 
     // Confirm the record is gone.
     let mut empty = false;
@@ -579,7 +626,13 @@ async fn tcp_tsig_signer_is_actually_applied() {
     let provider = tcp_provider();
     let name = format!("{}.{}", unique_label("tcp-sig"), zone());
     provider
-        .create(&name, DnsRecord::TXT("tcp-sig-test".into()), 60, zone())
+        .set_rrset(
+            &name,
+            DnsRecordType::TXT,
+            60,
+            vec![DnsRecord::TXT("tcp-sig-test".into())],
+            zone(),
+        )
         .await
         .expect("TCP TSIG-signed create must succeed");
 
@@ -587,6 +640,330 @@ async fn tcp_tsig_signer_is_actually_applied() {
     let answers = wait_for_record(&name, RecordType::TXT, 20).await;
     assert!(!answers.is_empty());
     cleanup_name(&name, DnsRecordType::TXT).await;
+}
+
+#[tokio::test]
+async fn set_rrset_publishes_two_tlsa_in_one_call() {
+    // Direct exercise of the new RRSet API: a single set_rrset call must
+    // atomically put both TLSA values at the same owner (the case forum 321 hit
+    // when the per-record create API tried two creates and the second was
+    // rejected with YXRRSET).
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let name = format!("_25._tcp.{}.{}", unique_label("tlsa-set"), zone());
+    let leaf: Vec<u8> = (0..32).collect();
+    let intermediate: Vec<u8> = (32..64).collect();
+
+    provider
+        .set_rrset(
+            &name,
+            DnsRecordType::TLSA,
+            60,
+            vec![
+                DnsRecord::TLSA(TLSARecord {
+                    cert_usage: TlsaCertUsage::DaneEe,
+                    selector: TlsaSelector::Spki,
+                    matching: TlsaMatching::Sha256,
+                    cert_data: leaf.clone(),
+                }),
+                DnsRecord::TLSA(TLSARecord {
+                    cert_usage: TlsaCertUsage::DaneTa,
+                    selector: TlsaSelector::Spki,
+                    matching: TlsaMatching::Sha256,
+                    cert_data: intermediate.clone(),
+                }),
+            ],
+            zone(),
+        )
+        .await
+        .expect("set_rrset");
+
+    let answers = wait_for_record(&name, RecordType::TLSA, 20).await;
+    let datas: Vec<&Vec<u8>> = answers
+        .iter()
+        .filter_map(|d| match d {
+            RData::TLSA(t) => Some(&t.cert_data),
+            _ => None,
+        })
+        .collect();
+    assert!(datas.iter().any(|d| **d == leaf), "leaf TLSA missing: {datas:?}");
+    assert!(
+        datas.iter().any(|d| **d == intermediate),
+        "intermediate TLSA missing: {datas:?}"
+    );
+    cleanup_name(&name, DnsRecordType::TLSA).await;
+}
+
+#[tokio::test]
+async fn set_rrset_replaces_existing_with_new_values() {
+    // Cert renewal: same (name, type) RRSet should end up containing only the
+    // new values; the old ones disappear.
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let name = format!("{}.{}", unique_label("set-replace"), zone());
+
+    provider
+        .set_rrset(
+            &name,
+            DnsRecordType::A,
+            60,
+            vec![
+                DnsRecord::A(Ipv4Addr::new(10, 0, 0, 1)),
+                DnsRecord::A(Ipv4Addr::new(10, 0, 0, 2)),
+            ],
+            zone(),
+        )
+        .await
+        .expect("initial set_rrset");
+
+    provider
+        .set_rrset(
+            &name,
+            DnsRecordType::A,
+            60,
+            vec![
+                DnsRecord::A(Ipv4Addr::new(10, 0, 0, 3)),
+                DnsRecord::A(Ipv4Addr::new(10, 0, 0, 4)),
+            ],
+            zone(),
+        )
+        .await
+        .expect("second set_rrset");
+
+    let answers = wait_for_record(&name, RecordType::A, 20).await;
+    let addrs: Vec<Ipv4Addr> = answers
+        .iter()
+        .filter_map(|d| match d {
+            RData::A(a) => Some(a.0),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        addrs.contains(&Ipv4Addr::new(10, 0, 0, 3))
+            && addrs.contains(&Ipv4Addr::new(10, 0, 0, 4)),
+        "new addresses missing: {addrs:?}"
+    );
+    assert!(
+        !addrs.contains(&Ipv4Addr::new(10, 0, 0, 1))
+            && !addrs.contains(&Ipv4Addr::new(10, 0, 0, 2)),
+        "old addresses still present: {addrs:?}"
+    );
+    cleanup_name(&name, DnsRecordType::A).await;
+}
+
+#[tokio::test]
+async fn set_rrset_empty_records_deletes_the_rrset() {
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let name = format!("{}.{}", unique_label("set-empty"), zone());
+
+    provider
+        .set_rrset(
+            &name,
+            DnsRecordType::A,
+            60,
+            vec![DnsRecord::A(Ipv4Addr::new(10, 0, 0, 50))],
+            zone(),
+        )
+        .await
+        .expect("set_rrset initial");
+    assert!(!wait_for_record(&name, RecordType::A, 20).await.is_empty());
+
+    provider
+        .set_rrset(&name, DnsRecordType::A, 60, vec![], zone())
+        .await
+        .expect("set_rrset empty");
+
+    let mut empty = false;
+    for _ in 0..20 {
+        if query_records(&name, RecordType::A).await.is_empty() {
+            empty = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(empty, "rrset still present after set_rrset(empty)");
+}
+
+#[tokio::test]
+async fn add_to_rrset_appends_without_replacing() {
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let name = format!("{}.{}", unique_label("add"), zone());
+
+    provider
+        .set_rrset(
+            &name,
+            DnsRecordType::A,
+            60,
+            vec![DnsRecord::A(Ipv4Addr::new(10, 1, 0, 1))],
+            zone(),
+        )
+        .await
+        .expect("set_rrset initial");
+
+    provider
+        .add_to_rrset(
+            &name,
+            DnsRecordType::A,
+            60,
+            vec![
+                DnsRecord::A(Ipv4Addr::new(10, 1, 0, 2)),
+                DnsRecord::A(Ipv4Addr::new(10, 1, 0, 3)),
+            ],
+            zone(),
+        )
+        .await
+        .expect("add_to_rrset");
+
+    let answers = wait_for_record(&name, RecordType::A, 20).await;
+    let addrs: Vec<Ipv4Addr> = answers
+        .iter()
+        .filter_map(|d| match d {
+            RData::A(a) => Some(a.0),
+            _ => None,
+        })
+        .collect();
+    for expected in [
+        Ipv4Addr::new(10, 1, 0, 1),
+        Ipv4Addr::new(10, 1, 0, 2),
+        Ipv4Addr::new(10, 1, 0, 3),
+    ] {
+        assert!(addrs.contains(&expected), "expected {expected} in {addrs:?}");
+    }
+    cleanup_name(&name, DnsRecordType::A).await;
+}
+
+#[tokio::test]
+async fn remove_from_rrset_drops_only_listed_values() {
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let name = format!("{}.{}", unique_label("remove"), zone());
+
+    provider
+        .set_rrset(
+            &name,
+            DnsRecordType::A,
+            60,
+            vec![
+                DnsRecord::A(Ipv4Addr::new(10, 2, 0, 1)),
+                DnsRecord::A(Ipv4Addr::new(10, 2, 0, 2)),
+                DnsRecord::A(Ipv4Addr::new(10, 2, 0, 3)),
+            ],
+            zone(),
+        )
+        .await
+        .expect("set_rrset initial");
+
+    provider
+        .remove_from_rrset(
+            &name,
+            DnsRecordType::A,
+            vec![DnsRecord::A(Ipv4Addr::new(10, 2, 0, 2))],
+            zone(),
+        )
+        .await
+        .expect("remove_from_rrset");
+
+    let answers = wait_for_record(&name, RecordType::A, 20).await;
+    let addrs: Vec<Ipv4Addr> = answers
+        .iter()
+        .filter_map(|d| match d {
+            RData::A(a) => Some(a.0),
+            _ => None,
+        })
+        .collect();
+    assert!(addrs.contains(&Ipv4Addr::new(10, 2, 0, 1)));
+    assert!(!addrs.contains(&Ipv4Addr::new(10, 2, 0, 2)));
+    assert!(addrs.contains(&Ipv4Addr::new(10, 2, 0, 3)));
+    cleanup_name(&name, DnsRecordType::A).await;
+}
+
+#[tokio::test]
+async fn set_rrset_is_idempotent_on_rerun() {
+    // Running set_rrset twice with the same values must leave the server in
+    // the same observable state (this is the property Stalwart's reconcile
+    // loop depends on).
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let name = format!("{}.{}", unique_label("set-idem"), zone());
+    let records = vec![
+        DnsRecord::A(Ipv4Addr::new(10, 3, 0, 1)),
+        DnsRecord::A(Ipv4Addr::new(10, 3, 0, 2)),
+    ];
+
+    provider
+        .set_rrset(&name, DnsRecordType::A, 60, records.clone(), zone())
+        .await
+        .expect("first set_rrset");
+    let first: Vec<RData> = wait_for_record(&name, RecordType::A, 20).await;
+
+    provider
+        .set_rrset(&name, DnsRecordType::A, 60, records, zone())
+        .await
+        .expect("second set_rrset");
+    let second: Vec<RData> = wait_for_record(&name, RecordType::A, 20).await;
+
+    let mut first_addrs: Vec<Ipv4Addr> = first
+        .iter()
+        .filter_map(|d| match d {
+            RData::A(a) => Some(a.0),
+            _ => None,
+        })
+        .collect();
+    let mut second_addrs: Vec<Ipv4Addr> = second
+        .iter()
+        .filter_map(|d| match d {
+            RData::A(a) => Some(a.0),
+            _ => None,
+        })
+        .collect();
+    first_addrs.sort();
+    second_addrs.sort();
+    assert_eq!(first_addrs, second_addrs, "set_rrset is not idempotent");
+    cleanup_name(&name, DnsRecordType::A).await;
+}
+
+#[tokio::test]
+async fn legacy_create_via_dns_updater_dispatch_returns_error() {
+    // The DnsUpdater dispatch refuses the legacy single-record API for RFC 2136.
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let updater = crate::DnsUpdater::new_rfc2136_tsig(
+        format!("udp://{}", socket_addr()),
+        key_name(),
+        key_bytes(),
+        crate::TsigAlgorithm::HmacSha256,
+    )
+    .expect("build DnsUpdater");
+    let name = format!("{}.{}", unique_label("legacy"), zone());
+    let result = updater
+        .create(&name, DnsRecord::A(Ipv4Addr::new(10, 99, 0, 1)), 60, zone())
+        .await;
+    assert!(
+        matches!(result, Err(crate::Error::Api(ref msg)) if msg.contains("RRSet API")),
+        "expected Error::Api(RRSet API ...), got {result:?}"
+    );
 }
 
 #[tokio::test]

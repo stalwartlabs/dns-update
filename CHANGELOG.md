@@ -1,6 +1,14 @@
-dns-update 0.4.2
+dns-update 0.5.0
 ================================
-
+- New RRSet-oriented API: `set_rrset`, `add_to_rrset`, `remove_from_rrset`. See `PROMPT.md` for per-provider migration plan.
+- Infomaniak fixes (#57)
+- Namecheap (#58): fix duplicate `Content-Type` header that IIS rejected as invalid.
+- TransIP fixes (#59): shorten nonce to fit the API's 6-32 character limit, accept PKCS#1 (`BEGIN RSA PRIVATE KEY`) PEMs in addition to PKCS#8.
+- RFC 2136: fix YXRRSET when publishing multiple records at the same owner (e.g. two TLSA).
+- Netcup: SRV `destination` now sends the full `priority weight port target.` 4-tuple.
+- Hetzner: chunk long TXT values (DKIM keys >255 bytes) into multiple quoted segments.
+- HTTP: preserve response body in `Error::Api` for all non-success status codes.
+- HTTP: add `HttpClient::set_header` (insert) alongside the existing `with_header` (append).
 
 dns-update 0.4.1
 ================================

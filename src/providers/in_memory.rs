@@ -9,7 +9,7 @@
  * except according to those terms.
  */
 
-use crate::{DnsRecord, DnsRecordType, IntoFqdn, NamedDnsRecord};
+use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, NamedDnsRecord};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
@@ -22,55 +22,82 @@ impl InMemoryProvider {
         Self { records }
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        record_type: DnsRecordType,
         _ttl: u32,
+        records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
         let name = name.into_fqdn().into_owned();
-        self.records
-            .lock()
-            .unwrap()
-            .push(NamedDnsRecord { name, record });
-        Ok(())
-    }
-
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        _ttl: u32,
-        _origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_fqdn().into_owned();
-        let record_type = record.as_type();
-        let mut records = self.records.lock().unwrap();
-
-        if let Some(existing) = records
-            .iter_mut()
-            .find(|r| r.name == name && r.record.as_type() == record_type)
-        {
-            existing.record = record;
-        } else {
-            records.push(NamedDnsRecord { name, record });
+        let mut store = self.records.lock().unwrap();
+        store.retain(|r| !(r.name == name && r.record.as_type() == record_type));
+        for record in records {
+            store.push(NamedDnsRecord {
+                name: name.clone(),
+                record,
+            });
         }
-
         Ok(())
     }
 
-    pub(crate) async fn delete(
+    pub(crate) async fn add_to_rrset(
         &self,
         name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        _ttl: u32,
+        records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
-        record: DnsRecordType,
     ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
         let name = name.into_fqdn().into_owned();
-        self.records
-            .lock()
-            .unwrap()
-            .retain(|r| !(r.name == name && r.record.as_type() == record));
+        let mut store = self.records.lock().unwrap();
+        for record in records {
+            let already_present = store
+                .iter()
+                .any(|r| r.name == name && r.record == record);
+            if !already_present {
+                store.push(NamedDnsRecord {
+                    name: name.clone(),
+                    record,
+                });
+            }
+        }
         Ok(())
     }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        _origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let name = name.into_fqdn().into_owned();
+        let mut store = self.records.lock().unwrap();
+        store.retain(|r| !(r.name == name && records.contains(&r.record)));
+        Ok(())
+    }
+}
+
+fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
+    for r in records {
+        if r.as_type() != expected {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected.as_str(),
+                r.as_type().as_str(),
+            )));
+        }
+    }
+    Ok(())
 }

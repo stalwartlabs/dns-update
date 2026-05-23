@@ -11,10 +11,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        DnsRecord, DnsRecordType, DnsUpdater, Error,
-        providers::hetzner::HetznerProvider,
-    };
+    use crate::{DnsRecord, DnsRecordType, DnsUpdater, Error, providers::hetzner::HetznerProvider};
     use mockito::Matcher;
     use serde_json::json;
     use std::time::Duration;
@@ -61,12 +58,8 @@ mod tests {
     #[tokio::test]
     async fn test_create_long_txt_record_is_chunked() {
         let mut server = mockito::Server::new_async().await;
-        let value: String = std::iter::repeat('a').take(400).collect();
-        let expected = format!(
-            "\"{}\" \"{}\"",
-            "a".repeat(255),
-            "a".repeat(145),
-        );
+        let value: String = "a".repeat(400);
+        let expected = format!("\"{}\" \"{}\"", "a".repeat(255), "a".repeat(145),);
         let post = server
             .mock("POST", "/zones/example.com/rrsets")
             .match_body(Matcher::Json(json!({

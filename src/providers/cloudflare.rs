@@ -52,18 +52,7 @@ pub struct CreateDnsRecordParams<'a> {
     pub content: DnsContent,
 }
 
-#[derive(Serialize, Clone, Debug)]
-pub struct UpdateDnsRecordParams<'a> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub proxied: Option<bool>,
-    pub name: &'a str,
-    #[serde(flatten)]
-    pub content: DnsContent,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(tag = "type")]
 #[allow(clippy::upper_case_acronyms)]
 pub enum DnsContent {
@@ -78,7 +67,7 @@ pub enum DnsContent {
     CAA { data: CaaData },
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct SrvData {
     pub priority: u16,
     pub weight: u16,
@@ -86,7 +75,7 @@ pub struct SrvData {
     pub target: String,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct TlsaData {
     pub usage: u8,
     pub selector: u8,
@@ -94,11 +83,18 @@ pub struct TlsaData {
     pub certificate: String,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct CaaData {
     pub flags: u8,
     pub tag: String,
     pub value: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+struct ListedRecord {
+    id: String,
+    #[serde(flatten)]
+    content: DnsContent,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -165,108 +161,175 @@ impl CloudflareProvider {
         }
     }
 
-    async fn obtain_record_id(
+    pub(crate) async fn set_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        let zone_id = self.obtain_zone_id(origin).await?;
+        let name = name.into_name().into_owned();
+        let desired = build_contents(record_type, records)?;
+        let existing = self.list_at(&zone_id, &name, record_type).await?;
+
+        let mut to_add = Vec::new();
+        let mut existing_unmatched: Vec<ListedRecord> = Vec::new();
+        let mut existing_iter = existing.into_iter();
+        let mut existing_pool: Vec<ListedRecord> = existing_iter.by_ref().collect();
+
+        for content in desired {
+            if let Some(idx) = existing_pool.iter().position(|r| r.content == content) {
+                existing_pool.swap_remove(idx);
+            } else {
+                to_add.push(content);
+            }
+        }
+        existing_unmatched.append(&mut existing_pool);
+
+        for entry in existing_unmatched {
+            self.delete_record(&zone_id, &entry.id).await?;
+        }
+        for content in to_add {
+            self.create_record(&zone_id, &name, ttl, content).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let zone_id = self.obtain_zone_id(origin).await?;
+        let name = name.into_name().into_owned();
+        let desired = build_contents(record_type, records)?;
+        let existing = self.list_at(&zone_id, &name, record_type).await?;
+
+        for content in desired {
+            if existing.iter().any(|r| r.content == content) {
+                continue;
+            }
+            self.create_record(&zone_id, &name, ttl, content).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let zone_id = self.obtain_zone_id(origin).await?;
+        let name = name.into_name().into_owned();
+        let to_remove = build_contents(record_type, records)?;
+        let existing = self.list_at(&zone_id, &name, record_type).await?;
+
+        for content in to_remove {
+            if let Some(entry) = existing.iter().find(|r| r.content == content) {
+                self.delete_record(&zone_id, &entry.id).await?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn list_contents_for_tests(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsContent>> {
+        let zone_id = self.obtain_zone_id(origin).await?;
+        let name = name.into_name().into_owned();
+        let listed = self.list_at(&zone_id, &name, record_type).await?;
+        Ok(listed.into_iter().map(|r| r.content).collect())
+    }
+
+    async fn list_at(
         &self,
         zone_id: &str,
-        name: impl IntoFqdn<'_>,
+        name: &str,
         record_type: DnsRecordType,
-    ) -> crate::Result<String> {
-        let name = name.into_name();
-        self.client
-            .get(format!(
-                "{}/zones/{zone_id}/dns_records?{}",
-                self.endpoint,
-                Query::name_and_type(name.as_ref(), record_type).serialize()
-            ))
-            .send_with_retry::<ApiResult<Vec<IdMap>>>(3)
-            .await
-            .and_then(|r| r.unwrap_response("list DNS records"))
-            .and_then(|result| {
-                result
-                    .into_iter()
-                    .find(|record| record.name == name.as_ref())
-                    .map(|record| record.id)
-                    .ok_or_else(|| {
-                        Error::Api(format!(
-                            "DNS Record {} of type {} not found",
-                            name.as_ref(),
-                            record_type.as_str()
-                        ))
-                    })
-            })
-    }
-
-    pub(crate) async fn create(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        self.client
-            .post(format!(
-                "{}/zones/{}/dns_records",
-                self.endpoint,
-                self.obtain_zone_id(origin).await?
-            ))
-            .with_body(CreateDnsRecordParams {
-                ttl: ttl.into(),
-                priority: record.priority(),
-                proxied: false.into(),
-                name: name.into_name().as_ref(),
-                content: record.into(),
-            })?
-            .send_with_retry::<ApiResult<Value>>(3)
-            .await
-            .map(|_| ())
-    }
-
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let zone_id = self.obtain_zone_id(origin).await?;
-        let name = name.into_name();
-        let record_id = self
-            .obtain_record_id(&zone_id, name.as_ref(), record.as_type())
+    ) -> crate::Result<Vec<ListedRecord>> {
+        let url = format!(
+            "{}/zones/{zone_id}/dns_records?{}&per_page=100",
+            self.endpoint,
+            Query::name_and_type(name, record_type).serialize()
+        );
+        let response: ApiResult<Vec<ListedRecord>> = self
+            .client
+            .get(url)
+            .send_with_retry(3)
             .await?;
+        response.unwrap_response("list DNS records")
+    }
+
+    async fn create_record(
+        &self,
+        zone_id: &str,
+        name: &str,
+        ttl: u32,
+        content: DnsContent,
+    ) -> crate::Result<()> {
+        let priority = match &content {
+            DnsContent::MX { priority, .. } => Some(*priority),
+            _ => None,
+        };
         self.client
-            .patch(format!(
-                "{}/zones/{zone_id}/dns_records/{record_id}",
-                self.endpoint,
-            ))
-            .with_body(UpdateDnsRecordParams {
-                ttl: ttl.into(),
-                proxied: None,
-                name: name.as_ref(),
-                content: record.into(),
+            .post(format!("{}/zones/{zone_id}/dns_records", self.endpoint))
+            .with_body(CreateDnsRecordParams {
+                ttl: Some(ttl),
+                priority,
+                proxied: Some(false),
+                name,
+                content,
             })?
             .send_with_retry::<ApiResult<Value>>(3)
             .await
             .map(|_| ())
     }
 
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
-        record_type: DnsRecordType,
-    ) -> crate::Result<()> {
-        let zone_id = self.obtain_zone_id(origin).await?;
-        let record_id = self.obtain_record_id(&zone_id, name, record_type).await?;
-
+    async fn delete_record(&self, zone_id: &str, record_id: &str) -> crate::Result<()> {
         self.client
             .delete(format!(
                 "{}/zones/{zone_id}/dns_records/{record_id}",
-                self.endpoint,
+                self.endpoint
             ))
             .send_with_retry::<ApiResult<Value>>(3)
             .await
             .map(|_| ())
     }
+}
+
+fn build_contents(
+    expected_type: DnsRecordType,
+    records: Vec<DnsRecord>,
+) -> crate::Result<Vec<DnsContent>> {
+    let mut out = Vec::with_capacity(records.len());
+    for record in records {
+        if record.as_type() != expected_type {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected_type.as_str(),
+                record.as_type().as_str(),
+            )));
+        }
+        out.push(record.into());
+    }
+    Ok(out)
 }
 
 impl<T> ApiResult<T> {
