@@ -57,28 +57,85 @@ fn base64_url_encode(input: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(input)
 }
 
-/// Parse a PKCS#8 PEM-encoded RSA private key into an `RsaKeyPair`.
-/// Supports both `BEGIN PRIVATE KEY` (PKCS#8) and `BEGIN RSA PRIVATE KEY` (PKCS#1).
-/// Encrypted PEMs (`BEGIN ENCRYPTED PRIVATE KEY`) are not supported.
-pub fn parse_rsa_pkcs8_pem(pem: &str) -> Result<RsaKeyPair, Box<dyn std::error::Error>> {
+/// Decode a PEM-encoded RSA private key (PKCS#8 `BEGIN PRIVATE KEY` or PKCS#1
+/// `BEGIN RSA PRIVATE KEY`) and return PKCS#8 DER bytes.
+pub fn rsa_private_key_pem_to_pkcs8_der(pem: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     if pem.contains("ENCRYPTED PRIVATE KEY") {
         return Err("encrypted PEM private keys are not supported".into());
     }
-    if pem.contains("BEGIN RSA PRIVATE KEY") {
-        return Err(
-            "PKCS#1 (BEGIN RSA PRIVATE KEY) format is not supported, please convert to PKCS#8"
-                .into(),
-        );
-    }
-    let pem_content = pem
-        .replace("-----BEGIN PRIVATE KEY-----", "")
-        .replace("-----END PRIVATE KEY-----", "")
-        .replace("\n", "")
-        .replace("\r", "")
-        .replace(" ", "");
+    let is_pkcs1 = pem.contains("BEGIN RSA PRIVATE KEY");
+    let body = strip_pem_armor(pem);
     let der_bytes = base64::engine::general_purpose::STANDARD
-        .decode(pem_content.trim())
+        .decode(&body)
         .map_err(|e| format!("Invalid base64 in private key: {}", e))?;
+    if is_pkcs1 {
+        Ok(wrap_pkcs1_in_pkcs8(&der_bytes))
+    } else {
+        Ok(der_bytes)
+    }
+}
+
+fn strip_pem_armor(pem: &str) -> String {
+    let mut out = String::with_capacity(pem.len());
+    for line in pem.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("-----") {
+            continue;
+        }
+        for ch in trimmed.chars() {
+            if !ch.is_ascii_whitespace() {
+                out.push(ch);
+            }
+        }
+    }
+    out
+}
+
+/// Wrap a PKCS#1 `RSAPrivateKey` DER blob in a PKCS#8 `PrivateKeyInfo` envelope.
+fn wrap_pkcs1_in_pkcs8(pkcs1_der: &[u8]) -> Vec<u8> {
+    const RSA_ENCRYPTION_ALG_ID: &[u8] = &[
+        0x30, 0x0D, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01, 0x05, 0x00,
+    ];
+    let mut octet_string = Vec::with_capacity(pkcs1_der.len() + 4);
+    octet_string.push(0x04);
+    write_der_length(&mut octet_string, pkcs1_der.len());
+    octet_string.extend_from_slice(pkcs1_der);
+
+    let mut inner = Vec::with_capacity(3 + RSA_ENCRYPTION_ALG_ID.len() + octet_string.len());
+    inner.extend_from_slice(&[0x02, 0x01, 0x00]);
+    inner.extend_from_slice(RSA_ENCRYPTION_ALG_ID);
+    inner.extend_from_slice(&octet_string);
+
+    let mut out = Vec::with_capacity(inner.len() + 4);
+    out.push(0x30);
+    write_der_length(&mut out, inner.len());
+    out.extend_from_slice(&inner);
+    out
+}
+
+fn write_der_length(out: &mut Vec<u8>, len: usize) {
+    if len < 0x80 {
+        out.push(len as u8);
+    } else if len < 0x100 {
+        out.extend_from_slice(&[0x81, len as u8]);
+    } else if len < 0x10000 {
+        out.extend_from_slice(&[0x82, (len >> 8) as u8, len as u8]);
+    } else if len < 0x1000000 {
+        out.extend_from_slice(&[0x83, (len >> 16) as u8, (len >> 8) as u8, len as u8]);
+    } else {
+        out.extend_from_slice(&[
+            0x84,
+            (len >> 24) as u8,
+            (len >> 16) as u8,
+            (len >> 8) as u8,
+            len as u8,
+        ]);
+    }
+}
+
+/// Parse an RSA private key PEM (PKCS#1 or PKCS#8) into an `RsaKeyPair`.
+pub fn parse_rsa_pkcs8_pem(pem: &str) -> Result<RsaKeyPair, Box<dyn std::error::Error>> {
+    let der_bytes = rsa_private_key_pem_to_pkcs8_der(pem)?;
     RsaKeyPair::from_pkcs8(&der_bytes).map_err(|e| format!("Invalid PKCS#8 RSA key: {}", e).into())
 }
 
@@ -156,24 +213,11 @@ fn signature_len(key_pair: &RsaKeyPair) -> usize {
     key_pair.public_modulus_len()
 }
 
-pub fn parse_pkcs8_pem(pem: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let stripped = pem
-        .replace("-----BEGIN PRIVATE KEY-----", "")
-        .replace("-----END PRIVATE KEY-----", "")
-        .replace("\n", "")
-        .replace("\r", "");
-    let der_bytes = base64::engine::general_purpose::STANDARD
-        .decode(stripped.trim())
-        .map_err(|e| format!("Invalid base64 in private key: {}", e))?;
-    Ok(der_bytes)
-}
-
 pub fn rsa_sha512_sign(
     private_key_pem: &str,
     data: &[u8],
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let der_bytes = parse_pkcs8_pem(private_key_pem)?;
-    let key_pair = RsaKeyPair::from_pkcs8(&der_bytes)?;
+    let key_pair = parse_rsa_pkcs8_pem(private_key_pem)?;
     let mut signature = vec![0u8; signature_len(&key_pair)];
     let rng = SystemRandom::new();
     key_pair.sign(&RSA_PKCS1_SHA512, &rng, data, &mut signature)?;
@@ -214,4 +258,3 @@ pub fn sign_jwt(
     let signature_b64 = base64_url_encode(&signature);
     Ok(format!("{}.{}", signing_input, signature_b64))
 }
-

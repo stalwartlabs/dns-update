@@ -12,7 +12,8 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        DnsRecord, DnsRecordType, DnsUpdater, Error, providers::infomaniak::InfomaniakProvider,
+        DnsRecord, DnsRecordType, DnsUpdater, Error, SRVRecord,
+        providers::infomaniak::InfomaniakProvider,
     };
     use mockito::Matcher;
     use serde_json::json;
@@ -130,6 +131,217 @@ mod tests {
             )
             .await;
         assert!(matches!(result, Err(Error::Api(_))), "got {result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_dkim_txt_includes_dkim_type_rsa() {
+        let mut server = mockito::Server::new_async().await;
+        let _domain = server
+            .mock("GET", "/1/product")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_body(r#"{"result":"success","data":[{"id":42,"customer_name":"example.com"}]}"#)
+            .create();
+
+        let create = server
+            .mock("POST", "/1/domain/42/dns/record")
+            .match_body(Matcher::Json(json!({
+                "source": "selector._domainkey",
+                "target": "\"v=DKIM1;k=rsa;p=AAAA\"",
+                "type": "TXT",
+                "ttl": 300,
+                "dkim_type": "rsa"
+            })))
+            .with_status(200)
+            .with_body(r#"{"result":"success","data":"rec-d"}"#)
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .create(
+                "selector._domainkey.example.com",
+                DnsRecord::TXT("v=DKIM1;k=rsa;p=AAAA".to_string()),
+                300,
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "create returned: {result:?}");
+        create.assert();
+    }
+
+    #[tokio::test]
+    async fn test_dkim_retries_with_ed25519_when_rsa_rejected() {
+        let mut server = mockito::Server::new_async().await;
+        let _domain = server
+            .mock("GET", "/1/product")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_body(r#"{"result":"success","data":[{"id":42,"customer_name":"example.com"}]}"#)
+            .create();
+
+        let rsa_attempt = server
+            .mock("POST", "/1/domain/42/dns/record")
+            .match_body(Matcher::PartialJson(
+                json!({"dkim_type": "rsa"}),
+            ))
+            .with_status(400)
+            .with_body(
+                r#"{"result":"error","error":{"code":"choose_dkim_type","description":"Please choose DKIM Type"}}"#,
+            )
+            .create();
+
+        let ed25519_attempt = server
+            .mock("POST", "/1/domain/42/dns/record")
+            .match_body(Matcher::PartialJson(
+                json!({"dkim_type": "ed25519"}),
+            ))
+            .with_status(200)
+            .with_body(r#"{"result":"success","data":"rec-d"}"#)
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .create(
+                "selector._domainkey.example.com",
+                DnsRecord::TXT("v=DKIM1;k=ed25519;p=AAAA".to_string()),
+                300,
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "create returned: {result:?}");
+        rsa_attempt.assert();
+        ed25519_attempt.assert();
+    }
+
+    #[tokio::test]
+    async fn test_non_dkim_txt_omits_dkim_type() {
+        let mut server = mockito::Server::new_async().await;
+        let _domain = server
+            .mock("GET", "/1/product")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_body(r#"{"result":"success","data":[{"id":42,"customer_name":"example.com"}]}"#)
+            .create();
+
+        let create = server
+            .mock("POST", "/1/domain/42/dns/record")
+            .match_body(Matcher::Json(json!({
+                "source": "_dmarc",
+                "target": "\"v=DMARC1; p=none\"",
+                "type": "TXT",
+                "ttl": 300,
+            })))
+            .with_status(200)
+            .with_body(r#"{"result":"success","data":"rec-x"}"#)
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .create(
+                "_dmarc.example.com",
+                DnsRecord::TXT("v=DMARC1; p=none".to_string()),
+                300,
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "create returned: {result:?}");
+        create.assert();
+    }
+
+    #[tokio::test]
+    async fn test_spf_singleton_falls_back_to_replace_existing() {
+        let mut server = mockito::Server::new_async().await;
+        let _domain = server
+            .mock("GET", "/1/product")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_body(r#"{"result":"success","data":[{"id":42,"customer_name":"example.com"}]}"#)
+            .create();
+
+        let initial_post = server
+            .mock("POST", "/1/domain/42/dns/record")
+            .with_status(400)
+            .with_body(
+                r#"{"result":"error","error":{"code":"you_can_only_add_one_spf_save_for_each_dns_zone","description":"singleton"}}"#,
+            )
+            .create();
+
+        let list = server
+            .mock("GET", "/1/domain/42/dns/record")
+            .with_status(200)
+            .with_body(
+                r#"{"result":"success","data":[
+                    {"id":"rec-spf","source":"","type":"TXT","target":"\"v=spf1 -all\""},
+                    {"id":"rec-other","source":"","type":"TXT","target":"\"unrelated\""}
+                ]}"#,
+            )
+            .create();
+
+        let put = server
+            .mock("PUT", "/1/domain/42/dns/record/rec-spf")
+            .match_body(Matcher::Json(json!({
+                "source": "",
+                "target": "\"v=spf1 include:_spf.example.net ~all\"",
+                "type": "TXT",
+                "ttl": 300,
+            })))
+            .with_status(200)
+            .with_body(r#"{"result":"success","data":"rec-spf"}"#)
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .create(
+                "example.com",
+                DnsRecord::TXT("v=spf1 include:_spf.example.net ~all".to_string()),
+                300,
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "create returned: {result:?}");
+        initial_post.assert();
+        list.assert();
+        put.assert();
+    }
+
+    #[tokio::test]
+    async fn test_srv_target_gets_trailing_dot() {
+        let mut server = mockito::Server::new_async().await;
+        let _domain = server
+            .mock("GET", "/1/product")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_body(r#"{"result":"success","data":[{"id":42,"customer_name":"example.com"}]}"#)
+            .create();
+
+        let create = server
+            .mock("POST", "/1/domain/42/dns/record")
+            .match_body(Matcher::Json(json!({
+                "source": "_imaps._tcp",
+                "target": "10 5 993 mail.example.com.",
+                "type": "SRV",
+                "ttl": 300,
+            })))
+            .with_status(200)
+            .with_body(r#"{"result":"success","data":"rec-s"}"#)
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .create(
+                "_imaps._tcp.example.com",
+                DnsRecord::SRV(SRVRecord {
+                    priority: 10,
+                    weight: 5,
+                    port: 993,
+                    target: "mail.example.com".to_string(),
+                }),
+                300,
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "create returned: {result:?}");
+        create.assert();
     }
 
     #[tokio::test]

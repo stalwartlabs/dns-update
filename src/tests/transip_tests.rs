@@ -136,6 +136,16 @@ mod tests {
         m.assert();
     }
 
+    #[test]
+    fn test_nonce_fits_within_transip_limit() {
+        let nonce = crate::providers::transip::generate_nonce();
+        assert!(
+            (6..=32).contains(&nonce.len()),
+            "TransIP nonce must be 6..=32 chars, got {} ({nonce})",
+            nonce.len()
+        );
+    }
+
     #[tokio::test]
     #[ignore = "Requires TRANSIP_LOGIN, TRANSIP_PRIVATE_KEY, TRANSIP_ORIGIN, TRANSIP_FQDN"]
     async fn integration_test() {

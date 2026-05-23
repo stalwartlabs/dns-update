@@ -68,6 +68,7 @@ mod tests {
 
         let set = server
             .mock("POST", "/xml.response")
+            .match_header("content-type", "application/x-www-form-urlencoded")
             .match_body(Matcher::AllOf(vec![
                 Matcher::UrlEncoded(
                     "Command".into(),

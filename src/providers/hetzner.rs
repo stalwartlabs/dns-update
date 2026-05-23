@@ -11,7 +11,7 @@
 
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder,
-    utils::strip_origin_from_name,
+    utils::{strip_origin_from_name, txt_chunks_to_text},
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -172,7 +172,11 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
         DnsRecord::CNAME(content) => ensure_trailing_dot(content),
         DnsRecord::NS(content) => ensure_trailing_dot(content),
         DnsRecord::MX(mx) => format!("{} {}", mx.priority, ensure_trailing_dot(mx.exchange)),
-        DnsRecord::TXT(content) => format!("\"{}\"", content.replace('\"', "\\\"")),
+        DnsRecord::TXT(content) => {
+            let mut out = String::with_capacity(content.len() + 4);
+            txt_chunks_to_text(&mut out, &content, " ");
+            out
+        }
         DnsRecord::SRV(srv) => format!(
             "{} {} {} {}",
             srv.priority,

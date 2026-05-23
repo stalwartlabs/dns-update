@@ -182,7 +182,7 @@ impl NamecheapProvider {
         let text = self
             .client
             .post(self.endpoint.clone())
-            .with_header("Content-Type", "application/x-www-form-urlencoded")
+            .set_header("Content-Type", "application/x-www-form-urlencoded")
             .with_raw_body(body)
             .send_raw()
             .await?;

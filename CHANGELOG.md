@@ -1,3 +1,7 @@
+dns-update 0.4.2
+================================
+
+
 dns-update 0.4.1
 ================================
 - Route53: chunk TXT records into 255-byte character-strings.

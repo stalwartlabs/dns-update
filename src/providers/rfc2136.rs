@@ -104,7 +104,11 @@ impl Rfc2136Provider {
 
         let mut client = self.connect().await?;
         let result = client
-            .create(record, Name::from_str_relaxed(origin.into_fqdn().as_ref())?)
+            .append(
+                record,
+                Name::from_str_relaxed(origin.into_fqdn().as_ref())?,
+                false,
+            )
             .await?;
         if result.response_code == ResponseCode::NoError {
             Ok(())

@@ -95,6 +95,14 @@ fn is_false(v: &bool) -> bool {
     !*v
 }
 
+fn ensure_trailing_dot(value: &str) -> String {
+    if value.ends_with('.') {
+        value.to_string()
+    } else {
+        format!("{value}.")
+    }
+}
+
 #[derive(Deserialize, Debug)]
 struct ResponseMsg {
     #[serde(default)]
@@ -377,8 +385,14 @@ fn encode_record(record: &DnsRecord, hostname: &str) -> crate::Result<NetcupReco
         DnsRecord::TXT(value) => ("TXT", value.clone(), String::new()),
         DnsRecord::SRV(srv) => (
             "SRV",
-            format!("{} {} {}", srv.weight, srv.port, srv.target),
-            srv.priority.to_string(),
+            format!(
+                "{} {} {} {}",
+                srv.priority,
+                srv.weight,
+                srv.port,
+                ensure_trailing_dot(&srv.target),
+            ),
+            String::new(),
         ),
         DnsRecord::CAA(caa) => {
             let (flags, tag, value) = caa.clone().decompose();

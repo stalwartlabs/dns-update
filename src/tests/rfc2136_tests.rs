@@ -442,6 +442,70 @@ async fn udp_create_tlsa_record() {
 }
 
 #[tokio::test]
+async fn udp_create_multiple_tlsa_at_same_owner() {
+    // Regression: previously `create` used RFC 2136 prerequisite "RRSet must not
+    // exist", which made it impossible to publish more than one TLSA record at
+    // the same _port._tcp.<host> owner (e.g. DANE-EE + DANE-TA). The second
+    // create returned YXRRSET. After the fix, `create` appends to the RRSet.
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let name = format!("_25._tcp.{}.{}", unique_label("tlsa-multi"), zone());
+    let leaf: Vec<u8> = (0..32).collect();
+    let intermediate: Vec<u8> = (32..64).collect();
+
+    provider
+        .create(
+            &name,
+            DnsRecord::TLSA(TLSARecord {
+                cert_usage: TlsaCertUsage::DaneEe,
+                selector: TlsaSelector::Spki,
+                matching: TlsaMatching::Sha256,
+                cert_data: leaf.clone(),
+            }),
+            60,
+            zone(),
+        )
+        .await
+        .expect("create first TLSA");
+
+    provider
+        .create(
+            &name,
+            DnsRecord::TLSA(TLSARecord {
+                cert_usage: TlsaCertUsage::DaneTa,
+                selector: TlsaSelector::Spki,
+                matching: TlsaMatching::Sha256,
+                cert_data: intermediate.clone(),
+            }),
+            60,
+            zone(),
+        )
+        .await
+        .expect("create second TLSA at same owner");
+
+    let answers = wait_for_record(&name, RecordType::TLSA, 20).await;
+    let datas: Vec<&Vec<u8>> = answers
+        .iter()
+        .filter_map(|d| match d {
+            RData::TLSA(t) => Some(&t.cert_data),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        datas.iter().any(|d| **d == leaf),
+        "leaf TLSA missing from RRSet: {datas:?}"
+    );
+    assert!(
+        datas.iter().any(|d| **d == intermediate),
+        "intermediate TLSA missing from RRSet: {datas:?}"
+    );
+    cleanup_name(&name, DnsRecordType::TLSA).await;
+}
+
+#[tokio::test]
 async fn udp_create_caa_record() {
     if !enabled() {
         return;

@@ -59,6 +59,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_create_long_txt_record_is_chunked() {
+        let mut server = mockito::Server::new_async().await;
+        let value: String = std::iter::repeat('a').take(400).collect();
+        let expected = format!(
+            "\"{}\" \"{}\"",
+            "a".repeat(255),
+            "a".repeat(145),
+        );
+        let post = server
+            .mock("POST", "/zones/example.com/rrsets")
+            .match_body(Matcher::Json(json!({
+                "name": "mail._domainkey",
+                "type": "TXT",
+                "ttl": 600,
+                "records": [{"value": expected}],
+                "zone": "example.com",
+            })))
+            .with_status(201)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"rrset":{}}"#)
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .create(
+                "mail._domainkey.example.com",
+                DnsRecord::TXT(value),
+                600,
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "create returned: {result:?}");
+        post.assert();
+    }
+
+    #[tokio::test]
     async fn test_update_a_record_puts_rrset() {
         let mut server = mockito::Server::new_async().await;
         let put = server

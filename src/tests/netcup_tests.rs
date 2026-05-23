@@ -11,7 +11,10 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{DnsRecord, DnsRecordType, DnsUpdater, Error, providers::netcup::NetcupProvider};
+    use crate::{
+        DnsRecord, DnsRecordType, DnsUpdater, Error, SRVRecord,
+        providers::netcup::NetcupProvider,
+    };
     use mockito::Matcher;
     use serde_json::json;
     use std::time::Duration;
@@ -115,6 +118,54 @@ mod tests {
         assert!(result.is_ok(), "delete returned: {result:?}");
         login.assert();
         info.assert();
+        update.assert();
+    }
+
+    #[tokio::test]
+    async fn test_create_srv_record_uses_full_4_tuple_destination() {
+        let mut server = mockito::Server::new_async().await;
+
+        let _login = server
+            .mock("POST", "/")
+            .match_body(Matcher::PartialJson(json!({"action": "login"})))
+            .with_status(200)
+            .with_body(r#"{"status":"success","statuscode":2000,"shortmessage":"ok","longmessage":"","responsedata":{"apisessionid":"sess-3"}}"#)
+            .create();
+
+        let update = server
+            .mock("POST", "/")
+            .match_body(Matcher::PartialJson(json!({
+                "action": "updateDnsRecords",
+                "param": {
+                    "dnsrecordset": {
+                        "dnsrecords": [{
+                            "hostname": "_imaps._tcp",
+                            "type": "SRV",
+                            "destination": "10 5 993 mail.example.com.",
+                        }]
+                    }
+                }
+            })))
+            .with_status(200)
+            .with_body(r#"{"status":"success","statuscode":2000,"shortmessage":"ok","longmessage":"","responsedata":{}}"#)
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .create(
+                "_imaps._tcp.example.com",
+                DnsRecord::SRV(SRVRecord {
+                    priority: 10,
+                    weight: 5,
+                    port: 993,
+                    target: "mail.example.com".to_string(),
+                }),
+                300,
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "create returned: {result:?}");
         update.assert();
     }
 

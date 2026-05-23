@@ -73,7 +73,13 @@ struct RecordPayload<'a> {
     ttl: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     priority: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dkim_type: Option<&'a str>,
 }
+
+const ERR_DKIM_TYPE: &str = "choose_dkim_type";
+const ERR_SPF_SINGLETON: &str = "you_can_only_add_one_spf_save_for_each_dns_zone";
+const SPF_TOKEN: &str = "v=spf1";
 
 impl InfomaniakProvider {
     pub(crate) fn new(access_token: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -107,24 +113,42 @@ impl InfomaniakProvider {
         let ik_domain = self.find_domain(&domain).await?;
         let source = source_from_name(&name, &ik_domain.customer_name);
         let (record_type, target, priority) = encode_record(&record)?;
-
-        let payload = RecordPayload {
-            source: &source,
-            target: &target,
-            record_type,
-            ttl,
-            priority,
-        };
+        let mut dkim_type = is_dkim_owner(record_type, &source).then_some("rsa");
 
         let url = format!(
             "{}/1/domain/{}/dns/record",
             self.endpoint, ik_domain.id
         );
-        self.send_expect_success::<serde_json::Value>(
-            self.client.post(url).with_body(payload)?,
-        )
-        .await
-        .map(|_| ())
+
+        loop {
+            let payload = RecordPayload {
+                source: &source,
+                target: &target,
+                record_type,
+                ttl,
+                priority,
+                dkim_type,
+            };
+            let request = self.client.post(url.clone()).with_body(&payload)?;
+            match self
+                .send_expect_success::<serde_json::Value>(request)
+                .await
+            {
+                Ok(_) => return Ok(()),
+                Err(err) => match recovery_action(&err, dkim_type) {
+                    Recovery::RetryWithDkim(next) => {
+                        dkim_type = Some(next);
+                        continue;
+                    }
+                    Recovery::ReplaceSpf => {
+                        return self
+                            .replace_existing_spf(ik_domain.id, &source, &target, ttl)
+                            .await;
+                    }
+                    Recovery::Propagate => return Err(err),
+                },
+            }
+        }
     }
 
     pub(crate) async fn update(
@@ -143,6 +167,7 @@ impl InfomaniakProvider {
             .find_record_id(ik_domain.id, &source, record_type.as_str())
             .await?;
         let (record_type_str, target, priority) = encode_record(&record)?;
+        let dkim_type = is_dkim_owner(record_type_str, &source).then_some("rsa");
 
         let payload = RecordPayload {
             source: &source,
@@ -150,6 +175,7 @@ impl InfomaniakProvider {
             record_type: record_type_str,
             ttl,
             priority,
+            dkim_type,
         };
 
         let url = format!(
@@ -158,6 +184,48 @@ impl InfomaniakProvider {
         );
         self.send_expect_success::<serde_json::Value>(
             self.client.put(url).with_body(payload)?,
+        )
+        .await
+        .map(|_| ())
+    }
+
+    async fn replace_existing_spf(
+        &self,
+        domain_id: u64,
+        source: &str,
+        target: &str,
+        ttl: u32,
+    ) -> crate::Result<()> {
+        let url = format!("{}/1/domain/{}/dns/record", self.endpoint, domain_id);
+        let existing = self
+            .send_expect_success::<Vec<ExistingRecord>>(self.client.get(&url))
+            .await?;
+        let existing_id = existing
+            .into_iter()
+            .find(|r| {
+                r.record_type.eq_ignore_ascii_case("TXT")
+                    && (r.source == source || r.source_idn.as_deref() == Some(source))
+                    && unquote_txt(&r.target).contains(SPF_TOKEN)
+            })
+            .map(|r| r.id)
+            .ok_or_else(|| {
+                Error::Api(
+                    "Infomaniak rejected SPF as singleton but no existing SPF record was found"
+                        .to_string(),
+                )
+            })?;
+
+        let payload = RecordPayload {
+            source,
+            target,
+            record_type: "TXT",
+            ttl,
+            priority: None,
+            dkim_type: None,
+        };
+        let put_url = format!("{}/{}", url, existing_id);
+        self.send_expect_success::<serde_json::Value>(
+            self.client.put(put_url).with_body(payload)?,
         )
         .await
         .map(|_| ())
@@ -260,6 +328,61 @@ fn source_from_name(name: &str, domain: &str) -> String {
     strip_origin_from_name(name, domain, Some(""))
 }
 
+fn ensure_trailing_dot(value: &str) -> String {
+    if value.ends_with('.') {
+        value.to_string()
+    } else {
+        format!("{value}.")
+    }
+}
+
+fn is_dkim_owner(record_type: &str, source: &str) -> bool {
+    record_type.eq_ignore_ascii_case("TXT")
+        && source
+            .split('.')
+            .any(|label| label.eq_ignore_ascii_case("_domainkey"))
+}
+
+fn unquote_txt(target: &str) -> String {
+    let mut out = String::with_capacity(target.len());
+    let mut chars = target.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' => continue,
+            '\\' => {
+                if let Some(next) = chars.next() {
+                    out.push(next);
+                }
+            }
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+enum Recovery {
+    RetryWithDkim(&'static str),
+    ReplaceSpf,
+    Propagate,
+}
+
+fn recovery_action(err: &Error, current_dkim: Option<&str>) -> Recovery {
+    let Error::Api(msg) = err else {
+        return Recovery::Propagate;
+    };
+    if msg.contains(ERR_DKIM_TYPE) {
+        return match current_dkim {
+            None => Recovery::RetryWithDkim("rsa"),
+            Some("rsa") => Recovery::RetryWithDkim("ed25519"),
+            _ => Recovery::Propagate,
+        };
+    }
+    if msg.contains(ERR_SPF_SINGLETON) {
+        return Recovery::ReplaceSpf;
+    }
+    Recovery::Propagate
+}
+
 fn encode_record(record: &DnsRecord) -> crate::Result<(&'static str, String, Option<u16>)> {
     Ok(match record {
         DnsRecord::A(addr) => ("A", addr.to_string(), None),
@@ -276,7 +399,10 @@ fn encode_record(record: &DnsRecord) -> crate::Result<(&'static str, String, Opt
             "SRV",
             format!(
                 "{} {} {} {}",
-                srv.priority, srv.weight, srv.port, srv.target
+                srv.priority,
+                srv.weight,
+                srv.port,
+                ensure_trailing_dot(&srv.target),
             ),
             None,
         ),

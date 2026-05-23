@@ -262,12 +262,12 @@ impl TransipProvider {
     }
 }
 
-fn generate_nonce() -> String {
+pub(crate) fn generate_nonce() -> String {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("dnsupdate{now:032x}")
+        .unwrap_or(0) as u64;
+    format!("dnsu{now:016x}")
 }
 
 fn render_value(record: DnsRecord) -> crate::Result<String> {
