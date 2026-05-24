@@ -10,7 +10,8 @@
  */
 
 use crate::{
-    DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
     utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
@@ -161,90 +162,195 @@ impl SpaceshipProvider {
         }
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name();
-        let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, None);
-
-        self.client
-            .put(format!("{}/dns/records/{}", self.endpoint, domain))
-            .with_body(PutRecordsRequest {
-                force: None,
-                items: vec![SpaceshipDnsRecord::from_dns_record(
-                    record,
-                    &subdomain,
-                    Some(ttl),
-                )?],
-            })?
-            .send_raw()
-            .await
-            .map(|_| ())
-    }
-
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name();
-        let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, None);
-
-        self.client
-            .put(format!("{}/dns/records/{}", self.endpoint, domain))
-            .with_body(PutRecordsRequest {
-                force: None,
-                items: vec![SpaceshipDnsRecord::from_dns_record(
-                    record,
-                    &subdomain,
-                    Some(ttl),
-                )?],
-            })?
-            .send_raw()
-            .await
-            .map(|_| ())
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = self.normalize_subdomain_for_delete(
-            strip_origin_from_name(&name, &domain, None),
-            record_type,
-        )?;
-        let record_type = record_type.to_string();
-        let records = self.fetch_records(&domain).await?;
-        let to_delete: Vec<SpaceshipDeleteRecord> = records
+        let raw_subdomain = strip_origin_from_name(&name, &domain, None);
+        let listed_name =
+            self.normalize_subdomain_for_delete(raw_subdomain.clone(), record_type)?;
+        let type_str = record_type.as_str();
+
+        let existing: Vec<SpaceshipDnsRecord> = self
+            .fetch_records(&domain)
+            .await?
             .into_iter()
-            .filter(|record| record.name == subdomain && record.record_type == record_type)
-            .map(SpaceshipDnsRecord::into_delete_record)
+            .filter(|r| r.name == listed_name && r.record_type == type_str)
+            .collect();
+
+        let desired: Vec<SpaceshipDnsRecord> = records
+            .into_iter()
+            .map(|record| SpaceshipDnsRecord::from_dns_record(record, &raw_subdomain, Some(ttl)))
             .collect::<crate::Result<Vec<_>>>()?;
 
-        if to_delete.is_empty() {
-            return Err(Error::NotFound);
+        let mut to_add: Vec<SpaceshipDnsRecord> = Vec::new();
+        let mut existing_pool = existing;
+
+        for want in desired {
+            if let Some(idx) = existing_pool
+                .iter()
+                .position(|have| record_value_matches(have, &want))
+            {
+                existing_pool.swap_remove(idx);
+            } else {
+                to_add.push(want);
+            }
         }
 
-        for item in to_delete {
+        if !existing_pool.is_empty() {
+            let to_delete: Vec<SpaceshipDeleteRecord> = existing_pool
+                .into_iter()
+                .map(SpaceshipDnsRecord::into_delete_record)
+                .collect::<crate::Result<Vec<_>>>()?;
             self.client
                 .delete(format!("{}/dns/records/{}", self.endpoint, domain))
-                .with_body(vec![item])?
+                .with_body(to_delete)?
                 .send_raw()
                 .await?;
         }
+
+        if !to_add.is_empty() {
+            self.client
+                .put(format!("{}/dns/records/{}", self.endpoint, domain))
+                .with_body(PutRecordsRequest {
+                    force: None,
+                    items: to_add,
+                })?
+                .send_raw()
+                .await?;
+        }
+
         Ok(())
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let name = name.into_name();
+        let domain = origin.into_name();
+        let raw_subdomain = strip_origin_from_name(&name, &domain, None);
+        let listed_name =
+            self.normalize_subdomain_for_delete(raw_subdomain.clone(), record_type)?;
+        let type_str = record_type.as_str();
+
+        let existing: Vec<SpaceshipDnsRecord> = self
+            .fetch_records(&domain)
+            .await?
+            .into_iter()
+            .filter(|r| r.name == listed_name && r.record_type == type_str)
+            .collect();
+
+        let desired: Vec<SpaceshipDnsRecord> = records
+            .into_iter()
+            .map(|record| SpaceshipDnsRecord::from_dns_record(record, &raw_subdomain, Some(ttl)))
+            .collect::<crate::Result<Vec<_>>>()?;
+
+        let to_add: Vec<SpaceshipDnsRecord> = desired
+            .into_iter()
+            .filter(|want| !existing.iter().any(|have| record_value_matches(have, want)))
+            .collect();
+
+        if to_add.is_empty() {
+            return Ok(());
+        }
+
+        self.client
+            .put(format!("{}/dns/records/{}", self.endpoint, domain))
+            .with_body(PutRecordsRequest {
+                force: None,
+                items: to_add,
+            })?
+            .send_raw()
+            .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let name = name.into_name();
+        let domain = origin.into_name();
+        let raw_subdomain = strip_origin_from_name(&name, &domain, None);
+        let listed_name =
+            self.normalize_subdomain_for_delete(raw_subdomain.clone(), record_type)?;
+        let type_str = record_type.as_str();
+
+        let existing: Vec<SpaceshipDnsRecord> = self
+            .fetch_records(&domain)
+            .await?
+            .into_iter()
+            .filter(|r| r.name == listed_name && r.record_type == type_str)
+            .collect();
+
+        let targets: Vec<SpaceshipDnsRecord> = records
+            .into_iter()
+            .map(|record| SpaceshipDnsRecord::from_dns_record(record, &raw_subdomain, None))
+            .collect::<crate::Result<Vec<_>>>()?;
+
+        let mut to_delete: Vec<SpaceshipDeleteRecord> = Vec::new();
+        for want in targets {
+            if let Some(have) = existing
+                .iter()
+                .find(|have| record_value_matches(have, &want))
+            {
+                to_delete.push(have.clone().into_delete_record()?);
+            }
+        }
+
+        if to_delete.is_empty() {
+            return Ok(());
+        }
+
+        self.client
+            .delete(format!("{}/dns/records/{}", self.endpoint, domain))
+            .with_body(to_delete)?
+            .send_raw()
+            .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        let name = name.into_name();
+        let domain = origin.into_name();
+        let raw_subdomain = strip_origin_from_name(&name, &domain, None);
+        let listed_name = self.normalize_subdomain_for_delete(raw_subdomain, record_type)?;
+        let type_str = record_type.as_str();
+
+        self.fetch_records(&domain)
+            .await?
+            .into_iter()
+            .filter(|r| r.name == listed_name && r.record_type == type_str)
+            .map(SpaceshipDnsRecord::into_dns_record)
+            .collect()
     }
 
     async fn fetch_records(&self, domain: &str) -> crate::Result<Vec<SpaceshipDnsRecord>> {
@@ -359,7 +465,8 @@ impl SpaceshipDnsRecord {
                 item.port = Some(Value::from(srv.port));
             }
             DnsRecord::TLSA(tlsa) => {
-                let (port, protocol, normalized_name) = split_service_protocol_labels(name)?;
+                let (port_label, protocol, normalized_name) = split_service_protocol_labels(name)?;
+                let port = parse_tlsa_port_label(&port_label)?;
                 item.name = normalized_name;
                 item.port = Some(Value::from(port));
                 item.protocol = Some(protocol);
@@ -382,6 +489,72 @@ impl SpaceshipDnsRecord {
         }
 
         Ok(item)
+    }
+
+    fn into_dns_record(self) -> crate::Result<DnsRecord> {
+        let record_type = self.record_type.clone();
+        let name = self.name.clone();
+        let missing = |field: &str| {
+            Error::Parse(format!(
+                "Missing field '{field}' in {} record '{}'",
+                record_type, name
+            ))
+        };
+
+        Ok(match self.record_type.as_str() {
+            "A" => {
+                let addr = self.address.ok_or_else(|| missing("address"))?;
+                DnsRecord::A(
+                    addr.parse()
+                        .map_err(|e| Error::Parse(format!("Invalid IPv4 address '{addr}': {e}")))?,
+                )
+            }
+            "AAAA" => {
+                let addr = self.address.ok_or_else(|| missing("address"))?;
+                DnsRecord::AAAA(
+                    addr.parse()
+                        .map_err(|e| Error::Parse(format!("Invalid IPv6 address '{addr}': {e}")))?,
+                )
+            }
+            "CNAME" => DnsRecord::CNAME(self.cname.ok_or_else(|| missing("cname"))?),
+            "NS" => DnsRecord::NS(self.nameserver.ok_or_else(|| missing("nameserver"))?),
+            "MX" => DnsRecord::MX(MXRecord {
+                exchange: self.exchange.ok_or_else(|| missing("exchange"))?,
+                priority: self
+                    .preference
+                    .or(self.priority)
+                    .ok_or_else(|| missing("preference"))?,
+            }),
+            "TXT" => DnsRecord::TXT(self.value.ok_or_else(|| missing("value"))?),
+            "SRV" => DnsRecord::SRV(SRVRecord {
+                priority: self.priority.ok_or_else(|| missing("priority"))?,
+                weight: self.weight.ok_or_else(|| missing("weight"))?,
+                port: port_as_u64(&self.port)
+                    .and_then(|p| u16::try_from(p).ok())
+                    .ok_or_else(|| missing("port"))?,
+                target: self.target.ok_or_else(|| missing("target"))?,
+            }),
+            "TLSA" => DnsRecord::TLSA(TLSARecord {
+                cert_usage: tlsa_cert_usage_from_u8(self.usage.ok_or_else(|| missing("usage"))?)?,
+                selector: tlsa_selector_from_u8(self.selector.ok_or_else(|| missing("selector"))?)?,
+                matching: tlsa_matching_from_u8(self.matching.ok_or_else(|| missing("matching"))?)?,
+                cert_data: decode_hex(
+                    &self
+                        .association_data
+                        .ok_or_else(|| missing("associationData"))?,
+                )?,
+            }),
+            "CAA" => DnsRecord::CAA(build_caa(
+                self.flag.ok_or_else(|| missing("flag"))?,
+                self.tag.ok_or_else(|| missing("tag"))?,
+                self.value.ok_or_else(|| missing("value"))?,
+            )?),
+            other => {
+                return Err(Error::Parse(format!(
+                    "Unsupported Spaceship record type for list: {other}"
+                )));
+            }
+        })
     }
 
     fn into_delete_record(self) -> crate::Result<SpaceshipDeleteRecord> {
@@ -489,4 +662,169 @@ fn split_service_protocol_labels(name: &str) -> crate::Result<(String, String, S
         "@".to_string()
     };
     Ok((first.to_string(), second.to_string(), normalized_name))
+}
+
+fn parse_tlsa_port_label(label: &str) -> crate::Result<u16> {
+    let digits = label.strip_prefix('_').unwrap_or(label);
+    digits.parse::<u16>().map_err(|_| {
+        Error::Parse(format!(
+            "Invalid TLSA port label '{label}': expected '_<u16>'"
+        ))
+    })
+}
+
+fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
+    for r in records {
+        if r.as_type() != expected {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected.as_str(),
+                r.as_type().as_str(),
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn record_value_matches(a: &SpaceshipDnsRecord, b: &SpaceshipDnsRecord) -> bool {
+    if a.record_type != b.record_type || a.name != b.name {
+        return false;
+    }
+    match a.record_type.as_str() {
+        "A" | "AAAA" => a.address == b.address,
+        "CNAME" => a.cname == b.cname,
+        "NS" => a.nameserver == b.nameserver,
+        "MX" => {
+            a.exchange == b.exchange && a.preference.or(a.priority) == b.preference.or(b.priority)
+        }
+        "TXT" => a.value == b.value,
+        "SRV" => {
+            a.service == b.service
+                && a.protocol == b.protocol
+                && a.priority == b.priority
+                && a.weight == b.weight
+                && port_value_matches(&a.port, &b.port)
+                && a.target == b.target
+        }
+        "TLSA" => {
+            a.protocol == b.protocol
+                && port_value_matches(&a.port, &b.port)
+                && a.usage == b.usage
+                && a.selector == b.selector
+                && a.matching == b.matching
+                && a.association_data.as_deref().map(str::to_ascii_lowercase)
+                    == b.association_data.as_deref().map(str::to_ascii_lowercase)
+        }
+        "CAA" => a.flag == b.flag && a.tag == b.tag && a.value == b.value,
+        _ => false,
+    }
+}
+
+fn port_value_matches(a: &Option<Value>, b: &Option<Value>) -> bool {
+    match (port_as_u64(a), port_as_u64(b)) {
+        (Some(av), Some(bv)) => av == bv,
+        _ => a == b,
+    }
+}
+
+fn port_as_u64(v: &Option<Value>) -> Option<u64> {
+    match v.as_ref()? {
+        Value::Number(n) => n.as_u64(),
+        Value::String(s) => s.trim_start_matches('_').parse::<u64>().ok(),
+        _ => None,
+    }
+}
+
+fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
+    if !hex.len().is_multiple_of(2) {
+        return Err(Error::Parse(format!("invalid hex string: {hex}")));
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| {
+            u8::from_str_radix(&hex[i..i + 2], 16)
+                .map_err(|e| Error::Parse(format!("invalid hex byte: {e}")))
+        })
+        .collect()
+}
+
+fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
+    Ok(match value {
+        0 => TlsaCertUsage::PkixTa,
+        1 => TlsaCertUsage::PkixEe,
+        2 => TlsaCertUsage::DaneTa,
+        3 => TlsaCertUsage::DaneEe,
+        255 => TlsaCertUsage::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {value}"))),
+    })
+}
+
+fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
+    Ok(match value {
+        0 => TlsaSelector::Full,
+        1 => TlsaSelector::Spki,
+        255 => TlsaSelector::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA selector: {value}"))),
+    })
+}
+
+fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
+    Ok(match value {
+        0 => TlsaMatching::Raw,
+        1 => TlsaMatching::Sha256,
+        2 => TlsaMatching::Sha512,
+        255 => TlsaMatching::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
+    })
+}
+
+fn build_caa(flag: u8, tag: String, value: String) -> crate::Result<CAARecord> {
+    let issuer_critical = flag & 0x80 != 0;
+    match tag.as_str() {
+        "issue" => {
+            let (name, options) = parse_caa_value(&value);
+            Ok(CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "issuewild" => {
+            let (name, options) = parse_caa_value(&value);
+            Ok(CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "iodef" => Ok(CAARecord::Iodef {
+            issuer_critical,
+            url: value,
+        }),
+        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
+    }
+}
+
+fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name_part = parts.next().unwrap_or("").trim().to_string();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part)
+    };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
 }

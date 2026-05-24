@@ -12,1059 +12,6 @@ mod tests {
         DesecProvider::new("test_token", Some(Duration::from_secs(1))).with_endpoint(endpoint)
     }
 
-    #[tokio::test]
-    async fn test_create_record_success() {
-        let mut server = mockito::Server::new_async().await;
-        let _get_mock = server
-            .mock("GET", "/domains/example.com/rrsets/test/A/")
-            .with_status(404)
-            .create();
-        let expected_request = json!({
-            "subname": "test",
-            "type": "A",
-            "ttl": 3600,
-            "records": ["1.1.1.1"],
-        });
-
-        let mock = server
-            .mock("POST", "/domains/example.com/rrsets/")
-            .with_status(201)
-            .with_header("content-type", "application/json")
-            .match_header("authorization", "Token test_token")
-            .match_header("content-type", "application/json")
-            .match_body(mockito::Matcher::Json(expected_request))
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "test",
-                    "name": "test.example.com.",
-                    "records": ["1.1.1.1"],
-                    "ttl": 3600,
-                    "type": "A",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .create(
-                "test.example.com",
-                DnsRecord::A("1.1.1.1".parse().unwrap()),
-                3600,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_create_mx_record_success() {
-        let mut server = mockito::Server::new_async().await;
-        let _get_mock = server
-            .mock("GET", "/domains/example.com/rrsets/test/MX/")
-            .with_status(404)
-            .create();
-        let expected_request = json!({
-            "subname": "test",
-            "type": "MX",
-            "ttl": 3600,
-            "records": ["10 mail.example.com."],
-        });
-
-        let mock = server
-            .mock("POST", "/domains/example.com/rrsets/")
-            .with_status(201)
-            .with_header("content-type", "application/json")
-            .match_header("authorization", "Token test_token")
-            .match_header("content-type", "application/json")
-            .match_body(mockito::Matcher::Json(expected_request))
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "test",
-                    "name": "test.example.com.",
-                    "records": ["10 mail.example.com."],
-                    "ttl": 3600,
-                    "type": "MX",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .create(
-                "test.example.com",
-                DnsRecord::MX(MXRecord {
-                    exchange: "mail.example.com".to_string(),
-                    priority: 10,
-                }),
-                3600,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_create_record_unauthorized() {
-        let mut server = mockito::Server::new_async().await;
-        let _get_mock = server
-            .mock("GET", "/domains/example.com/rrsets/test/A/")
-            .with_status(404)
-            .create();
-        let expected_request = json!({
-            "subname": "test",
-            "type": "A",
-            "ttl": 3600,
-            "records": ["1.1.1.1"],
-        });
-
-        let mock = server
-            .mock("POST", "/domains/example.com/rrsets/")
-            .with_status(401)
-            .with_header("content-type", "application/json")
-            .match_header("authorization", "Token test_token")
-            .match_header("content-type", "application/json")
-            .match_body(mockito::Matcher::Json(expected_request))
-            .with_body(r#"{ "detail": "Invalid token." }"#)
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .create(
-                "test.example.com",
-                DnsRecord::A("1.1.1.1".parse().unwrap()),
-                3600,
-                "example.com",
-            )
-            .await;
-
-        assert!(matches!(result, Err(Error::Unauthorized)));
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_update_record_success() {
-        let mut server = mockito::Server::new_async().await;
-        let expected_request = json!({
-            "subname": "test",
-            "type": "AAAA",
-            "ttl": 3600,
-            "records": ["2001:db8::1"],
-        });
-
-        let mock = server
-            .mock("PUT", "/domains/example.com/rrsets/test/AAAA/")
-            .with_status(200)
-            .match_body(mockito::Matcher::Json(expected_request))
-            .match_header("authorization", "Token test_token")
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "test",
-                    "name": "test.example.com.",
-                    "records": ["2001:db8::1"],
-                    "ttl": 3600,
-                    "type": "AAAA",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .update(
-                "test",
-                DnsRecord::AAAA("2001:db8::1".parse().unwrap()),
-                3600,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_delete_record_success() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("DELETE", "/domains/example.com/rrsets/test/TXT/")
-            .with_status(204)
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .delete("test", "example.com", DnsRecordType::TXT)
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_create_tlsa_record_success() {
-        let mut server = mockito::Server::new_async().await;
-        let _get_mock = server
-            .mock("GET", "/domains/example.com/rrsets/_443._tcp.test/TLSA/")
-            .with_status(404)
-            .create();
-        let expected_request = json!({
-            "subname": "_443._tcp.test",
-            "type": "TLSA",
-            "ttl": 3600,
-            "records": ["3 1 1 e3b0c442"],
-        });
-
-        let mock = server
-            .mock("POST", "/domains/example.com/rrsets/")
-            .with_status(201)
-            .with_header("content-type", "application/json")
-            .match_header("authorization", "Token test_token")
-            .match_header("content-type", "application/json")
-            .match_body(mockito::Matcher::Json(expected_request))
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "_443._tcp.test",
-                    "name": "_443._tcp.test.example.com.",
-                    "records": ["3 1 1 e3b0c442"],
-                    "ttl": 3600,
-                    "type": "TLSA",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .create(
-                "_443._tcp.test.example.com",
-                DnsRecord::TLSA(TLSARecord {
-                    cert_usage: TlsaCertUsage::DaneEe,
-                    selector: TlsaSelector::Spki,
-                    matching: TlsaMatching::Sha256,
-                    cert_data: vec![0xe3, 0xb0, 0xc4, 0x42],
-                }),
-                3600,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_update_tlsa_record_success() {
-        let mut server = mockito::Server::new_async().await;
-        let expected_request = json!({
-            "subname": "_443._tcp.test",
-            "type": "TLSA",
-            "ttl": 3600,
-            "records": ["2 0 2 abcdef01"],
-        });
-
-        let mock = server
-            .mock("PUT", "/domains/example.com/rrsets/_443._tcp.test/TLSA/")
-            .with_status(200)
-            .match_body(mockito::Matcher::Json(expected_request))
-            .match_header("authorization", "Token test_token")
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "_443._tcp.test",
-                    "name": "_443._tcp.test.example.com.",
-                    "records": ["2 0 2 abcdef01"],
-                    "ttl": 3600,
-                    "type": "TLSA",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .update(
-                "_443._tcp.test",
-                DnsRecord::TLSA(TLSARecord {
-                    cert_usage: TlsaCertUsage::DaneTa,
-                    selector: TlsaSelector::Full,
-                    matching: TlsaMatching::Sha512,
-                    cert_data: vec![0xab, 0xcd, 0xef, 0x01],
-                }),
-                3600,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_create_caa_issue_record_success() {
-        let mut server = mockito::Server::new_async().await;
-        let _get_mock = server
-            .mock("GET", "/domains/example.com/rrsets/test/CAA/")
-            .with_status(404)
-            .create();
-        let expected_request = json!({
-            "subname": "test",
-            "type": "CAA",
-            "ttl": 3600,
-            "records": ["0 issue \"letsencrypt.org\""],
-        });
-
-        let mock = server
-            .mock("POST", "/domains/example.com/rrsets/")
-            .with_status(201)
-            .with_header("content-type", "application/json")
-            .match_header("authorization", "Token test_token")
-            .match_header("content-type", "application/json")
-            .match_body(mockito::Matcher::Json(expected_request))
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "test",
-                    "name": "test.example.com.",
-                    "records": ["0 issue \"letsencrypt.org\""],
-                    "ttl": 3600,
-                    "type": "CAA",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .create(
-                "test.example.com",
-                DnsRecord::CAA(CAARecord::Issue {
-                    issuer_critical: false,
-                    name: Some("letsencrypt.org".to_string()),
-                    options: vec![],
-                }),
-                3600,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_update_caa_issuewild_record_success() {
-        let mut server = mockito::Server::new_async().await;
-        let expected_request = json!({
-            "subname": "test",
-            "type": "CAA",
-            "ttl": 3600,
-            "records": ["128 issuewild \"letsencrypt.org\""],
-        });
-
-        let mock = server
-            .mock("PUT", "/domains/example.com/rrsets/test/CAA/")
-            .with_status(200)
-            .match_body(mockito::Matcher::Json(expected_request))
-            .match_header("authorization", "Token test_token")
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "test",
-                    "name": "test.example.com.",
-                    "records": ["128 issuewild \"letsencrypt.org\""],
-                    "ttl": 3600,
-                    "type": "CAA",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .update(
-                "test",
-                DnsRecord::CAA(CAARecord::IssueWild {
-                    issuer_critical: true,
-                    name: Some("letsencrypt.org".to_string()),
-                    options: vec![],
-                }),
-                3600,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_create_caa_iodef_record_success() {
-        let mut server = mockito::Server::new_async().await;
-        let _get_mock = server
-            .mock("GET", "/domains/example.com/rrsets/test/CAA/")
-            .with_status(404)
-            .create();
-        let expected_request = json!({
-            "subname": "test",
-            "type": "CAA",
-            "ttl": 3600,
-            "records": ["0 iodef \"mailto:admin@example.com\""],
-        });
-
-        let mock = server
-            .mock("POST", "/domains/example.com/rrsets/")
-            .with_status(201)
-            .with_header("content-type", "application/json")
-            .match_header("authorization", "Token test_token")
-            .match_header("content-type", "application/json")
-            .match_body(mockito::Matcher::Json(expected_request))
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "test",
-                    "name": "test.example.com.",
-                    "records": ["0 iodef \"mailto:admin@example.com\""],
-                    "ttl": 3600,
-                    "type": "CAA",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .create(
-                "test.example.com",
-                DnsRecord::CAA(CAARecord::Iodef {
-                    issuer_critical: false,
-                    url: "mailto:admin@example.com".to_string(),
-                }),
-                3600,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_create_record_lowercases_subname_and_domain() {
-        let mut server = mockito::Server::new_async().await;
-        let _get_mock = server
-            .mock("GET", "/domains/example.com/rrsets/mail/A/")
-            .with_status(404)
-            .create();
-        let expected_request = json!({
-            "subname": "mail",
-            "type": "A",
-            "ttl": 3600,
-            "records": ["1.1.1.1"],
-        });
-
-        let mock = server
-            .mock("POST", "/domains/example.com/rrsets/")
-            .with_status(201)
-            .match_body(mockito::Matcher::Json(expected_request))
-            .match_header("authorization", "Token test_token")
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "mail",
-                    "name": "mail.example.com.",
-                    "records": ["1.1.1.1"],
-                    "ttl": 3600,
-                    "type": "A",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .create(
-                "Mail.Example.COM",
-                DnsRecord::A("1.1.1.1".parse().unwrap()),
-                3600,
-                "Example.COM",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_create_record_clamps_ttl_below_minimum() {
-        let mut server = mockito::Server::new_async().await;
-        let _get_mock = server
-            .mock("GET", "/domains/example.com/rrsets/test/A/")
-            .with_status(404)
-            .create();
-        let expected_request = json!({
-            "subname": "test",
-            "type": "A",
-            "ttl": 3600,
-            "records": ["1.1.1.1"],
-        });
-
-        let mock = server
-            .mock("POST", "/domains/example.com/rrsets/")
-            .with_status(201)
-            .match_body(mockito::Matcher::Json(expected_request))
-            .match_header("authorization", "Token test_token")
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "test",
-                    "name": "test.example.com.",
-                    "records": ["1.1.1.1"],
-                    "ttl": 3600,
-                    "type": "A",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .create(
-                "test.example.com",
-                DnsRecord::A("1.1.1.1".parse().unwrap()),
-                60,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_update_record_lowercases_path_and_clamps_ttl() {
-        let mut server = mockito::Server::new_async().await;
-        let expected_request = json!({
-            "subname": "mail",
-            "type": "AAAA",
-            "ttl": 3600,
-            "records": ["2001:db8::1"],
-        });
-
-        let mock = server
-            .mock("PUT", "/domains/example.com/rrsets/mail/AAAA/")
-            .with_status(200)
-            .match_body(mockito::Matcher::Json(expected_request))
-            .match_header("authorization", "Token test_token")
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "mail",
-                    "name": "mail.example.com.",
-                    "records": ["2001:db8::1"],
-                    "ttl": 3600,
-                    "type": "AAAA",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .update(
-                "MAIL",
-                DnsRecord::AAAA("2001:db8::1".parse().unwrap()),
-                300,
-                "Example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_delete_record_lowercases_path() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("DELETE", "/domains/example.com/rrsets/mail/TXT/")
-            .with_status(204)
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .delete("Mail.Example.com", "Example.com", DnsRecordType::TXT)
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_create_record_appends_to_existing_rrset() {
-        let mut server = mockito::Server::new_async().await;
-        let get_mock = server
-            .mock("GET", "/domains/example.com/rrsets/_acme-challenge/TXT/")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "_acme-challenge",
-                    "name": "_acme-challenge.example.com.",
-                    "records": ["\"token-a\""],
-                    "ttl": 3600,
-                    "type": "TXT",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-        let expected_request = json!({
-            "subname": "_acme-challenge",
-            "type": "TXT",
-            "ttl": 3600,
-            "records": ["\"token-a\"", "\"token-b\""],
-        });
-        let put_mock = server
-            .mock("PUT", "/domains/example.com/rrsets/_acme-challenge/TXT/")
-            .with_status(200)
-            .match_header("authorization", "Token test_token")
-            .match_body(mockito::Matcher::Json(expected_request))
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "_acme-challenge",
-                    "name": "_acme-challenge.example.com.",
-                    "records": ["\"token-a\"", "\"token-b\""],
-                    "ttl": 3600,
-                    "type": "TXT",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .create(
-                "_acme-challenge.example.com",
-                DnsRecord::TXT("token-b".to_string()),
-                3600,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        get_mock.assert();
-        put_mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_create_record_idempotent_when_value_present() {
-        let mut server = mockito::Server::new_async().await;
-        let get_mock = server
-            .mock("GET", "/domains/example.com/rrsets/_acme-challenge/TXT/")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "_acme-challenge",
-                    "name": "_acme-challenge.example.com.",
-                    "records": ["\"token-a\""],
-                    "ttl": 3600,
-                    "type": "TXT",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-        let expected_request = json!({
-            "subname": "_acme-challenge",
-            "type": "TXT",
-            "ttl": 3600,
-            "records": ["\"token-a\""],
-        });
-        let put_mock = server
-            .mock("PUT", "/domains/example.com/rrsets/_acme-challenge/TXT/")
-            .with_status(200)
-            .match_body(mockito::Matcher::Json(expected_request))
-            .with_body(
-                r#"{
-                    "created": "2025-07-25T19:18:37.286381Z",
-                    "domain": "example.com",
-                    "subname": "_acme-challenge",
-                    "name": "_acme-challenge.example.com.",
-                    "records": ["\"token-a\""],
-                    "ttl": 3600,
-                    "type": "TXT",
-                    "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
-            )
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .create(
-                "_acme-challenge.example.com",
-                DnsRecord::TXT("token-a".to_string()),
-                3600,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        get_mock.assert();
-        put_mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_delete_record_not_found_is_ok() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("DELETE", "/domains/example.com/rrsets/test/TXT/")
-            .with_status(404)
-            .with_body(r#"{ "detail": "Not found." }"#)
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-        let result = provider
-            .delete("test", "example.com", DnsRecordType::TXT)
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    #[ignore = "Requires desec API Token and domain configuration"]
-    async fn integration_test() {
-        let token = ""; // <-- Fill in your deSEC API token here
-        let origin = ""; // <-- Fill in your domain (e.g., "example.com")
-        let domain = ""; // <-- Fill in your test subdomain (e.g., "test.example.com")
-
-        assert!(
-            !token.is_empty(),
-            "Please configure your deSEC API token in the integration test"
-        );
-        assert!(
-            !origin.is_empty(),
-            "Please configure your domain in the integration test"
-        );
-        assert!(
-            !domain.is_empty(),
-            "Please configure your test subdomain in the integration test"
-        );
-
-        let provider = DesecProvider::new(token, Some(Duration::from_secs(30)));
-        let cname_sub = format!("cname-test.{origin}");
-        let srv_sub = format!("_sip._tcp.{origin}");
-        let tlsa_sub = format!("_443._tcp.{origin}");
-
-        // --- Create & update all record types ---
-
-        // A record
-        assert!(
-            provider
-                .create(
-                    domain,
-                    DnsRecord::A("1.1.1.1".parse().unwrap()),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-        assert!(
-            provider
-                .update(
-                    domain,
-                    DnsRecord::A("2.2.2.2".parse().unwrap()),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-
-        // AAAA record
-        assert!(
-            provider
-                .create(
-                    domain,
-                    DnsRecord::AAAA("2001:db8::1".parse().unwrap()),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-        assert!(
-            provider
-                .update(
-                    domain,
-                    DnsRecord::AAAA("2001:db8::2".parse().unwrap()),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-
-        // TXT record
-        assert!(
-            provider
-                .create(
-                    domain,
-                    DnsRecord::TXT("v=spf1 -all".to_string()),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-        assert!(
-            provider
-                .update(
-                    domain,
-                    DnsRecord::TXT("v=spf1 ~all".to_string()),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-
-        // MX record
-        assert!(
-            provider
-                .create(
-                    domain,
-                    DnsRecord::MX(MXRecord {
-                        exchange: format!("mail.{origin}"),
-                        priority: 10
-                    }),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-        assert!(
-            provider
-                .update(
-                    domain,
-                    DnsRecord::MX(MXRecord {
-                        exchange: format!("mail2.{origin}"),
-                        priority: 20
-                    }),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-
-        // CNAME record (dedicated subdomain — cannot coexist with other record types)
-        assert!(
-            provider
-                .create(
-                    &cname_sub,
-                    DnsRecord::CNAME(format!("target.{origin}")),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-        assert!(
-            provider
-                .update(
-                    &cname_sub,
-                    DnsRecord::CNAME(format!("target2.{origin}")),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-
-        // SRV record
-        assert!(
-            provider
-                .create(
-                    &srv_sub,
-                    DnsRecord::SRV(SRVRecord {
-                        priority: 10,
-                        weight: 20,
-                        port: 5060,
-                        target: format!("sip.{origin}")
-                    }),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-        assert!(
-            provider
-                .update(
-                    &srv_sub,
-                    DnsRecord::SRV(SRVRecord {
-                        priority: 20,
-                        weight: 10,
-                        port: 5060,
-                        target: format!("sip2.{origin}")
-                    }),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-
-        // TLSA record
-        assert!(
-            provider
-                .create(
-                    &tlsa_sub,
-                    DnsRecord::TLSA(TLSARecord {
-                        cert_usage: TlsaCertUsage::DaneEe,
-                        selector: TlsaSelector::Spki,
-                        matching: TlsaMatching::Sha256,
-                        cert_data: vec![0xe3, 0xb0, 0xc4, 0x42]
-                    }),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-        assert!(
-            provider
-                .update(
-                    &tlsa_sub,
-                    DnsRecord::TLSA(TLSARecord {
-                        cert_usage: TlsaCertUsage::DaneEe,
-                        selector: TlsaSelector::Spki,
-                        matching: TlsaMatching::Sha256,
-                        cert_data: vec![0xab, 0xcd, 0xef, 0x01]
-                    }),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-
-        // CAA record
-        assert!(
-            provider
-                .create(
-                    domain,
-                    DnsRecord::CAA(CAARecord::Issue {
-                        issuer_critical: false,
-                        name: Some("letsencrypt.org".to_string()),
-                        options: vec![]
-                    }),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-        assert!(
-            provider
-                .update(
-                    domain,
-                    DnsRecord::CAA(CAARecord::Issue {
-                        issuer_critical: false,
-                        name: Some("sectigo.com".to_string()),
-                        options: vec![]
-                    }),
-                    3600,
-                    origin
-                )
-                .await
-                .is_ok()
-        );
-
-        // Set DESEC_NO_CLEANUP=1 to skip deletion (e.g. to inspect records in the web UI).
-        if std::env::var("DESEC_NO_CLEANUP")
-            .unwrap_or_default()
-            .is_empty()
-        {
-            assert!(
-                provider
-                    .delete(domain, origin, DnsRecordType::A)
-                    .await
-                    .is_ok()
-            );
-            assert!(
-                provider
-                    .delete(domain, origin, DnsRecordType::AAAA)
-                    .await
-                    .is_ok()
-            );
-            assert!(
-                provider
-                    .delete(domain, origin, DnsRecordType::TXT)
-                    .await
-                    .is_ok()
-            );
-            assert!(
-                provider
-                    .delete(domain, origin, DnsRecordType::MX)
-                    .await
-                    .is_ok()
-            );
-            assert!(
-                provider
-                    .delete(&cname_sub, origin, DnsRecordType::CNAME)
-                    .await
-                    .is_ok()
-            );
-            assert!(
-                provider
-                    .delete(&srv_sub, origin, DnsRecordType::SRV)
-                    .await
-                    .is_ok()
-            );
-            assert!(
-                provider
-                    .delete(&tlsa_sub, origin, DnsRecordType::TLSA)
-                    .await
-                    .is_ok()
-            );
-            assert!(
-                provider
-                    .delete(domain, origin, DnsRecordType::CAA)
-                    .await
-                    .is_ok()
-            );
-        }
-    }
-
     #[test]
     fn test_into_desec_record() {
         let record = DnsRecord::A("1.1.1.1".parse().unwrap());
@@ -1135,5 +82,715 @@ mod tests {
         let desec_record: DesecDnsRecordRepresentation = record.into();
         assert_eq!(desec_record.content, "0 iodef \"mailto:admin@example.com\"");
         assert_eq!(desec_record.record_type, "CAA");
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_replaces_existing() {
+        let mut server = mockito::Server::new_async().await;
+        let expected_request = json!({
+            "subname": "test",
+            "type": "A",
+            "ttl": 3600,
+            "records": ["1.1.1.1", "2.2.2.2"],
+        });
+        let mock = server
+            .mock("PUT", "/domains/example.com/rrsets/test/A/")
+            .with_status(200)
+            .match_header("authorization", "Token test_token")
+            .match_body(mockito::Matcher::Json(expected_request))
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "test",
+                    "name": "test.example.com.",
+                    "records": ["1.1.1.1", "2.2.2.2"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                3600,
+                vec![
+                    DnsRecord::A("1.1.1.1".parse().unwrap()),
+                    DnsRecord::A("2.2.2.2".parse().unwrap()),
+                ],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_at_apex_uses_at_in_url() {
+        let mut server = mockito::Server::new_async().await;
+        let expected_request = json!({
+            "subname": "",
+            "type": "A",
+            "ttl": 3600,
+            "records": ["1.1.1.1"],
+        });
+        let mock = server
+            .mock("PUT", "/domains/example.com/rrsets/@/A/")
+            .with_status(200)
+            .match_header("authorization", "Token test_token")
+            .match_body(mockito::Matcher::Json(expected_request))
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "",
+                    "name": "example.com.",
+                    "records": ["1.1.1.1"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "example.com",
+                DnsRecordType::A,
+                3600,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_empty_deletes() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("DELETE", "/domains/example.com/rrsets/test/A/")
+            .with_status(204)
+            .match_header("authorization", "Token test_token")
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                3600,
+                vec![],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_empty_at_apex_deletes_with_at_url() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("DELETE", "/domains/example.com/rrsets/@/TXT/")
+            .with_status(204)
+            .match_header("authorization", "Token test_token")
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "example.com",
+                DnsRecordType::TXT,
+                3600,
+                vec![],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_empty_not_found_is_ok() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("DELETE", "/domains/example.com/rrsets/test/A/")
+            .with_status(404)
+            .with_body(r#"{ "detail": "Not found." }"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                3600,
+                vec![],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_type_mismatch_rejected() {
+        let server = mockito::Server::new_async().await;
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                3600,
+                vec![DnsRecord::TXT("nope".to_string())],
+                "example.com",
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Api(ref m)) if m.contains("mismatch")));
+    }
+
+    #[tokio::test]
+    async fn test_add_to_rrset_empty_short_circuits() {
+        let server = mockito::Server::new_async().await;
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .add_to_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                3600,
+                vec![],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_to_rrset_creates_when_absent() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/A/")
+            .with_status(404)
+            .create();
+        let expected_request = json!({
+            "subname": "test",
+            "type": "A",
+            "ttl": 3600,
+            "records": ["1.1.1.1"],
+        });
+        let post_mock = server
+            .mock("POST", "/domains/example.com/rrsets/")
+            .with_status(201)
+            .match_body(mockito::Matcher::Json(expected_request))
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "test",
+                    "name": "test.example.com.",
+                    "records": ["1.1.1.1"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .add_to_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                3600,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        get_mock.assert();
+        post_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_add_to_rrset_merges_with_existing() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/A/")
+            .with_status(200)
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "test",
+                    "name": "test.example.com.",
+                    "records": ["1.1.1.1"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+        let expected_request = json!({
+            "subname": "test",
+            "type": "A",
+            "ttl": 3600,
+            "records": ["1.1.1.1", "2.2.2.2"],
+        });
+        let put_mock = server
+            .mock("PUT", "/domains/example.com/rrsets/test/A/")
+            .with_status(200)
+            .match_body(mockito::Matcher::Json(expected_request))
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "test",
+                    "name": "test.example.com.",
+                    "records": ["1.1.1.1", "2.2.2.2"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .add_to_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                3600,
+                vec![DnsRecord::A("2.2.2.2".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        get_mock.assert();
+        put_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_add_to_rrset_idempotent_when_present() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/A/")
+            .with_status(200)
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "test",
+                    "name": "test.example.com.",
+                    "records": ["1.1.1.1"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+        let put_mock = server
+            .mock("PUT", "/domains/example.com/rrsets/test/A/")
+            .with_status(200)
+            .expect(0)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .add_to_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                3600,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        get_mock.assert();
+        put_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_add_to_rrset_at_apex() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/@/A/")
+            .with_status(404)
+            .create();
+        let expected_request = json!({
+            "subname": "",
+            "type": "A",
+            "ttl": 3600,
+            "records": ["1.1.1.1"],
+        });
+        let post_mock = server
+            .mock("POST", "/domains/example.com/rrsets/")
+            .with_status(201)
+            .match_body(mockito::Matcher::Json(expected_request))
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "",
+                    "name": "example.com.",
+                    "records": ["1.1.1.1"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .add_to_rrset(
+                "example.com",
+                DnsRecordType::A,
+                3600,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        get_mock.assert();
+        post_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_remove_from_rrset_empty_short_circuits() {
+        let server = mockito::Server::new_async().await;
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .remove_from_rrset("test.example.com", DnsRecordType::A, vec![], "example.com")
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_remove_from_rrset_filters_and_puts() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/A/")
+            .with_status(200)
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "test",
+                    "name": "test.example.com.",
+                    "records": ["1.1.1.1", "2.2.2.2"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+        let expected_request = json!({
+            "subname": "test",
+            "type": "A",
+            "ttl": 3600,
+            "records": ["2.2.2.2"],
+        });
+        let put_mock = server
+            .mock("PUT", "/domains/example.com/rrsets/test/A/")
+            .with_status(200)
+            .match_body(mockito::Matcher::Json(expected_request))
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "test",
+                    "name": "test.example.com.",
+                    "records": ["2.2.2.2"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .remove_from_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        get_mock.assert();
+        put_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_remove_from_rrset_deletes_when_filtered_empty() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/A/")
+            .with_status(200)
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "test",
+                    "name": "test.example.com.",
+                    "records": ["1.1.1.1"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+        let delete_mock = server
+            .mock("DELETE", "/domains/example.com/rrsets/test/A/")
+            .with_status(204)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .remove_from_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        get_mock.assert();
+        delete_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_remove_from_rrset_absent_value_is_noop() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/A/")
+            .with_status(200)
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "test",
+                    "name": "test.example.com.",
+                    "records": ["1.1.1.1"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+        let put_mock = server
+            .mock("PUT", "/domains/example.com/rrsets/test/A/")
+            .with_status(200)
+            .expect(0)
+            .create();
+        let delete_mock = server
+            .mock("DELETE", "/domains/example.com/rrsets/test/A/")
+            .with_status(204)
+            .expect(0)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .remove_from_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                vec![DnsRecord::A("9.9.9.9".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        get_mock.assert();
+        put_mock.assert();
+        delete_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_remove_from_rrset_not_found_is_ok() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/A/")
+            .with_status(404)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .remove_from_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        get_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_rrset_parses_records() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/A/")
+            .with_status(200)
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "test",
+                    "name": "test.example.com.",
+                    "records": ["1.1.1.1", "2.2.2.2"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .list_rrset("test.example.com", DnsRecordType::A, "example.com")
+            .await
+            .unwrap();
+        assert_eq!(
+            result,
+            vec![
+                DnsRecord::A("1.1.1.1".parse().unwrap()),
+                DnsRecord::A("2.2.2.2".parse().unwrap()),
+            ]
+        );
+        get_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_rrset_parses_txt_unquotes() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/_acme-challenge/TXT/")
+            .with_status(200)
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "_acme-challenge",
+                    "name": "_acme-challenge.example.com.",
+                    "records": ["\"token-a\"", "\"token-b\""],
+                    "ttl": 3600,
+                    "type": "TXT",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .list_rrset(
+                "_acme-challenge.example.com",
+                DnsRecordType::TXT,
+                "example.com",
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            result,
+            vec![
+                DnsRecord::TXT("token-a".to_string()),
+                DnsRecord::TXT("token-b".to_string()),
+            ]
+        );
+        get_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_rrset_parses_mx() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/@/MX/")
+            .with_status(200)
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "",
+                    "name": "example.com.",
+                    "records": ["10 mail.example.com.", "20 mail2.example.com."],
+                    "ttl": 3600,
+                    "type": "MX",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .list_rrset("example.com", DnsRecordType::MX, "example.com")
+            .await
+            .unwrap();
+        assert_eq!(
+            result,
+            vec![
+                DnsRecord::MX(MXRecord {
+                    priority: 10,
+                    exchange: "mail.example.com".to_string(),
+                }),
+                DnsRecord::MX(MXRecord {
+                    priority: 20,
+                    exchange: "mail2.example.com".to_string(),
+                }),
+            ]
+        );
+        get_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_rrset_404_returns_empty() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("GET", "/domains/example.com/rrsets/test/A/")
+            .with_status(404)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .list_rrset("test.example.com", DnsRecordType::A, "example.com")
+            .await
+            .unwrap();
+        assert!(result.is_empty());
+        get_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_add_to_rrset_type_mismatch_rejected() {
+        let server = mockito::Server::new_async().await;
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .add_to_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                3600,
+                vec![DnsRecord::TXT("nope".to_string())],
+                "example.com",
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Api(ref m)) if m.contains("mismatch")));
     }
 }

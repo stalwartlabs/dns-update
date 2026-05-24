@@ -9,14 +9,13 @@
  * except according to those terms.
  */
 
-use std::time::Duration;
-
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::{net::AddrParseError, time::Duration};
 
 use crate::{
-    DnsRecord, DnsRecordType, Error, IntoFqdn,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
     crypto::{hmac_sha256, sha256_digest},
     http::HttpClientBuilder,
     utils::strip_origin_from_name,
@@ -26,7 +25,7 @@ const DEFAULT_HOST: &str = "dnspod.tencentcloudapi.com";
 const SERVICE: &str = "dnspod";
 const API_VERSION: &str = "2021-03-23";
 const ALGORITHM: &str = "TC3-HMAC-SHA256";
-const DEFAULT_RECORD_LINE: &str = "默认";
+const DEFAULT_RECORD_LINE_ID: &str = "0";
 
 #[derive(Clone)]
 pub struct TencentCloudProvider {
@@ -99,6 +98,10 @@ struct RecordListItem {
     name: String,
     #[serde(rename = "Type")]
     record_type: String,
+    #[serde(rename = "Value", default)]
+    value: String,
+    #[serde(rename = "MX", default)]
+    mx: Option<u16>,
 }
 
 impl TencentCloudProvider {
@@ -136,96 +139,200 @@ impl TencentCloudProvider {
         }
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name();
-        let origin = origin.into_name();
-        let zone = self.find_zone(&origin).await?;
-        let subdomain = strip_origin_from_name(&name, &zone.name, Some("@"));
-        let record_repr = TencentRecord::try_from(record)?;
-
-        let payload = json!({
-            "Domain": zone.name,
-            "DomainId": zone.domain_id,
-            "SubDomain": subdomain,
-            "RecordType": record_repr.record_type,
-            "RecordLine": DEFAULT_RECORD_LINE,
-            "Value": record_repr.value,
-            "TTL": ttl,
-            "MX": record_repr.priority,
-        });
-
-        let body = serialize_payload(&payload)?;
-        let _ = self
-            .send::<Value>("CreateRecord", &body)
-            .await?;
-        Ok(())
-    }
-
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name();
-        let origin = origin.into_name();
-        let zone = self.find_zone(&origin).await?;
-        let subdomain = strip_origin_from_name(&name, &zone.name, Some("@"));
-        let record_repr = TencentRecord::try_from(record)?;
-        let record_id = self
-            .find_record_id(&zone, &subdomain, &record_repr.record_type)
-            .await?;
-
-        let payload = json!({
-            "Domain": zone.name,
-            "DomainId": zone.domain_id,
-            "RecordId": record_id,
-            "SubDomain": subdomain,
-            "RecordType": record_repr.record_type,
-            "RecordLine": DEFAULT_RECORD_LINE,
-            "Value": record_repr.value,
-            "TTL": ttl,
-            "MX": record_repr.priority,
-        });
-
-        let body = serialize_payload(&payload)?;
-        let _ = self
-            .send::<Value>("ModifyRecord", &body)
-            .await?;
-        Ok(())
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        reject_tlsa(record_type)?;
+
         let name = name.into_name();
         let origin = origin.into_name();
         let zone = self.find_zone(&origin).await?;
         let subdomain = strip_origin_from_name(&name, &zone.name, Some("@"));
         let type_str = record_type.as_str();
-        let record_id = self.find_record_id(&zone, &subdomain, type_str).await?;
 
+        let desired = build_rrset(records)?;
+        let existing = self.list_at(&zone, &subdomain, type_str).await?;
+
+        let mut existing_pool: Vec<RecordListItem> = existing;
+        let mut to_add: Vec<TencentRecord> = Vec::new();
+
+        for want in desired {
+            if let Some(idx) = existing_pool.iter().position(|e| record_matches(e, &want)) {
+                existing_pool.swap_remove(idx);
+            } else {
+                to_add.push(want);
+            }
+        }
+
+        for leftover in existing_pool {
+            self.delete_record_by_id(&zone, leftover.record_id).await?;
+        }
+        for want in to_add {
+            self.create_record(&zone, &subdomain, ttl, &want).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        reject_tlsa(record_type)?;
+
+        let name = name.into_name();
+        let origin = origin.into_name();
+        let zone = self.find_zone(&origin).await?;
+        let subdomain = strip_origin_from_name(&name, &zone.name, Some("@"));
+        let type_str = record_type.as_str();
+
+        let desired = build_rrset(records)?;
+        let existing = self.list_at(&zone, &subdomain, type_str).await?;
+
+        for want in desired {
+            if existing.iter().any(|e| record_matches(e, &want)) {
+                continue;
+            }
+            self.create_record(&zone, &subdomain, ttl, &want).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        reject_tlsa(record_type)?;
+
+        let name = name.into_name();
+        let origin = origin.into_name();
+        let zone = self.find_zone(&origin).await?;
+        let subdomain = strip_origin_from_name(&name, &zone.name, Some("@"));
+        let type_str = record_type.as_str();
+
+        let to_remove = build_rrset(records)?;
+        let existing = self.list_at(&zone, &subdomain, type_str).await?;
+
+        let mut consumed: Vec<u64> = Vec::new();
+        for want in to_remove {
+            if let Some(found) = existing
+                .iter()
+                .find(|e| record_matches(e, &want) && !consumed.contains(&e.record_id))
+            {
+                consumed.push(found.record_id);
+                self.delete_record_by_id(&zone, found.record_id).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        reject_tlsa(record_type)?;
+        let name = name.into_name();
+        let origin = origin.into_name();
+        let zone = self.find_zone(&origin).await?;
+        let subdomain = strip_origin_from_name(&name, &zone.name, Some("@"));
+        let type_str = record_type.as_str();
+        let existing = self.list_at(&zone, &subdomain, type_str).await?;
+        existing
+            .into_iter()
+            .map(|r| parse_record(record_type, &r))
+            .collect()
+    }
+
+    async fn create_record(
+        &self,
+        zone: &DomainListItem,
+        subdomain: &str,
+        ttl: u32,
+        record: &TencentRecord,
+    ) -> crate::Result<()> {
+        let payload = json!({
+            "Domain": zone.name,
+            "DomainId": zone.domain_id,
+            "SubDomain": subdomain,
+            "RecordType": record.record_type,
+            "RecordLineId": DEFAULT_RECORD_LINE_ID,
+            "Value": record.value,
+            "TTL": ttl,
+            "MX": record.priority,
+        });
+        let body = serialize_payload(&payload)?;
+        let _ = self.send::<Value>("CreateRecord", &body).await?;
+        Ok(())
+    }
+
+    async fn delete_record_by_id(
+        &self,
+        zone: &DomainListItem,
+        record_id: u64,
+    ) -> crate::Result<()> {
         let payload = json!({
             "Domain": zone.name,
             "DomainId": zone.domain_id,
             "RecordId": record_id,
         });
-
         let body = serialize_payload(&payload)?;
-        let _ = self
-            .send::<Value>("DeleteRecord", &body)
-            .await?;
+        let _ = self.send::<Value>("DeleteRecord", &body).await?;
         Ok(())
+    }
+
+    async fn list_at(
+        &self,
+        zone: &DomainListItem,
+        subdomain: &str,
+        record_type: &str,
+    ) -> crate::Result<Vec<RecordListItem>> {
+        let payload = json!({
+            "Domain": zone.name,
+            "DomainId": zone.domain_id,
+            "Subdomain": subdomain,
+            "RecordType": record_type,
+            "RecordLineId": DEFAULT_RECORD_LINE_ID,
+            "Limit": 3000,
+        });
+        let body = serialize_payload(&payload)?;
+        let resp = match self
+            .send::<RecordListResult>("DescribeRecordList", &body)
+            .await
+        {
+            Ok(r) => r,
+            Err(Error::Api(msg)) if msg.contains("ResourceNotFound.NoDataOfRecord") => {
+                return Ok(Vec::new());
+            }
+            Err(Error::NotFound) => return Ok(Vec::new()),
+            Err(e) => return Err(e),
+        };
+        Ok(resp
+            .record_list
+            .into_iter()
+            .filter(|r| r.name == subdomain && r.record_type == record_type)
+            .collect())
     }
 
     async fn find_zone(&self, origin: &str) -> crate::Result<DomainListItem> {
@@ -260,35 +367,6 @@ impl TencentCloudProvider {
                 Error::Api(format!(
                     "TencentCloud DNSPod zone not found for {}",
                     zone_name
-                ))
-            })
-    }
-
-    async fn find_record_id(
-        &self,
-        zone: &DomainListItem,
-        subdomain: &str,
-        record_type: &str,
-    ) -> crate::Result<u64> {
-        let payload = json!({
-            "Domain": zone.name,
-            "DomainId": zone.domain_id,
-            "Subdomain": subdomain,
-            "RecordType": record_type,
-            "RecordLine": DEFAULT_RECORD_LINE,
-        });
-        let body = serialize_payload(&payload)?;
-        let resp = self
-            .send::<RecordListResult>("DescribeRecordList", &body)
-            .await?;
-        resp.record_list
-            .into_iter()
-            .find(|r| r.name == subdomain && r.record_type == record_type)
-            .map(|r| r.record_id)
-            .ok_or_else(|| {
-                Error::Api(format!(
-                    "DNS Record {} of type {} not found",
-                    subdomain, record_type
                 ))
             })
     }
@@ -355,7 +433,9 @@ impl TencentCloudProvider {
 
         let raw = request.with_raw_body(body.to_string()).send_raw().await?;
         let response: ApiResponse<T> = serde_json::from_str(&raw).map_err(|err| {
-            Error::Serialize(format!("Failed to deserialize TencentCloud response: {err}"))
+            Error::Serialize(format!(
+                "Failed to deserialize TencentCloud response: {err}"
+            ))
         })?;
         if let Some(err) = response.response.error {
             return Err(Error::Api(format!(
@@ -366,9 +446,7 @@ impl TencentCloudProvider {
         let data: T = serde_json::from_str(&raw)
             .map(|wrapper: ApiResponse<T>| wrapper.response.data)
             .map_err(|err| {
-                Error::Serialize(format!(
-                    "Failed to deserialize TencentCloud payload: {err}"
-                ))
+                Error::Serialize(format!("Failed to deserialize TencentCloud payload: {err}"))
             })?
             .ok_or_else(|| Error::Api("TencentCloud response missing payload".to_string()))?;
         Ok(data)
@@ -397,7 +475,7 @@ fn strip_nulls(value: &Value) -> Value {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub(crate) struct TencentRecord {
     pub record_type: String,
     pub value: String,
@@ -468,4 +546,200 @@ fn ensure_trailing_dot(value: String) -> String {
     } else {
         format!("{}.", value)
     }
+}
+
+fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
+    for r in records {
+        if r.as_type() != expected {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected.as_str(),
+                r.as_type().as_str(),
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn reject_tlsa(record_type: DnsRecordType) -> crate::Result<()> {
+    if record_type == DnsRecordType::TLSA {
+        Err(Error::Api(
+            "TLSA records are not supported by TencentCloud DNSPod".to_string(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn build_rrset(records: Vec<DnsRecord>) -> crate::Result<Vec<TencentRecord>> {
+    records.into_iter().map(TencentRecord::try_from).collect()
+}
+
+fn record_matches(existing: &RecordListItem, desired: &TencentRecord) -> bool {
+    if existing.record_type != desired.record_type {
+        return false;
+    }
+    if !values_equivalent(&existing.record_type, &existing.value, &desired.value) {
+        return false;
+    }
+    if existing.record_type == "MX" && existing.mx != desired.priority {
+        return false;
+    }
+    true
+}
+
+fn values_equivalent(record_type: &str, a: &str, b: &str) -> bool {
+    match record_type {
+        "CNAME" | "NS" | "MX" => normalize_host(a) == normalize_host(b),
+        "SRV" => normalize_srv(a) == normalize_srv(b),
+        _ => a == b,
+    }
+}
+
+fn normalize_host(value: &str) -> String {
+    value.trim_end_matches('.').to_ascii_lowercase()
+}
+
+fn normalize_srv(value: &str) -> String {
+    let mut parts = value.split_whitespace();
+    let priority = parts.next().unwrap_or("");
+    let weight = parts.next().unwrap_or("");
+    let port = parts.next().unwrap_or("");
+    let target = parts.next().unwrap_or("");
+    format!(
+        "{} {} {} {}",
+        priority,
+        weight,
+        port,
+        normalize_host(target),
+    )
+}
+
+fn parse_record(record_type: DnsRecordType, item: &RecordListItem) -> crate::Result<DnsRecord> {
+    let value = item.value.as_str();
+    Ok(match record_type {
+        DnsRecordType::A => DnsRecord::A(value.parse().map_err(|e: AddrParseError| {
+            Error::Parse(format!("invalid A value '{value}': {e}"))
+        })?),
+        DnsRecordType::AAAA => DnsRecord::AAAA(value.parse().map_err(|e: AddrParseError| {
+            Error::Parse(format!("invalid AAAA value '{value}': {e}"))
+        })?),
+        DnsRecordType::CNAME => DnsRecord::CNAME(strip_trailing_dot(value)),
+        DnsRecordType::NS => DnsRecord::NS(strip_trailing_dot(value)),
+        DnsRecordType::MX => DnsRecord::MX(MXRecord {
+            exchange: strip_trailing_dot(value),
+            priority: item.mx.unwrap_or(0),
+        }),
+        DnsRecordType::TXT => DnsRecord::TXT(value.to_string()),
+        DnsRecordType::SRV => parse_srv(value)?,
+        DnsRecordType::CAA => parse_caa(value)?,
+        DnsRecordType::TLSA => {
+            return Err(Error::Api(
+                "TLSA records are not supported by TencentCloud DNSPod".to_string(),
+            ));
+        }
+    })
+}
+
+fn strip_trailing_dot(value: &str) -> String {
+    value.trim_end_matches('.').to_string()
+}
+
+fn parse_srv(value: &str) -> crate::Result<DnsRecord> {
+    let mut parts = value.split_whitespace();
+    let priority = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid SRV priority in '{value}': {e}")))?;
+    let weight = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid SRV weight in '{value}': {e}")))?;
+    let port = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid SRV port in '{value}': {e}")))?;
+    let target = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?;
+    Ok(DnsRecord::SRV(SRVRecord {
+        priority,
+        weight,
+        port,
+        target: strip_trailing_dot(target),
+    }))
+}
+
+fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
+    let mut parts = value.splitn(3, char::is_whitespace);
+    let flags: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid CAA value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid CAA flags in '{value}': {e}")))?;
+    let tag = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid CAA value '{value}'")))?
+        .to_ascii_lowercase();
+    let raw_value = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid CAA value '{value}'")))?
+        .trim();
+    let unquoted = raw_value
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .map(|s| s.replace("\\\"", "\""))
+        .unwrap_or_else(|| raw_value.to_string());
+
+    let issuer_critical = flags & 0x80 != 0;
+    match tag.as_str() {
+        "issue" => {
+            let (name, options) = parse_caa_kv(&unquoted);
+            Ok(DnsRecord::CAA(CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            }))
+        }
+        "issuewild" => {
+            let (name, options) = parse_caa_kv(&unquoted);
+            Ok(DnsRecord::CAA(CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            }))
+        }
+        "iodef" => Ok(DnsRecord::CAA(CAARecord::Iodef {
+            issuer_critical,
+            url: unquoted,
+        })),
+        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
+    }
+}
+
+fn parse_caa_kv(value: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name_part = parts.next().unwrap_or("").trim().to_string();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part)
+    };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
 }

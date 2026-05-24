@@ -11,10 +11,14 @@
 
 use crate::jwt::{ServiceAccount, create_jwt, exchange_jwt_for_token};
 use crate::utils::txt_chunks_to_text;
-use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, Result};
+use crate::{
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, Result, SRVRecord,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -175,103 +179,144 @@ impl GoogleCloudDnsProvider {
             .ok_or_else(|| Error::Api(format!("No matching managed zone for {}", name)))
     }
 
-    fn record_to_rrset(&self, name: &str, record: &DnsRecord, ttl: u32) -> GoogleRrset {
-        let rrdatas = match record {
-            DnsRecord::A(ip) => vec![ip.to_string()],
-            DnsRecord::AAAA(ip) => vec![ip.to_string()],
-            DnsRecord::CNAME(c) => vec![format_fqdn_data(c)],
-            DnsRecord::NS(ns) => vec![format_fqdn_data(ns)],
-            DnsRecord::MX(mx) => vec![format!(
-                "{} {}.",
-                mx.priority,
-                mx.exchange.trim_end_matches('.')
-            )],
-            DnsRecord::TXT(txt) => {
-                let mut rdata = String::new();
-                txt_chunks_to_text(&mut rdata, txt, " ");
-                vec![rdata]
-            }
-            DnsRecord::SRV(srv) => vec![format!(
-                "{} {} {} {}.",
-                srv.priority,
-                srv.weight,
-                srv.port,
-                srv.target.trim_end_matches('.')
-            )],
-            DnsRecord::TLSA(tlsa) => vec![tlsa.to_string()],
-            DnsRecord::CAA(caa) => {
-                let (flags, tag, value) = caa.clone().decompose();
-                vec![format!("{} {} \"{}\"", flags, tag, value)]
-            }
-        };
-
-        GoogleRrset {
-            name: format!("{}.", name.trim_end_matches('.')),
-            r#type: record.as_type().to_string(),
-            ttl,
-            rrdatas,
-        }
-    }
-
-    pub async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        record_type: DnsRecordType,
         ttl: u32,
+        records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        check_record_types(record_type, &records)?;
         let name = name.into_fqdn();
-        let zone = self.resolve_managed_zone(&name).await?;
-        let rrset = self.record_to_rrset(&name, &record, ttl);
-        let token = self.ensure_token().await?;
-
-        self.submit_change(
-            &zone,
-            &token,
-            GoogleChange {
-                additions: Some(vec![rrset]),
-                deletions: None,
-            },
-        )
-        .await
-    }
-
-    pub async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        _origin: impl IntoFqdn<'_>,
-    ) -> Result<()> {
-        let name = name.into_fqdn();
+        let fqdn = format!("{}.", name.trim_end_matches('.'));
         let zone = self.resolve_managed_zone(&name).await?;
         let token = self.ensure_token().await?;
-        let new_rrset = self.record_to_rrset(&name, &record, ttl);
         let existing = self
-            .fetch_existing_rrset(&zone, &token, &name, record.as_type())
+            .fetch_existing_rrset(&zone, &token, &name, record_type)
             .await?;
 
+        if records.is_empty() {
+            let Some(existing) = existing else {
+                return Ok(());
+            };
+            return self
+                .submit_change(
+                    &zone,
+                    &token,
+                    GoogleChange {
+                        additions: None,
+                        deletions: Some(vec![existing]),
+                    },
+                )
+                .await;
+        }
+
+        let rrdatas = build_rrdatas(&records);
+        let desired = GoogleRrset {
+            name: fqdn,
+            r#type: record_type.as_str().to_string(),
+            ttl,
+            rrdatas,
+        };
+
+        if let Some(ref current) = existing
+            && rrset_matches(current, &desired)
+        {
+            return Ok(());
+        }
+
         self.submit_change(
             &zone,
             &token,
             GoogleChange {
-                additions: Some(vec![new_rrset]),
+                additions: Some(vec![desired]),
                 deletions: existing.map(|rrset| vec![rrset]),
             },
         )
         .await
     }
 
-    pub async fn delete(
+    pub(crate) async fn add_to_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        _origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        _origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
         let name = name.into_fqdn();
+        let fqdn = format!("{}.", name.trim_end_matches('.'));
         let zone = self.resolve_managed_zone(&name).await?;
         let token = self.ensure_token().await?;
+        let existing = self
+            .fetch_existing_rrset(&zone, &token, &name, record_type)
+            .await?;
 
+        let new_rrdatas = build_rrdatas(&records);
+        let existing_rrdatas: Vec<String> = existing
+            .as_ref()
+            .and_then(|v| v.get("rrdatas").and_then(Value::as_array))
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mut union = existing_rrdatas.clone();
+        for entry in &new_rrdatas {
+            if !union.iter().any(|e| e == entry) {
+                union.push(entry.clone());
+            }
+        }
+
+        let existing_ttl = existing
+            .as_ref()
+            .and_then(|v| v.get("ttl").and_then(Value::as_u64))
+            .map(|t| t as u32);
+
+        if union == existing_rrdatas && existing_ttl == Some(ttl) {
+            return Ok(());
+        }
+
+        let desired = GoogleRrset {
+            name: fqdn,
+            r#type: record_type.as_str().to_string(),
+            ttl,
+            rrdatas: union,
+        };
+
+        self.submit_change(
+            &zone,
+            &token,
+            GoogleChange {
+                additions: Some(vec![desired]),
+                deletions: existing.map(|rrset| vec![rrset]),
+            },
+        )
+        .await
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        _origin: impl IntoFqdn<'_>,
+    ) -> Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let name = name.into_fqdn();
+        let fqdn = format!("{}.", name.trim_end_matches('.'));
+        let zone = self.resolve_managed_zone(&name).await?;
+        let token = self.ensure_token().await?;
         let Some(existing) = self
             .fetch_existing_rrset(&zone, &token, &name, record_type)
             .await?
@@ -279,15 +324,93 @@ impl GoogleCloudDnsProvider {
             return Ok(());
         };
 
+        let to_remove = build_rrdatas(&records);
+        let existing_rrdatas: Vec<String> = existing
+            .get("rrdatas")
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let filtered: Vec<String> = existing_rrdatas
+            .iter()
+            .filter(|e| !to_remove.iter().any(|r| r == *e))
+            .cloned()
+            .collect();
+
+        if filtered == existing_rrdatas {
+            return Ok(());
+        }
+
+        if filtered.is_empty() {
+            return self
+                .submit_change(
+                    &zone,
+                    &token,
+                    GoogleChange {
+                        additions: None,
+                        deletions: Some(vec![existing]),
+                    },
+                )
+                .await;
+        }
+
+        let existing_ttl = existing
+            .get("ttl")
+            .and_then(Value::as_u64)
+            .map(|t| t as u32)
+            .unwrap_or(0);
+
+        let desired = GoogleRrset {
+            name: fqdn,
+            r#type: record_type.as_str().to_string(),
+            ttl: existing_ttl,
+            rrdatas: filtered,
+        };
+
         self.submit_change(
             &zone,
             &token,
             GoogleChange {
-                additions: None,
+                additions: Some(vec![desired]),
                 deletions: Some(vec![existing]),
             },
         )
         .await
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        _origin: impl IntoFqdn<'_>,
+    ) -> Result<Vec<DnsRecord>> {
+        let name = name.into_fqdn();
+        let zone = self.resolve_managed_zone(&name).await?;
+        let token = self.ensure_token().await?;
+        let Some(existing) = self
+            .fetch_existing_rrset(&zone, &token, &name, record_type)
+            .await?
+        else {
+            return Ok(Vec::new());
+        };
+
+        let rrdatas = existing
+            .get("rrdatas")
+            .and_then(Value::as_array)
+            .ok_or_else(|| Error::Api("RRSet missing rrdatas field".into()))?;
+
+        let mut out = Vec::with_capacity(rrdatas.len());
+        for entry in rrdatas {
+            let text = entry
+                .as_str()
+                .ok_or_else(|| Error::Api("rrdatas entry is not a string".into()))?;
+            out.push(parse_rrdata(record_type, text)?);
+        }
+        Ok(out)
     }
 
     async fn fetch_existing_rrset(
@@ -465,21 +588,300 @@ impl Default for GoogleCloudDnsEndpoints {
 }
 
 fn record_type_to_string_static(rt: &DnsRecordType) -> &'static str {
-    match rt {
-        DnsRecordType::A => "A",
-        DnsRecordType::AAAA => "AAAA",
-        DnsRecordType::CNAME => "CNAME",
-        DnsRecordType::MX => "MX",
-        DnsRecordType::TXT => "TXT",
-        DnsRecordType::SRV => "SRV",
-        DnsRecordType::NS => "NS",
-        DnsRecordType::TLSA => "TLSA",
-        DnsRecordType::CAA => "CAA",
-    }
+    rt.as_str()
 }
 
 fn format_fqdn_data(value: &str) -> String {
     format!("{}.", value.trim_end_matches('.'))
+}
+
+fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> Result<()> {
+    for r in records {
+        if r.as_type() != expected {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected.as_str(),
+                r.as_type().as_str(),
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn build_rrdatas(records: &[DnsRecord]) -> Vec<String> {
+    records.iter().map(rrdata_for_record).collect()
+}
+
+fn rrdata_for_record(record: &DnsRecord) -> String {
+    match record {
+        DnsRecord::A(ip) => ip.to_string(),
+        DnsRecord::AAAA(ip) => ip.to_string(),
+        DnsRecord::CNAME(c) => format_fqdn_data(c),
+        DnsRecord::NS(ns) => format_fqdn_data(ns),
+        DnsRecord::MX(mx) => format!("{} {}.", mx.priority, mx.exchange.trim_end_matches('.')),
+        DnsRecord::TXT(txt) => {
+            let mut rdata = String::new();
+            txt_chunks_to_text(&mut rdata, txt, " ");
+            rdata
+        }
+        DnsRecord::SRV(srv) => format!(
+            "{} {} {} {}.",
+            srv.priority,
+            srv.weight,
+            srv.port,
+            srv.target.trim_end_matches('.')
+        ),
+        DnsRecord::TLSA(tlsa) => tlsa.to_string(),
+        DnsRecord::CAA(caa) => {
+            let (flags, tag, value) = caa.clone().decompose();
+            format!("{} {} \"{}\"", flags, tag, value)
+        }
+    }
+}
+
+fn rrset_matches(current: &Value, desired: &GoogleRrset) -> bool {
+    let current_name = current.get("name").and_then(Value::as_str).unwrap_or("");
+    let current_type = current.get("type").and_then(Value::as_str).unwrap_or("");
+    let current_ttl = current
+        .get("ttl")
+        .and_then(Value::as_u64)
+        .map(|t| t as u32)
+        .unwrap_or(0);
+    let current_rrdatas: Vec<&str> = current
+        .get("rrdatas")
+        .and_then(Value::as_array)
+        .map(|arr| arr.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+
+    current_name == desired.name
+        && current_type == desired.r#type
+        && current_ttl == desired.ttl
+        && current_rrdatas.len() == desired.rrdatas.len()
+        && current_rrdatas
+            .iter()
+            .zip(desired.rrdatas.iter())
+            .all(|(a, b)| *a == b.as_str())
+}
+
+fn parse_rrdata(record_type: DnsRecordType, text: &str) -> Result<DnsRecord> {
+    Ok(match record_type {
+        DnsRecordType::A => DnsRecord::A(
+            text.parse::<Ipv4Addr>()
+                .map_err(|e| Error::Parse(format!("Invalid A rrdata '{text}': {e}")))?,
+        ),
+        DnsRecordType::AAAA => DnsRecord::AAAA(
+            text.parse::<Ipv6Addr>()
+                .map_err(|e| Error::Parse(format!("Invalid AAAA rrdata '{text}': {e}")))?,
+        ),
+        DnsRecordType::CNAME => DnsRecord::CNAME(text.trim_end_matches('.').to_string()),
+        DnsRecordType::NS => DnsRecord::NS(text.trim_end_matches('.').to_string()),
+        DnsRecordType::MX => {
+            let (prio, exchange) = text
+                .split_once(' ')
+                .ok_or_else(|| Error::Parse(format!("Invalid MX rrdata '{text}'")))?;
+            let priority = prio
+                .parse::<u16>()
+                .map_err(|e| Error::Parse(format!("Invalid MX priority '{prio}': {e}")))?;
+            DnsRecord::MX(MXRecord {
+                priority,
+                exchange: exchange.trim().trim_end_matches('.').to_string(),
+            })
+        }
+        DnsRecordType::TXT => DnsRecord::TXT(parse_txt_rrdata(text)),
+        DnsRecordType::SRV => {
+            let mut parts = text.split_whitespace();
+            let priority = parts
+                .next()
+                .and_then(|p| p.parse::<u16>().ok())
+                .ok_or_else(|| Error::Parse(format!("Invalid SRV priority in '{text}'")))?;
+            let weight = parts
+                .next()
+                .and_then(|p| p.parse::<u16>().ok())
+                .ok_or_else(|| Error::Parse(format!("Invalid SRV weight in '{text}'")))?;
+            let port = parts
+                .next()
+                .and_then(|p| p.parse::<u16>().ok())
+                .ok_or_else(|| Error::Parse(format!("Invalid SRV port in '{text}'")))?;
+            let target = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("Invalid SRV target in '{text}'")))?;
+            DnsRecord::SRV(SRVRecord {
+                priority,
+                weight,
+                port,
+                target: target.trim_end_matches('.').to_string(),
+            })
+        }
+        DnsRecordType::TLSA => {
+            let mut parts = text.split_whitespace();
+            let usage = parts
+                .next()
+                .and_then(|p| p.parse::<u8>().ok())
+                .ok_or_else(|| Error::Parse(format!("Invalid TLSA usage in '{text}'")))?;
+            let selector = parts
+                .next()
+                .and_then(|p| p.parse::<u8>().ok())
+                .ok_or_else(|| Error::Parse(format!("Invalid TLSA selector in '{text}'")))?;
+            let matching = parts
+                .next()
+                .and_then(|p| p.parse::<u8>().ok())
+                .ok_or_else(|| Error::Parse(format!("Invalid TLSA matching in '{text}'")))?;
+            let hex = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("Invalid TLSA cert data in '{text}'")))?;
+            DnsRecord::TLSA(TLSARecord {
+                cert_usage: tlsa_cert_usage_from_u8(usage)?,
+                selector: tlsa_selector_from_u8(selector)?,
+                matching: tlsa_matching_from_u8(matching)?,
+                cert_data: decode_hex(hex)?,
+            })
+        }
+        DnsRecordType::CAA => parse_caa_rrdata(text)?,
+    })
+}
+
+fn parse_txt_rrdata(text: &str) -> String {
+    let mut out = String::new();
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'"' {
+            i += 1;
+            while i < bytes.len() && bytes[i] != b'"' {
+                if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                    out.push(bytes[i + 1] as char);
+                    i += 2;
+                } else {
+                    out.push(bytes[i] as char);
+                    i += 1;
+                }
+            }
+            if i < bytes.len() {
+                i += 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    if out.is_empty() {
+        text.to_string()
+    } else {
+        out
+    }
+}
+
+fn parse_caa_rrdata(text: &str) -> Result<DnsRecord> {
+    let mut parts = text.splitn(3, ' ');
+    let flags = parts
+        .next()
+        .and_then(|p| p.parse::<u8>().ok())
+        .ok_or_else(|| Error::Parse(format!("Invalid CAA flags in '{text}'")))?;
+    let tag = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("Invalid CAA tag in '{text}'")))?;
+    let value_raw = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("Invalid CAA value in '{text}'")))?;
+    let value = value_raw.trim();
+    let value = value
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(value)
+        .to_string();
+    let issuer_critical = flags & 0x80 != 0;
+
+    Ok(DnsRecord::CAA(match tag {
+        "issue" => {
+            let (name, options) = parse_caa_value(&value);
+            CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            }
+        }
+        "issuewild" => {
+            let (name, options) = parse_caa_value(&value);
+            CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            }
+        }
+        "iodef" => CAARecord::Iodef {
+            issuer_critical,
+            url: value,
+        },
+        other => {
+            return Err(Error::Parse(format!("unknown CAA tag: {other}")));
+        }
+    }))
+}
+
+fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name_part = parts.next().unwrap_or("").trim().to_string();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part)
+    };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
+}
+
+fn decode_hex(hex: &str) -> Result<Vec<u8>> {
+    if !hex.len().is_multiple_of(2) {
+        return Err(Error::Parse(format!("invalid hex string: {hex}")));
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| {
+            u8::from_str_radix(&hex[i..i + 2], 16)
+                .map_err(|e| Error::Parse(format!("invalid hex byte: {e}")))
+        })
+        .collect()
+}
+
+fn tlsa_cert_usage_from_u8(value: u8) -> Result<TlsaCertUsage> {
+    Ok(match value {
+        0 => TlsaCertUsage::PkixTa,
+        1 => TlsaCertUsage::PkixEe,
+        2 => TlsaCertUsage::DaneTa,
+        3 => TlsaCertUsage::DaneEe,
+        255 => TlsaCertUsage::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {value}"))),
+    })
+}
+
+fn tlsa_selector_from_u8(value: u8) -> Result<TlsaSelector> {
+    Ok(match value {
+        0 => TlsaSelector::Full,
+        1 => TlsaSelector::Spki,
+        255 => TlsaSelector::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA selector: {value}"))),
+    })
+}
+
+fn tlsa_matching_from_u8(value: u8) -> Result<TlsaMatching> {
+    Ok(match value {
+        0 => TlsaMatching::Raw,
+        1 => TlsaMatching::Sha256,
+        2 => TlsaMatching::Sha512,
+        255 => TlsaMatching::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
+    })
 }
 
 fn api_error_message(body: &str) -> String {

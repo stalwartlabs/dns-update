@@ -10,15 +10,17 @@
  */
 
 use crate::crypto::{hmac_sha256, sha256_digest};
+use crate::utils::txt_chunks_to_text;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, Result, SRVRecord,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue as DnsKeyValue, MXRecord,
+    Result, SRVRecord,
 };
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use chrono::Utc;
 use reqwest::Client;
 use reqwest::header::{HeaderMap, HeaderValue};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 const DEFAULT_API_BASE: &str = "/config-dns/v2";
@@ -103,56 +105,41 @@ impl EdgeDnsProvider {
         format!("{}://{}{}", self.scheme, self.host, self.base_path)
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        record_type: DnsRecordType,
         ttl: u32,
+        records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        check_record_types(record_type, &records)?;
         let name = name.into_name().to_ascii_lowercase();
         let zone = origin.into_name().to_ascii_lowercase();
         if zone.is_empty() {
             return Err(Error::Api("edgedns: origin zone is required".to_string()));
         }
-        let representation = EdgeDnsRecord::try_from(&record)?;
-        let body = RecordBody {
-            name: &name,
-            record_type: &representation.record_type,
-            ttl,
-            rdata: representation.rdata,
-        };
-        let path = self.record_path(&zone, &name, &representation.record_type);
+        let type_str = edgedns_record_type(record_type)?;
+        let path = self.record_path(&zone, &name, type_str);
         let url = format!("{}{}", self.base_url(), path);
-        let payload = serde_json::to_string(&body)
-            .map_err(|e| Error::Serialize(format!("edgedns: {e}")))?;
-        self.send("POST", &url, Some(&payload)).await?;
-        Ok(())
-    }
 
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> Result<()> {
-        let name = name.into_name().to_ascii_lowercase();
-        let zone = origin.into_name().to_ascii_lowercase();
-        if zone.is_empty() {
-            return Err(Error::Api("edgedns: origin zone is required".to_string()));
+        if records.is_empty() {
+            match self.send("DELETE", &url, None).await {
+                Ok(_) => return Ok(()),
+                Err(Error::NotFound) => return Ok(()),
+                Err(e) => return Err(e),
+            }
         }
-        let representation = EdgeDnsRecord::try_from(&record)?;
+
+        let rdata = build_rdata(record_type, &records)?;
         let body = RecordBody {
             name: &name,
-            record_type: &representation.record_type,
+            record_type: type_str,
             ttl,
-            rdata: representation.rdata,
+            rdata,
         };
-        let path = self.record_path(&zone, &name, &representation.record_type);
-        let url = format!("{}{}", self.base_url(), path);
-        let payload = serde_json::to_string(&body)
-            .map_err(|e| Error::Serialize(format!("edgedns: {e}")))?;
+        let payload =
+            serde_json::to_string(&body).map_err(|e| Error::Serialize(format!("edgedns: {e}")))?;
         match self.send("PUT", &url, Some(&payload)).await {
             Ok(_) => Ok(()),
             Err(Error::NotFound) => {
@@ -163,12 +150,18 @@ impl EdgeDnsProvider {
         }
     }
 
-    pub(crate) async fn delete(
+    pub(crate) async fn add_to_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
         let name = name.into_name().to_ascii_lowercase();
         let zone = origin.into_name().to_ascii_lowercase();
         if zone.is_empty() {
@@ -177,11 +170,127 @@ impl EdgeDnsProvider {
         let type_str = edgedns_record_type(record_type)?;
         let path = self.record_path(&zone, &name, type_str);
         let url = format!("{}{}", self.base_url(), path);
-        match self.send("DELETE", &url, None).await {
+
+        let current = self.fetch_rdata(&url).await?;
+        let desired = build_rdata(record_type, &records)?;
+        let mut merged = current;
+        for entry in desired {
+            if !merged.iter().any(|existing| existing == &entry) {
+                merged.push(entry);
+            }
+        }
+
+        let body = RecordBody {
+            name: &name,
+            record_type: type_str,
+            ttl,
+            rdata: merged,
+        };
+        let payload =
+            serde_json::to_string(&body).map_err(|e| Error::Serialize(format!("edgedns: {e}")))?;
+        match self.send("PUT", &url, Some(&payload)).await {
             Ok(_) => Ok(()),
-            Err(Error::NotFound) => Ok(()),
+            Err(Error::NotFound) => {
+                self.send("POST", &url, Some(&payload)).await?;
+                Ok(())
+            }
             Err(e) => Err(e),
         }
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let name = name.into_name().to_ascii_lowercase();
+        let zone = origin.into_name().to_ascii_lowercase();
+        if zone.is_empty() {
+            return Err(Error::Api("edgedns: origin zone is required".to_string()));
+        }
+        let type_str = edgedns_record_type(record_type)?;
+        let path = self.record_path(&zone, &name, type_str);
+        let url = format!("{}{}", self.base_url(), path);
+
+        let current = self.fetch_rrset(&url).await?;
+        let Some(existing) = current else {
+            return Ok(());
+        };
+        let to_remove = build_rdata(record_type, &records)?;
+        let remaining: Vec<String> = existing
+            .rdata
+            .into_iter()
+            .filter(|entry| !to_remove.iter().any(|drop| drop == entry))
+            .collect();
+
+        if remaining.is_empty() {
+            match self.send("DELETE", &url, None).await {
+                Ok(_) => return Ok(()),
+                Err(Error::NotFound) => return Ok(()),
+                Err(e) => return Err(e),
+            }
+        }
+
+        let body = RecordBody {
+            name: &name,
+            record_type: type_str,
+            ttl: existing.ttl,
+            rdata: remaining,
+        };
+        let payload =
+            serde_json::to_string(&body).map_err(|e| Error::Serialize(format!("edgedns: {e}")))?;
+        self.send("PUT", &url, Some(&payload)).await?;
+        Ok(())
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> Result<Vec<DnsRecord>> {
+        let name = name.into_name().to_ascii_lowercase();
+        let zone = origin.into_name().to_ascii_lowercase();
+        if zone.is_empty() {
+            return Err(Error::Api("edgedns: origin zone is required".to_string()));
+        }
+        let type_str = edgedns_record_type(record_type)?;
+        let path = self.record_path(&zone, &name, type_str);
+        let url = format!("{}{}", self.base_url(), path);
+        let Some(current) = self.fetch_rrset(&url).await? else {
+            return Ok(Vec::new());
+        };
+        let mut out = Vec::with_capacity(current.rdata.len());
+        for entry in current.rdata {
+            out.push(rdata_to_record(record_type, &entry)?);
+        }
+        Ok(out)
+    }
+
+    async fn fetch_rrset(&self, url: &str) -> Result<Option<RecordResponse>> {
+        match self.send("GET", url, None).await {
+            Ok(text) => {
+                let parsed: RecordResponse = serde_json::from_str(&text)
+                    .map_err(|e| Error::Parse(format!("edgedns rrset parse: {e}")))?;
+                Ok(Some(parsed))
+            }
+            Err(Error::NotFound) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn fetch_rdata(&self, url: &str) -> Result<Vec<String>> {
+        Ok(self
+            .fetch_rrset(url)
+            .await?
+            .map(|r| r.rdata)
+            .unwrap_or_default())
     }
 
     fn record_path(&self, zone: &str, name: &str, record_type: &str) -> String {
@@ -242,10 +351,12 @@ impl EdgeDnsProvider {
             auth_without_signature
         );
 
-        let signing_key =
-            BASE64_STANDARD.encode(hmac_sha256(self.client_secret.as_bytes(), timestamp.as_bytes()));
-        let signature = BASE64_STANDARD
-            .encode(hmac_sha256(signing_key.as_bytes(), data_to_sign.as_bytes()));
+        let signing_key = BASE64_STANDARD.encode(hmac_sha256(
+            self.client_secret.as_bytes(),
+            timestamp.as_bytes(),
+        ));
+        let signature =
+            BASE64_STANDARD.encode(hmac_sha256(signing_key.as_bytes(), data_to_sign.as_bytes()));
         let authorization = format!("{}signature={}", auth_without_signature, signature);
 
         let mut headers = HeaderMap::new();
@@ -254,10 +365,7 @@ impl EdgeDnsProvider {
             HeaderValue::from_str(&authorization)
                 .map_err(|e| Error::Client(format!("edgedns auth: {e}")))?,
         );
-        headers.insert(
-            "Accept",
-            HeaderValue::from_static("application/json"),
-        );
+        headers.insert("Accept", HeaderValue::from_static("application/json"));
         if let Some(asw) = &self.account_switch_key {
             headers.insert(
                 "X-AccountSwitchKey",
@@ -266,10 +374,7 @@ impl EdgeDnsProvider {
             );
         }
         if body.is_some() {
-            headers.insert(
-                "Content-Type",
-                HeaderValue::from_static("application/json"),
-            );
+            headers.insert("Content-Type", HeaderValue::from_static("application/json"));
         }
 
         let request_method = method
@@ -391,7 +496,11 @@ impl TryFrom<&DnsRecord> for EdgeDnsRecord {
             },
             DnsRecord::TXT(value) => Self {
                 record_type: "TXT".to_string(),
-                rdata: vec![format!("\"{}\"", value.replace('"', "\\\""))],
+                rdata: vec![{
+                    let mut out = String::new();
+                    txt_chunks_to_text(&mut out, value, " ");
+                    out
+                }],
             },
             DnsRecord::SRV(SRVRecord {
                 target,
@@ -465,3 +574,195 @@ fn ensure_dot(value: &str) -> String {
     }
 }
 
+#[derive(Deserialize)]
+struct RecordResponse {
+    #[serde(default)]
+    ttl: u32,
+    #[serde(default)]
+    rdata: Vec<String>,
+}
+
+fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> Result<()> {
+    for r in records {
+        if r.as_type() != expected {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected.as_str(),
+                r.as_type().as_str(),
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn build_rdata(record_type: DnsRecordType, records: &[DnsRecord]) -> Result<Vec<String>> {
+    let mut out = Vec::with_capacity(records.len());
+    for record in records {
+        let representation = EdgeDnsRecord::try_from(record)?;
+        let expected_type = edgedns_record_type(record_type)?;
+        if representation.record_type != expected_type {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected_type, representation.record_type,
+            )));
+        }
+        for entry in representation.rdata {
+            out.push(entry);
+        }
+    }
+    Ok(out)
+}
+
+fn rdata_to_record(record_type: DnsRecordType, entry: &str) -> Result<DnsRecord> {
+    match record_type {
+        DnsRecordType::A => entry
+            .parse()
+            .map(DnsRecord::A)
+            .map_err(|e| Error::Parse(format!("edgedns A rdata: {e}"))),
+        DnsRecordType::AAAA => entry
+            .parse()
+            .map(DnsRecord::AAAA)
+            .map_err(|e| Error::Parse(format!("edgedns AAAA rdata: {e}"))),
+        DnsRecordType::CNAME => Ok(DnsRecord::CNAME(strip_trailing_dot(entry))),
+        DnsRecordType::NS => Ok(DnsRecord::NS(strip_trailing_dot(entry))),
+        DnsRecordType::MX => {
+            let (priority_str, exchange) = entry
+                .split_once(' ')
+                .ok_or_else(|| Error::Parse(format!("edgedns MX rdata: {entry}")))?;
+            let priority: u16 = priority_str
+                .parse()
+                .map_err(|e| Error::Parse(format!("edgedns MX priority: {e}")))?;
+            Ok(DnsRecord::MX(MXRecord {
+                priority,
+                exchange: strip_trailing_dot(exchange.trim()),
+            }))
+        }
+        DnsRecordType::TXT => Ok(DnsRecord::TXT(parse_txt_rdata(entry))),
+        DnsRecordType::SRV => {
+            let mut parts = entry.split_whitespace();
+            let priority: u16 = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("edgedns SRV rdata: {entry}")))?
+                .parse()
+                .map_err(|e| Error::Parse(format!("edgedns SRV priority: {e}")))?;
+            let weight: u16 = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("edgedns SRV rdata: {entry}")))?
+                .parse()
+                .map_err(|e| Error::Parse(format!("edgedns SRV weight: {e}")))?;
+            let port: u16 = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("edgedns SRV rdata: {entry}")))?
+                .parse()
+                .map_err(|e| Error::Parse(format!("edgedns SRV port: {e}")))?;
+            let target = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("edgedns SRV rdata: {entry}")))?;
+            Ok(DnsRecord::SRV(SRVRecord {
+                priority,
+                weight,
+                port,
+                target: strip_trailing_dot(target),
+            }))
+        }
+        DnsRecordType::CAA => parse_caa_rdata(entry),
+        DnsRecordType::TLSA => Err(Error::Api(
+            "TLSA records are not supported by EdgeDNS".to_string(),
+        )),
+    }
+}
+
+fn strip_trailing_dot(value: &str) -> String {
+    value.trim_end_matches('.').to_string()
+}
+
+fn parse_txt_rdata(entry: &str) -> String {
+    let trimmed = entry.trim();
+    let mut out = String::new();
+    let chars = trimmed.chars().peekable();
+    let mut in_quotes = false;
+    let mut escape = false;
+    for ch in chars {
+        if escape {
+            out.push(ch);
+            escape = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_quotes => escape = true,
+            '"' => in_quotes = !in_quotes,
+            _ if in_quotes => out.push(ch),
+            _ => {}
+        }
+    }
+    if out.is_empty() {
+        trimmed.to_string()
+    } else {
+        out
+    }
+}
+
+fn parse_caa_rdata(entry: &str) -> Result<DnsRecord> {
+    let mut parts = entry.splitn(3, ' ');
+    let flags_str = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("edgedns CAA rdata: {entry}")))?;
+    let tag = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("edgedns CAA rdata: {entry}")))?;
+    let value_quoted = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("edgedns CAA rdata: {entry}")))?;
+    let flags: u8 = flags_str
+        .parse()
+        .map_err(|e| Error::Parse(format!("edgedns CAA flags: {e}")))?;
+    let issuer_critical = flags & 128 != 0;
+    let value = value_quoted
+        .trim()
+        .trim_start_matches('"')
+        .trim_end_matches('"')
+        .to_string();
+    match tag {
+        "issue" => {
+            let (name, options) = parse_caa_value(&value);
+            Ok(DnsRecord::CAA(CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            }))
+        }
+        "issuewild" => {
+            let (name, options) = parse_caa_value(&value);
+            Ok(DnsRecord::CAA(CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            }))
+        }
+        "iodef" => Ok(DnsRecord::CAA(CAARecord::Iodef {
+            issuer_critical,
+            url: value,
+        })),
+        other => Err(Error::Api(format!("edgedns CAA tag unsupported: {other}"))),
+    }
+}
+
+fn parse_caa_value(value: &str) -> (Option<String>, Vec<DnsKeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let head = parts.next().unwrap_or("").to_string();
+    let name = if head.is_empty() { None } else { Some(head) };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => DnsKeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => DnsKeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
+}

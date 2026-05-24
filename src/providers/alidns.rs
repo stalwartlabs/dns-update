@@ -15,7 +15,7 @@ use chrono::Utc;
 use serde::Deserialize;
 
 use crate::{
-    DnsRecord, DnsRecordType, Error, IntoFqdn,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
     crypto::{hmac_sha256, sha256_digest},
     http::HttpClientBuilder,
     utils::strip_origin_from_name,
@@ -88,6 +88,12 @@ struct Record {
     rr: String,
     #[serde(rename = "Type")]
     record_type: String,
+    #[serde(rename = "Value", default)]
+    value: String,
+    #[serde(rename = "TTL", default)]
+    ttl: u32,
+    #[serde(rename = "Priority", default)]
+    priority: Option<u16>,
 }
 
 impl AlidnsProvider {
@@ -115,7 +121,9 @@ impl AlidnsProvider {
             access_key: access_key.as_ref().to_string(),
             secret_key: secret_key.as_ref().to_string(),
             security_token: security_token.map(|s| s.as_ref().to_string()),
-            line: line.map(|l| l.as_ref().to_string()).filter(|s| !s.is_empty()),
+            line: line
+                .map(|l| l.as_ref().to_string())
+                .filter(|s| !s.is_empty()),
             endpoint: format!("https://{}", host),
             host,
         })
@@ -136,89 +144,212 @@ impl AlidnsProvider {
         }
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name();
-        let origin = origin.into_name();
-        let zone = self.find_zone(&origin).await?;
-        let rr = strip_origin_from_name(&name, &zone, Some("@"));
-        let record_repr = AlidnsRecord::try_from(record)?;
-
-        let mut params = vec![
-            ("Action".to_string(), "AddDomainRecord".to_string()),
-            ("DomainName".to_string(), zone),
-            ("RR".to_string(), rr),
-            ("Type".to_string(), record_repr.record_type),
-            ("Value".to_string(), record_repr.value),
-            ("TTL".to_string(), ttl.to_string()),
-        ];
-        if let Some(line) = &self.line {
-            params.push(("Line".to_string(), line.clone()));
-        }
-        if let Some(priority) = record_repr.priority {
-            params.push(("Priority".to_string(), priority.to_string()));
-        }
-
-        self.send(params).await.map(|_| ())
-    }
-
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name();
-        let origin = origin.into_name();
-        let zone = self.find_zone(&origin).await?;
-        let rr = strip_origin_from_name(&name, &zone, Some("@"));
-        let record_repr = AlidnsRecord::try_from(record)?;
-        let record_id = self
-            .find_record_id(&zone, &rr, &record_repr.record_type)
-            .await?;
-
-        let mut params = vec![
-            ("Action".to_string(), "UpdateDomainRecord".to_string()),
-            ("RecordId".to_string(), record_id),
-            ("RR".to_string(), rr),
-            ("Type".to_string(), record_repr.record_type),
-            ("Value".to_string(), record_repr.value),
-            ("TTL".to_string(), ttl.to_string()),
-        ];
-        if let Some(line) = &self.line {
-            params.push(("Line".to_string(), line.clone()));
-        }
-        if let Some(priority) = record_repr.priority {
-            params.push(("Priority".to_string(), priority.to_string()));
-        }
-
-        self.send(params).await.map(|_| ())
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
         let name = name.into_name();
         let origin = origin.into_name();
         let zone = self.find_zone(&origin).await?;
         let rr = strip_origin_from_name(&name, &zone, Some("@"));
         let type_str = record_type.as_str();
-        let record_id = self.find_record_id(&zone, &rr, type_str).await?;
 
+        if records.is_empty() {
+            return self.delete_sub_domain_records(&zone, &rr, type_str).await;
+        }
+
+        let desired = build_alidns_records(records)?;
+        let mut existing = self.list_rrset_records(&zone, &rr, type_str).await?;
+
+        let mut to_add: Vec<&AlidnsRecord> = Vec::new();
+        for d in &desired {
+            if let Some(idx) = existing
+                .iter()
+                .position(|c| c.value == d.value && c.priority == d.priority)
+            {
+                existing.swap_remove(idx);
+            } else {
+                to_add.push(d);
+            }
+        }
+
+        for stale in &existing {
+            self.delete_domain_record(&stale.record_id).await?;
+        }
+        for d in to_add {
+            self.add_domain_record(&zone, &rr, ttl, d).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let name = name.into_name();
+        let origin = origin.into_name();
+        let zone = self.find_zone(&origin).await?;
+        let rr = strip_origin_from_name(&name, &zone, Some("@"));
+        let type_str = record_type.as_str();
+
+        let desired = build_alidns_records(records)?;
+        let existing = self.list_rrset_records(&zone, &rr, type_str).await?;
+
+        for d in &desired {
+            if existing
+                .iter()
+                .any(|c| c.value == d.value && c.priority == d.priority)
+            {
+                continue;
+            }
+            self.add_domain_record(&zone, &rr, ttl, d).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let name = name.into_name();
+        let origin = origin.into_name();
+        let zone = self.find_zone(&origin).await?;
+        let rr = strip_origin_from_name(&name, &zone, Some("@"));
+        let type_str = record_type.as_str();
+
+        let to_remove = build_alidns_records(records)?;
+        let existing = self.list_rrset_records(&zone, &rr, type_str).await?;
+
+        for d in &to_remove {
+            if let Some(entry) = existing
+                .iter()
+                .find(|c| c.value == d.value && c.priority == d.priority)
+            {
+                self.delete_domain_record(&entry.record_id).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        let name = name.into_name();
+        let origin = origin.into_name();
+        let zone = self.find_zone(&origin).await?;
+        let rr = strip_origin_from_name(&name, &zone, Some("@"));
+        let type_str = record_type.as_str();
+        let listed = self.list_rrset_records(&zone, &rr, type_str).await?;
+        let mut out = Vec::with_capacity(listed.len());
+        for r in listed {
+            out.push(record_from_listed(record_type, &r)?);
+        }
+        Ok(out)
+    }
+
+    async fn list_rrset_records(
+        &self,
+        zone: &str,
+        rr: &str,
+        record_type: &str,
+    ) -> crate::Result<Vec<ListedRrsetRecord>> {
+        let params = vec![
+            ("Action".to_string(), "DescribeDomainRecords".to_string()),
+            ("DomainName".to_string(), zone.to_string()),
+            ("RRKeyWord".to_string(), rr.to_string()),
+            ("TypeKeyWord".to_string(), record_type.to_string()),
+            ("SearchMode".to_string(), "EXACT".to_string()),
+            ("PageSize".to_string(), "500".to_string()),
+        ];
+        let raw = self.send(params).await?;
+        let resp: DescribeDomainRecordsResponse = serde_json::from_str(&raw).map_err(|err| {
+            Error::Serialize(format!(
+                "Failed to parse Alidns DescribeDomainRecords: {err}"
+            ))
+        })?;
+        let records = resp
+            .domain_records
+            .map(|f| f.record)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|r| r.rr == rr && r.record_type == record_type)
+            .map(|r| ListedRrsetRecord {
+                record_id: r.record_id,
+                value: r.value,
+                ttl: r.ttl,
+                priority: r.priority,
+            })
+            .collect();
+        Ok(records)
+    }
+
+    async fn add_domain_record(
+        &self,
+        zone: &str,
+        rr: &str,
+        ttl: u32,
+        record: &AlidnsRecord,
+    ) -> crate::Result<()> {
+        let mut params = vec![
+            ("Action".to_string(), "AddDomainRecord".to_string()),
+            ("DomainName".to_string(), zone.to_string()),
+            ("RR".to_string(), rr.to_string()),
+            ("Type".to_string(), record.record_type.clone()),
+            ("Value".to_string(), record.value.clone()),
+            ("TTL".to_string(), ttl.to_string()),
+        ];
+        if let Some(line) = &self.line {
+            params.push(("Line".to_string(), line.clone()));
+        }
+        if let Some(priority) = record.priority {
+            params.push(("Priority".to_string(), priority.to_string()));
+        }
+        self.send(params).await.map(|_| ())
+    }
+
+    async fn delete_domain_record(&self, record_id: &str) -> crate::Result<()> {
         let params = vec![
             ("Action".to_string(), "DeleteDomainRecord".to_string()),
-            ("RecordId".to_string(), record_id),
+            ("RecordId".to_string(), record_id.to_string()),
         ];
+        self.send(params).await.map(|_| ())
+    }
 
+    async fn delete_sub_domain_records(
+        &self,
+        zone: &str,
+        rr: &str,
+        record_type: &str,
+    ) -> crate::Result<()> {
+        let params = vec![
+            ("Action".to_string(), "DeleteSubDomainRecords".to_string()),
+            ("DomainName".to_string(), zone.to_string()),
+            ("RR".to_string(), rr.to_string()),
+            ("Type".to_string(), record_type.to_string()),
+        ];
         self.send(params).await.map(|_| ())
     }
 
@@ -259,41 +390,6 @@ impl AlidnsProvider {
             .ok_or_else(|| Error::Api(format!("Alidns zone not found for {}", zone_name)))
     }
 
-    async fn find_record_id(
-        &self,
-        zone: &str,
-        rr: &str,
-        record_type: &str,
-    ) -> crate::Result<String> {
-        let params = vec![
-            ("Action".to_string(), "DescribeDomainRecords".to_string()),
-            ("DomainName".to_string(), zone.to_string()),
-            ("PageSize".to_string(), "500".to_string()),
-            ("RRKeyWord".to_string(), rr.to_string()),
-            ("TypeKeyWord".to_string(), record_type.to_string()),
-        ];
-        let raw = self.send(params).await?;
-        let resp: DescribeDomainRecordsResponse = serde_json::from_str(&raw).map_err(|err| {
-            Error::Serialize(format!(
-                "Failed to parse Alidns DescribeDomainRecords: {err}"
-            ))
-        })?;
-        resp.domain_records
-            .and_then(|field| {
-                field
-                    .record
-                    .into_iter()
-                    .find(|r| r.rr == rr && r.record_type == record_type)
-                    .map(|r| r.record_id)
-            })
-            .ok_or_else(|| {
-                Error::Api(format!(
-                    "DNS Record {} of type {} not found",
-                    rr, record_type
-                ))
-            })
-    }
-
     async fn send(&self, mut params: Vec<(String, String)>) -> crate::Result<String> {
         params.push(("Version".to_string(), API_VERSION.to_string()));
         params.sort_by(|a, b| a.0.cmp(&b.0));
@@ -306,7 +402,11 @@ impl AlidnsProvider {
 
         let now = Utc::now();
         let amz_date = now.format("%Y-%m-%dT%H:%M:%SZ").to_string();
-        let nonce = format!("{}{}", now.timestamp_nanos_opt().unwrap_or(0), now.timestamp_subsec_nanos());
+        let nonce = format!(
+            "{}{}",
+            now.timestamp_nanos_opt().unwrap_or(0),
+            now.timestamp_subsec_nanos()
+        );
 
         let payload_hash = hex::encode(sha256_digest(b""));
 
@@ -398,6 +498,157 @@ fn percent_encode(input: &str) -> String {
         }
     }
     out
+}
+
+#[derive(Debug, Clone)]
+struct ListedRrsetRecord {
+    record_id: String,
+    value: String,
+    #[allow(dead_code)]
+    ttl: u32,
+    priority: Option<u16>,
+}
+
+fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
+    for r in records {
+        if r.as_type() != expected {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected.as_str(),
+                r.as_type().as_str(),
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn build_alidns_records(records: Vec<DnsRecord>) -> crate::Result<Vec<AlidnsRecord>> {
+    let mut out = Vec::with_capacity(records.len());
+    for r in records {
+        out.push(AlidnsRecord::try_from(r)?);
+    }
+    Ok(out)
+}
+
+fn record_from_listed(
+    record_type: DnsRecordType,
+    listed: &ListedRrsetRecord,
+) -> crate::Result<DnsRecord> {
+    match record_type {
+        DnsRecordType::A => {
+            listed.value.parse().map(DnsRecord::A).map_err(|e| {
+                Error::Parse(format!("Invalid A record value '{}': {}", listed.value, e))
+            })
+        }
+        DnsRecordType::AAAA => listed.value.parse().map(DnsRecord::AAAA).map_err(|e| {
+            Error::Parse(format!(
+                "Invalid AAAA record value '{}': {}",
+                listed.value, e
+            ))
+        }),
+        DnsRecordType::CNAME => Ok(DnsRecord::CNAME(listed.value.clone())),
+        DnsRecordType::NS => Ok(DnsRecord::NS(listed.value.clone())),
+        DnsRecordType::TXT => Ok(DnsRecord::TXT(listed.value.clone())),
+        DnsRecordType::MX => Ok(DnsRecord::MX(MXRecord {
+            exchange: listed.value.clone(),
+            priority: listed.priority.unwrap_or(0),
+        })),
+        DnsRecordType::SRV => parse_srv_value(&listed.value).map(DnsRecord::SRV),
+        DnsRecordType::CAA => parse_caa_value(&listed.value).map(DnsRecord::CAA),
+        DnsRecordType::TLSA => Err(Error::Api(
+            "TLSA records are not supported by Alibaba Cloud DNS".to_string(),
+        )),
+    }
+}
+
+fn parse_srv_value(value: &str) -> crate::Result<SRVRecord> {
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    if parts.len() != 4 {
+        return Err(Error::Parse(format!(
+            "Invalid SRV record value '{}': expected 4 fields",
+            value
+        )));
+    }
+    let priority = parts[0]
+        .parse::<u16>()
+        .map_err(|e| Error::Parse(format!("Invalid SRV priority '{}': {}", parts[0], e)))?;
+    let weight = parts[1]
+        .parse::<u16>()
+        .map_err(|e| Error::Parse(format!("Invalid SRV weight '{}': {}", parts[1], e)))?;
+    let port = parts[2]
+        .parse::<u16>()
+        .map_err(|e| Error::Parse(format!("Invalid SRV port '{}': {}", parts[2], e)))?;
+    Ok(SRVRecord {
+        priority,
+        weight,
+        port,
+        target: parts[3].to_string(),
+    })
+}
+
+fn parse_caa_value(value: &str) -> crate::Result<CAARecord> {
+    let trimmed = value.trim();
+    let (flags_str, rest) = trimmed.split_once(char::is_whitespace).ok_or_else(|| {
+        Error::Parse(format!("Invalid CAA record value '{}': missing tag", value))
+    })?;
+    let flags: u8 = flags_str
+        .parse()
+        .map_err(|e| Error::Parse(format!("Invalid CAA flags '{}': {}", flags_str, e)))?;
+    let rest = rest.trim_start();
+    let (tag, raw_value) = rest.split_once(char::is_whitespace).ok_or_else(|| {
+        Error::Parse(format!(
+            "Invalid CAA record value '{}': missing value",
+            value
+        ))
+    })?;
+    let raw_value = raw_value.trim();
+    let unquoted = raw_value
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(raw_value);
+    let issuer_critical = flags & 0x80 != 0;
+    match tag.to_ascii_lowercase().as_str() {
+        "issue" => Ok(CAARecord::Issue {
+            issuer_critical,
+            name: parse_caa_name_and_options(unquoted).0,
+            options: parse_caa_name_and_options(unquoted).1,
+        }),
+        "issuewild" => Ok(CAARecord::IssueWild {
+            issuer_critical,
+            name: parse_caa_name_and_options(unquoted).0,
+            options: parse_caa_name_and_options(unquoted).1,
+        }),
+        "iodef" => Ok(CAARecord::Iodef {
+            issuer_critical,
+            url: unquoted.to_string(),
+        }),
+        other => Err(Error::Parse(format!("Unknown CAA tag '{}'", other))),
+    }
+}
+
+fn parse_caa_name_and_options(unquoted: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = unquoted.split(';');
+    let name_part = parts.next().unwrap_or("").trim();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part.to_string())
+    };
+    let options = parts
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
 }
 
 #[derive(Debug)]

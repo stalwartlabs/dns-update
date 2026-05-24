@@ -11,9 +11,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        DnsRecord, DnsRecordType, DnsUpdater, Error, providers::ddnss::DdnssProvider,
-    };
+    use crate::{DnsRecord, DnsRecordType, DnsUpdater, Error, providers::ddnss::DdnssProvider};
     use mockito::Matcher;
     use std::time::Duration;
 
@@ -28,7 +26,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_txt_record_success() {
+    async fn test_set_rrset_empty_clears_via_txtm_2() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/")
+            .match_query(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("key".into(), "test_key".into()),
+                Matcher::UrlEncoded("host".into(), "host.example.com".into()),
+                Matcher::UrlEncoded("txtm".into(), "2".into()),
+            ]))
+            .with_status(200)
+            .with_body(ok_body())
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .set_rrset(
+                "host.example.com",
+                DnsRecordType::TXT,
+                300,
+                Vec::new(),
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "set_rrset empty returned: {result:?}");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_single_txt_overwrites_via_txtm_1() {
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/")
@@ -44,104 +70,98 @@ mod tests {
 
         let provider = setup_provider(server.url());
         let result = provider
-            .create(
+            .set_rrset(
                 "host.example.com",
-                DnsRecord::TXT("challenge".to_string()),
+                DnsRecordType::TXT,
                 300,
+                vec![DnsRecord::TXT("challenge".into())],
                 "example.com",
             )
             .await;
-        assert!(result.is_ok(), "create returned: {result:?}");
+        assert!(result.is_ok(), "set_rrset single returned: {result:?}");
         mock.assert();
     }
 
     #[tokio::test]
-    async fn test_delete_uses_txtm_2() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("GET", "/")
-            .match_query(Matcher::AllOf(vec![
-                Matcher::UrlEncoded("key".into(), "test_key".into()),
-                Matcher::UrlEncoded("host".into(), "host.example.com".into()),
-                Matcher::UrlEncoded("txtm".into(), "2".into()),
-            ]))
-            .with_status(200)
-            .with_body(ok_body())
-            .create();
-
-        let provider = setup_provider(server.url());
-        let result = provider
-            .delete("host.example.com", "example.com", DnsRecordType::TXT)
-            .await;
-        assert!(result.is_ok(), "delete returned: {result:?}");
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_update_creates_again() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("GET", "/")
-            .match_query(Matcher::AllOf(vec![
-                Matcher::UrlEncoded("txt".into(), "second".into()),
-                Matcher::UrlEncoded("txtm".into(), "1".into()),
-            ]))
-            .with_status(200)
-            .with_body(ok_body())
-            .create();
-
-        let provider = setup_provider(server.url());
-        let result = provider
-            .update(
-                "host.example.com",
-                DnsRecord::TXT("second".to_string()),
-                300,
-                "example.com",
-            )
-            .await;
-        assert!(result.is_ok(), "update returned: {result:?}");
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_failure_response_maps_to_api_error() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("GET", "/")
-            .match_query(Matcher::Any)
-            .with_status(200)
-            .with_body("<html><body>Authorization failed.</body></html>")
-            .create();
-        let provider = setup_provider(server.url());
-        let result = provider
-            .create(
-                "host.example.com",
-                DnsRecord::TXT("x".into()),
-                300,
-                "example.com",
-            )
-            .await;
-        assert!(
-            matches!(result, Err(Error::Api(_))),
-            "expected Error::Api, got {result:?}"
-        );
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_non_txt_record_rejected() {
+    async fn test_set_rrset_multi_txt_rejected() {
         let provider = DdnssProvider::new("test_key", Some(Duration::from_secs(1))).unwrap();
         let result = provider
-            .create(
+            .set_rrset(
                 "host.example.com",
-                DnsRecord::A("1.2.3.4".parse().unwrap()),
+                DnsRecordType::TXT,
                 300,
+                vec![DnsRecord::TXT("a".into()), DnsRecord::TXT("b".into())],
                 "example.com",
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(_))),
-            "expected Error::Api, got {result:?}"
+            matches!(result, Err(Error::Api(ref msg)) if msg.contains("one TXT record")),
+            "expected Error::Api about one TXT record, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_non_txt_type_rejected() {
+        let provider = DdnssProvider::new("test_key", Some(Duration::from_secs(1))).unwrap();
+        let result = provider
+            .set_rrset(
+                "host.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.2.3.4".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+        assert!(
+            matches!(result, Err(Error::Api(ref msg)) if msg.contains("Only TXT")),
+            "expected Error::Api about TXT only, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_add_to_rrset_rejected() {
+        let provider = DdnssProvider::new("test_key", Some(Duration::from_secs(1))).unwrap();
+        let result = provider
+            .add_to_rrset(
+                "host.example.com",
+                DnsRecordType::TXT,
+                300,
+                vec![DnsRecord::TXT("x".into())],
+                "example.com",
+            )
+            .await;
+        assert!(
+            matches!(result, Err(Error::Api(ref msg)) if msg.contains("add_to_rrset")),
+            "expected Error::Api about add_to_rrset, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_remove_from_rrset_rejected() {
+        let provider = DdnssProvider::new("test_key", Some(Duration::from_secs(1))).unwrap();
+        let result = provider
+            .remove_from_rrset(
+                "host.example.com",
+                DnsRecordType::TXT,
+                vec![DnsRecord::TXT("x".into())],
+                "example.com",
+            )
+            .await;
+        assert!(
+            matches!(result, Err(Error::Api(ref msg)) if msg.contains("remove_from_rrset")),
+            "expected Error::Api about remove_from_rrset, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_rrset_rejected() {
+        let provider = DdnssProvider::new("test_key", Some(Duration::from_secs(1))).unwrap();
+        let result = provider
+            .list_rrset("host.example.com", DnsRecordType::TXT, "example.com")
+            .await;
+        assert!(
+            matches!(result, Err(Error::Api(ref msg)) if msg.contains("listing")),
+            "expected Error::Api about listing, got {result:?}"
         );
     }
 
@@ -154,11 +174,19 @@ mod tests {
         assert!(!host.is_empty(), "Set DDNSS_HOST");
 
         let updater = DnsUpdater::new_ddnss(key, Some(Duration::from_secs(30))).unwrap();
-        let create_result = updater
-            .create(&host, DnsRecord::TXT("test".into()), 300, &host)
+        let set_result = updater
+            .set_rrset(
+                &host,
+                DnsRecordType::TXT,
+                300,
+                vec![DnsRecord::TXT("test".into())],
+                &host,
+            )
             .await;
-        assert!(create_result.is_ok(), "create failed: {create_result:?}");
-        let delete_result = updater.delete(&host, &host, DnsRecordType::TXT).await;
-        assert!(delete_result.is_ok(), "delete failed: {delete_result:?}");
+        assert!(set_result.is_ok(), "set_rrset failed: {set_result:?}");
+        let clear_result = updater
+            .set_rrset(&host, DnsRecordType::TXT, 300, Vec::new(), &host)
+            .await;
+        assert!(clear_result.is_ok(), "clear failed: {clear_result:?}");
     }
 }

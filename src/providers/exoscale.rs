@@ -10,8 +10,8 @@
  */
 
 use crate::{
-    DnsRecord, DnsRecordType, Error, IntoFqdn, crypto::hmac_sha256, http::HttpClientBuilder,
-    utils::strip_origin_from_name,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    crypto::hmac_sha256, http::HttpClientBuilder, utils::strip_origin_from_name,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use chrono::Utc;
@@ -56,18 +56,28 @@ struct DomainList {
     dns_domains: Vec<DnsDomain>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct DnsRecordResponse {
     id: String,
+    #[serde(default)]
     name: String,
     #[serde(rename = "type", default)]
     record_type: String,
+    #[serde(default)]
+    content: String,
+    #[serde(default)]
+    priority: Option<u16>,
 }
 
 #[derive(Deserialize, Debug)]
 struct RecordList {
     #[serde(rename = "dns-domain-records", default)]
     records: Vec<DnsRecordResponse>,
+}
+
+struct ListedRecord {
+    id: String,
+    record: DnsRecord,
 }
 
 impl ExoscaleProvider {
@@ -120,18 +130,166 @@ impl ExoscaleProvider {
         request.with_header("Authorization", auth)
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        record_type: DnsRecordType,
         ttl: u32,
+        records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
         let name = name.into_name();
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
         let zone_id = self.obtain_zone_id(&domain).await?;
-        let body = build_create_record(&subdomain, &record, ttl)?;
+        let existing = self.list_at(&zone_id, &subdomain, record_type).await?;
+
+        let mut to_keep: Vec<bool> = vec![false; existing.len()];
+        let mut to_add: Vec<DnsRecord> = Vec::new();
+        for desired in records {
+            if let Some(idx) = existing
+                .iter()
+                .enumerate()
+                .position(|(i, r)| !to_keep[i] && r.record == desired)
+            {
+                to_keep[idx] = true;
+            } else {
+                to_add.push(desired);
+            }
+        }
+
+        for (i, entry) in existing.iter().enumerate() {
+            if !to_keep[i] {
+                self.delete_record(&zone_id, &entry.id).await?;
+            }
+        }
+        for desired in to_add {
+            self.post_record(&zone_id, &subdomain, &desired, ttl)
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        check_record_types(record_type, &records)?;
+        let name = name.into_name();
+        let domain = origin.into_name();
+        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
+        let zone_id = self.obtain_zone_id(&domain).await?;
+        let existing = self.list_at(&zone_id, &subdomain, record_type).await?;
+        for desired in records {
+            if existing.iter().any(|r| r.record == desired) {
+                continue;
+            }
+            self.post_record(&zone_id, &subdomain, &desired, ttl)
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        check_record_types(record_type, &records)?;
+        let name = name.into_name();
+        let domain = origin.into_name();
+        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
+        let zone_id = self.obtain_zone_id(&domain).await?;
+        let existing = self.list_at(&zone_id, &subdomain, record_type).await?;
+        let mut deleted: Vec<bool> = vec![false; existing.len()];
+        for desired in records {
+            if let Some(idx) = existing
+                .iter()
+                .enumerate()
+                .position(|(i, r)| !deleted[i] && r.record == desired)
+            {
+                deleted[idx] = true;
+                self.delete_record(&zone_id, &existing[idx].id).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        let name = name.into_name();
+        let domain = origin.into_name();
+        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
+        let zone_id = self.obtain_zone_id(&domain).await?;
+        let existing = self.list_at(&zone_id, &subdomain, record_type).await?;
+        Ok(existing.into_iter().map(|r| r.record).collect())
+    }
+
+    async fn obtain_zone_id(&self, domain: &str) -> crate::Result<String> {
+        let path = "/dns-domain";
+        let url = format!("{}{}", self.endpoint, path);
+        let response: DomainList = self
+            .signed(self.client.get(url), Method::GET, path, "")
+            .send()
+            .await?;
+        response
+            .dns_domains
+            .into_iter()
+            .find(|d| d.unicode_name == domain || d.name.as_deref() == Some(domain))
+            .map(|d| d.id)
+            .ok_or_else(|| Error::Api(format!("Exoscale domain {} not found", domain)))
+    }
+
+    async fn list_at(
+        &self,
+        zone_id: &str,
+        subdomain: &str,
+        record_type: DnsRecordType,
+    ) -> crate::Result<Vec<ListedRecord>> {
+        let path = format!("/dns-domain/{}/record", zone_id);
+        let url = format!("{}{}", self.endpoint, path);
+        let response: RecordList = self
+            .signed(self.client.get(url), Method::GET, &path, "")
+            .send()
+            .await?;
+        let type_str = record_type.as_str();
+        let mut out = Vec::new();
+        for raw in response.records {
+            if raw.name != subdomain || raw.record_type != type_str {
+                continue;
+            }
+            if let Some(record) = parse_listed_record(&raw)? {
+                out.push(ListedRecord { id: raw.id, record });
+            }
+        }
+        Ok(out)
+    }
+
+    async fn post_record(
+        &self,
+        zone_id: &str,
+        subdomain: &str,
+        record: &DnsRecord,
+        ttl: u32,
+    ) -> crate::Result<()> {
+        let body = build_create_record(subdomain, record, ttl)?;
         let body_str = serde_json::to_string(&body)
             .map_err(|e| Error::Serialize(format!("body serialization failed: {e}")))?;
         let path = format!("/dns-domain/{}/record", zone_id);
@@ -147,58 +305,7 @@ impl ExoscaleProvider {
         .map(|_| ())
     }
 
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name();
-        let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
-        let zone_id = self.obtain_zone_id(&domain).await?;
-        let record_type = record.as_type();
-        let record_id = self
-            .find_record_id(&zone_id, &subdomain, record_type)
-            .await?
-            .ok_or_else(|| {
-                Error::Api(format!(
-                    "Exoscale record {} of type {} not found",
-                    subdomain,
-                    record_type.as_str()
-                ))
-            })?;
-        let body = build_create_record(&subdomain, &record, ttl)?;
-        let body_str = serde_json::to_string(&body)
-            .map_err(|e| Error::Serialize(format!("body serialization failed: {e}")))?;
-        let path = format!("/dns-domain/{}/record/{}", zone_id, record_id);
-        let url = format!("{}{}", self.endpoint, path);
-        self.signed(
-            self.client.put(url).with_raw_body(body_str.clone()),
-            Method::PUT,
-            &path,
-            &body_str,
-        )
-        .send_raw()
-        .await
-        .map(|_| ())
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
-        record_type: DnsRecordType,
-    ) -> crate::Result<()> {
-        let name = name.into_name();
-        let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
-        let zone_id = self.obtain_zone_id(&domain).await?;
-        let record_id = self
-            .find_record_id(&zone_id, &subdomain, record_type)
-            .await?
-            .ok_or(Error::NotFound)?;
+    async fn delete_record(&self, zone_id: &str, record_id: &str) -> crate::Result<()> {
         let path = format!("/dns-domain/{}/record/{}", zone_id, record_id);
         let url = format!("{}{}", self.endpoint, path);
         self.signed(self.client.delete(url), Method::DELETE, &path, "")
@@ -206,43 +313,24 @@ impl ExoscaleProvider {
             .await
             .map(|_| ())
     }
+}
 
-    async fn obtain_zone_id(&self, domain: &str) -> crate::Result<String> {
-        let path = "/dns-domain";
-        let url = format!("{}{}", self.endpoint, path);
-        let response: DomainList = self
-            .signed(self.client.get(url), Method::GET, path, "")
-            .send()
-            .await?;
-        response
-            .dns_domains
-            .into_iter()
-            .find(|d| {
-                d.unicode_name == domain || d.name.as_deref() == Some(domain)
-            })
-            .map(|d| d.id)
-            .ok_or_else(|| Error::Api(format!("Exoscale domain {} not found", domain)))
+fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
+    if expected == DnsRecordType::TLSA {
+        return Err(Error::Api(
+            "TLSA records are not supported by Exoscale".into(),
+        ));
     }
-
-    async fn find_record_id(
-        &self,
-        zone_id: &str,
-        subdomain: &str,
-        record_type: DnsRecordType,
-    ) -> crate::Result<Option<String>> {
-        let path = format!("/dns-domain/{}/record", zone_id);
-        let url = format!("{}{}", self.endpoint, path);
-        let response: RecordList = self
-            .signed(self.client.get(url), Method::GET, &path, "")
-            .send()
-            .await?;
-        let type_str = record_type.as_str();
-        Ok(response
-            .records
-            .into_iter()
-            .find(|r| r.name == subdomain && r.record_type == type_str)
-            .map(|r| r.id))
+    for record in records {
+        if record.as_type() != expected {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected.as_str(),
+                record.as_type().as_str(),
+            )));
+        }
     }
+    Ok(())
 }
 
 fn build_create_record<'a>(
@@ -300,4 +388,120 @@ fn dns_type(record: &DnsRecord) -> crate::Result<&'static str> {
             "TLSA records are not supported by Exoscale".into(),
         )),
     }
+}
+
+fn parse_listed_record(raw: &DnsRecordResponse) -> crate::Result<Option<DnsRecord>> {
+    let priority = raw.priority.unwrap_or(0);
+    Ok(Some(match raw.record_type.as_str() {
+        "A" => match raw.content.parse() {
+            Ok(addr) => DnsRecord::A(addr),
+            Err(_) => return Ok(None),
+        },
+        "AAAA" => match raw.content.parse() {
+            Ok(addr) => DnsRecord::AAAA(addr),
+            Err(_) => return Ok(None),
+        },
+        "CNAME" => DnsRecord::CNAME(raw.content.clone()),
+        "NS" => DnsRecord::NS(raw.content.clone()),
+        "MX" => DnsRecord::MX(MXRecord {
+            exchange: raw.content.clone(),
+            priority,
+        }),
+        "TXT" => DnsRecord::TXT(unquote_txt(&raw.content)),
+        "SRV" => match parse_srv_content(&raw.content, priority) {
+            Some(srv) => DnsRecord::SRV(srv),
+            None => return Ok(None),
+        },
+        "CAA" => match parse_caa_content(&raw.content) {
+            Some(caa) => DnsRecord::CAA(caa),
+            None => return Ok(None),
+        },
+        _ => return Ok(None),
+    }))
+}
+
+fn unquote_txt(content: &str) -> String {
+    let trimmed = content
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(content);
+    trimmed.replace("\\\"", "\"")
+}
+
+fn parse_srv_content(content: &str, priority: u16) -> Option<SRVRecord> {
+    let mut parts = content.split_whitespace();
+    let weight: u16 = parts.next()?.parse().ok()?;
+    let port: u16 = parts.next()?.parse().ok()?;
+    let target = parts.next()?.to_string();
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(SRVRecord {
+        priority,
+        weight,
+        port,
+        target,
+    })
+}
+
+fn parse_caa_content(content: &str) -> Option<CAARecord> {
+    let trimmed = content.trim();
+    let mut iter = trimmed.splitn(3, char::is_whitespace);
+    let flags_str = iter.next()?;
+    let tag = iter.next()?;
+    let value_part = iter.next()?.trim();
+    let flags: u8 = flags_str.parse().ok()?;
+    let issuer_critical = flags & 0x80 != 0;
+    let raw_value = value_part
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(value_part)
+        .to_string();
+    Some(match tag {
+        "issue" => {
+            let (name, options) = parse_caa_value(&raw_value);
+            CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            }
+        }
+        "issuewild" => {
+            let (name, options) = parse_caa_value(&raw_value);
+            CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            }
+        }
+        "iodef" => CAARecord::Iodef {
+            issuer_critical,
+            url: raw_value,
+        },
+        _ => return None,
+    })
+}
+
+fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name_part = parts.next().unwrap_or("").trim().to_string();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part)
+    };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
 }

@@ -11,7 +11,8 @@
 
 use crate::utils::txt_chunks;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue as DnsKeyValue, MXRecord,
+    SRVRecord, TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
 };
 use hickory_net::NetError;
 use hickory_net::client::{Client, ClientHandle};
@@ -26,7 +27,7 @@ use hickory_proto::rr::rdata::caa::KeyValue;
 use hickory_proto::rr::rdata::tlsa::{CertUsage, Matching, Selector};
 use hickory_proto::rr::rdata::tsig::TsigAlgorithm;
 use hickory_proto::rr::rdata::{A, AAAA, CAA, CNAME, MX, NS, SRV, TLSA, TXT};
-use hickory_proto::rr::{Name, RData, Record, RecordSet, RecordType, TSigner};
+use hickory_proto::rr::{DNSClass, Name, RData, Record, RecordSet, RecordType, TSigner};
 use std::net::{AddrParseError, SocketAddr};
 
 #[derive(Clone)]
@@ -166,6 +167,161 @@ impl Rfc2136Provider {
         }
         Ok(())
     }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        _origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        let owner = Name::from_str_relaxed(name.into_name().as_ref())?;
+        let rtype: RecordType = record_type.into();
+
+        let mut client = self.connect().await?;
+        let response = client.query(owner.clone(), DNSClass::IN, rtype).await?;
+        if response.response_code != ResponseCode::NoError
+            && response.response_code != ResponseCode::NXDomain
+        {
+            return Err(Error::Response(response.response_code.to_string()));
+        }
+
+        let mut out = Vec::new();
+        for record in response.answers.iter() {
+            if record.record_type() != rtype || record.name != owner {
+                continue;
+            }
+            out.push(rdata_to_dns_record(&record.data)?);
+        }
+        Ok(out)
+    }
+}
+
+fn rdata_to_dns_record(data: &RData) -> crate::Result<DnsRecord> {
+    Ok(match data {
+        RData::A(a) => DnsRecord::A(a.0),
+        RData::AAAA(aaaa) => DnsRecord::AAAA(aaaa.0),
+        RData::CNAME(cname) => DnsRecord::CNAME(strip_trailing_dot(&cname.0.to_utf8())),
+        RData::NS(ns) => DnsRecord::NS(strip_trailing_dot(&ns.0.to_utf8())),
+        RData::MX(mx) => DnsRecord::MX(MXRecord {
+            priority: mx.preference,
+            exchange: strip_trailing_dot(&mx.exchange.to_utf8()),
+        }),
+        RData::TXT(txt) => {
+            let combined: String = txt
+                .txt_data
+                .iter()
+                .map(|chunk| String::from_utf8_lossy(chunk).into_owned())
+                .collect();
+            DnsRecord::TXT(combined)
+        }
+        RData::SRV(srv) => DnsRecord::SRV(SRVRecord {
+            priority: srv.priority,
+            weight: srv.weight,
+            port: srv.port,
+            target: strip_trailing_dot(&srv.target.to_utf8()),
+        }),
+        RData::TLSA(tlsa) => DnsRecord::TLSA(TLSARecord {
+            cert_usage: tlsa_cert_usage_from(tlsa.cert_usage)?,
+            selector: tlsa_selector_from(tlsa.selector)?,
+            matching: tlsa_matching_from(tlsa.matching)?,
+            cert_data: tlsa.cert_data.clone(),
+        }),
+        RData::CAA(caa) => DnsRecord::CAA(caa_to_record(caa)?),
+        other => {
+            return Err(Error::Api(format!(
+                "Unsupported RData type for list_rrset: {}",
+                other.record_type()
+            )));
+        }
+    })
+}
+
+fn strip_trailing_dot(s: &str) -> String {
+    s.strip_suffix('.').unwrap_or(s).to_string()
+}
+
+fn caa_to_record(caa: &CAA) -> crate::Result<CAARecord> {
+    let issuer_critical = caa.issuer_critical;
+    let value_text = String::from_utf8_lossy(&caa.value).into_owned();
+    match caa.tag.as_str() {
+        "issue" => {
+            let (name, options) = parse_caa_value(&value_text);
+            Ok(CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "issuewild" => {
+            let (name, options) = parse_caa_value(&value_text);
+            Ok(CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "iodef" => Ok(CAARecord::Iodef {
+            issuer_critical,
+            url: value_text,
+        }),
+        other => Err(Error::Api(format!(
+            "Unsupported CAA tag for list_rrset: {other}"
+        ))),
+    }
+}
+
+fn parse_caa_value(value: &str) -> (Option<String>, Vec<DnsKeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name_part = parts.next().unwrap_or("").trim().to_string();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part)
+    };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => DnsKeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => DnsKeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
+}
+
+fn tlsa_cert_usage_from(usage: CertUsage) -> crate::Result<TlsaCertUsage> {
+    Ok(match usage {
+        CertUsage::PkixTa => TlsaCertUsage::PkixTa,
+        CertUsage::PkixEe => TlsaCertUsage::PkixEe,
+        CertUsage::DaneTa => TlsaCertUsage::DaneTa,
+        CertUsage::DaneEe => TlsaCertUsage::DaneEe,
+        CertUsage::Private => TlsaCertUsage::Private,
+        other => return Err(Error::Api(format!("Unknown TLSA cert usage: {other:?}"))),
+    })
+}
+
+fn tlsa_selector_from(sel: Selector) -> crate::Result<TlsaSelector> {
+    Ok(match sel {
+        Selector::Full => TlsaSelector::Full,
+        Selector::Spki => TlsaSelector::Spki,
+        Selector::Private => TlsaSelector::Private,
+        other => return Err(Error::Api(format!("Unknown TLSA selector: {other:?}"))),
+    })
+}
+
+fn tlsa_matching_from(m: Matching) -> crate::Result<TlsaMatching> {
+    Ok(match m {
+        Matching::Raw => TlsaMatching::Raw,
+        Matching::Sha256 => TlsaMatching::Sha256,
+        Matching::Sha512 => TlsaMatching::Sha512,
+        Matching::Private => TlsaMatching::Private,
+        other => return Err(Error::Api(format!("Unknown TLSA matching: {other:?}"))),
+    })
 }
 
 fn build_rrset(

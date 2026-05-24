@@ -9,9 +9,13 @@
  * except according to those terms.
  */
 
-use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder};
+use crate::{
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    utils::txt_chunks_to_text,
+};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{net::IpAddr, time::Duration};
 
 const DEFAULT_ENDPOINT: &str = "https://secure.hosting.de/api/dns/v1/json";
 
@@ -109,12 +113,9 @@ struct ZoneResponse {
 }
 
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
-struct Zone {
+struct RecordsResponse {
     #[serde(default)]
-    records: Vec<DnsRecordPayload>,
-    #[serde(rename = "zoneConfig", default)]
-    zone_config: Option<ZoneConfig>,
+    data: Vec<DnsRecordPayload>,
 }
 
 impl HostingDeProvider {
@@ -135,75 +136,149 @@ impl HostingDeProvider {
         }
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        record_type: DnsRecordType,
         ttl: u32,
+        records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
         let zone_config = self.fetch_zone_config(&domain).await?;
-        let payload = record_to_payload(&record, &name, ttl)?;
+        let existing = self
+            .fetch_records_at(&zone_config.id, &name, record_type.as_str())
+            .await?;
+
+        let desired: Vec<DnsRecordPayload> = records
+            .iter()
+            .map(|r| record_to_payload(r, &name, ttl))
+            .collect::<crate::Result<_>>()?;
+
+        let mut existing_pool = existing;
+        let mut to_add: Vec<DnsRecordPayload> = Vec::new();
+
+        for want in desired {
+            if let Some(pos) = existing_pool.iter().position(|cur| same_rdata(cur, &want)) {
+                existing_pool.swap_remove(pos);
+            } else {
+                to_add.push(want);
+            }
+        }
+
+        if to_add.is_empty() && existing_pool.is_empty() {
+            return Ok(());
+        }
 
         let request = ZoneUpdateRequest {
             auth_token: &self.api_key,
             zone_config,
-            records_to_add: vec![payload],
+            records_to_add: to_add,
+            records_to_delete: existing_pool,
+        };
+        self.zone_update(request).await
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let name = name.into_name().into_owned();
+        let domain = origin.into_name().into_owned();
+        let zone_config = self.fetch_zone_config(&domain).await?;
+        let existing = self
+            .fetch_records_at(&zone_config.id, &name, record_type.as_str())
+            .await?;
+
+        let mut to_add: Vec<DnsRecordPayload> = Vec::new();
+        for record in &records {
+            let payload = record_to_payload(record, &name, ttl)?;
+            if existing.iter().any(|cur| same_rdata(cur, &payload)) {
+                continue;
+            }
+            to_add.push(payload);
+        }
+
+        if to_add.is_empty() {
+            return Ok(());
+        }
+
+        let request = ZoneUpdateRequest {
+            auth_token: &self.api_key,
+            zone_config,
+            records_to_add: to_add,
             records_to_delete: vec![],
         };
-
         self.zone_update(request).await
     }
 
-    pub(crate) async fn update(
+    pub(crate) async fn remove_from_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name().into_owned();
-        let domain = origin.into_name().into_owned();
-        let zone_config = self.fetch_zone_config(&domain).await?;
-        let new_record = record_to_payload(&record, &name, ttl)?;
-        let record_type = record.as_type();
-        let existing = self
-            .fetch_existing_record(&zone_config.id, &name, record_type.as_str())
-            .await?;
-
-        let request = ZoneUpdateRequest {
-            auth_token: &self.api_key,
-            zone_config,
-            records_to_add: vec![new_record],
-            records_to_delete: vec![existing],
-        };
-
-        self.zone_update(request).await
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
         let zone_config = self.fetch_zone_config(&domain).await?;
         let existing = self
-            .fetch_existing_record(&zone_config.id, &name, record_type.as_str())
+            .fetch_records_at(&zone_config.id, &name, record_type.as_str())
             .await?;
+
+        let targets: Vec<DnsRecordPayload> = records
+            .iter()
+            .map(|r| record_to_payload(r, &name, 0))
+            .collect::<crate::Result<_>>()?;
+
+        let to_delete: Vec<DnsRecordPayload> = existing
+            .into_iter()
+            .filter(|cur| targets.iter().any(|t| same_rdata(cur, t)))
+            .collect();
+
+        if to_delete.is_empty() {
+            return Ok(());
+        }
 
         let request = ZoneUpdateRequest {
             auth_token: &self.api_key,
             zone_config,
             records_to_add: vec![],
-            records_to_delete: vec![existing],
+            records_to_delete: to_delete,
         };
-
         self.zone_update(request).await
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        let name = name.into_name().into_owned();
+        let domain = origin.into_name().into_owned();
+        let zone_config = self.fetch_zone_config(&domain).await?;
+        let existing = self
+            .fetch_records_at(&zone_config.id, &name, record_type.as_str())
+            .await?;
+        existing
+            .into_iter()
+            .map(|p| payload_to_record(&p))
+            .collect()
     }
 
     async fn fetch_zone_config(&self, zone_name: &str) -> crate::Result<ZoneConfig> {
@@ -231,10 +306,7 @@ impl HostingDeProvider {
             )));
         }
 
-        let mut zones = response
-            .response
-            .map(|r| r.data)
-            .unwrap_or_default();
+        let mut zones = response.response.map(|r| r.data).unwrap_or_default();
 
         if zones.is_empty() {
             return Err(Error::Api(format!(
@@ -254,12 +326,12 @@ impl HostingDeProvider {
         Ok(config)
     }
 
-    async fn fetch_existing_record(
+    async fn fetch_records_at(
         &self,
         zone_id: &str,
         name: &str,
         record_type: &str,
-    ) -> crate::Result<DnsRecordPayload> {
+    ) -> crate::Result<Vec<DnsRecordPayload>> {
         let body = serde_json::json!({
             "authToken": &self.api_key,
             "filter": {
@@ -270,7 +342,7 @@ impl HostingDeProvider {
                     { "field": "recordType", "value": record_type },
                 ],
             },
-            "limit": 25,
+            "limit": 100,
             "page": 1,
         });
 
@@ -288,22 +360,12 @@ impl HostingDeProvider {
             )));
         }
 
-        let records = response
-            .response
-            .map(|r| r.data)
-            .unwrap_or_default();
+        let records = response.response.map(|r| r.data).unwrap_or_default();
 
-        records
+        Ok(records
             .into_iter()
-            .find(|r| {
-                r.name == name && r.record_type.eq_ignore_ascii_case(record_type)
-            })
-            .ok_or_else(|| {
-                Error::Api(format!(
-                    "DNS Record {} of type {} not found in hosting.de zone",
-                    name, record_type
-                ))
-            })
+            .filter(|r| r.name == name && r.record_type.eq_ignore_ascii_case(record_type))
+            .collect())
     }
 
     async fn zone_update(&self, request: ZoneUpdateRequest<'_>) -> crate::Result<()> {
@@ -325,10 +387,23 @@ impl HostingDeProvider {
     }
 }
 
-#[derive(Deserialize, Debug)]
-struct RecordsResponse {
-    #[serde(default)]
-    data: Vec<DnsRecordPayload>,
+fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
+    for r in records {
+        if r.as_type() != expected {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected.as_str(),
+                r.as_type().as_str(),
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn same_rdata(a: &DnsRecordPayload, b: &DnsRecordPayload) -> bool {
+    a.record_type.eq_ignore_ascii_case(&b.record_type)
+        && a.content == b.content
+        && a.priority == b.priority
 }
 
 fn record_to_payload(record: &DnsRecord, name: &str, ttl: u32) -> crate::Result<DnsRecordPayload> {
@@ -338,7 +413,11 @@ fn record_to_payload(record: &DnsRecord, name: &str, ttl: u32) -> crate::Result<
         DnsRecord::CNAME(value) => ("CNAME", value.clone(), 0),
         DnsRecord::NS(value) => ("NS", value.clone(), 0),
         DnsRecord::MX(mx) => ("MX", mx.exchange.clone(), mx.priority),
-        DnsRecord::TXT(value) => ("TXT", format!("\"{}\"", value.replace('"', "\\\"")), 0),
+        DnsRecord::TXT(value) => {
+            let mut out = String::new();
+            txt_chunks_to_text(&mut out, value, " ");
+            ("TXT", out, 0)
+        }
         DnsRecord::SRV(srv) => (
             "SRV",
             format!("{} {} {}", srv.weight, srv.port, srv.target),
@@ -352,11 +431,7 @@ fn record_to_payload(record: &DnsRecord, name: &str, ttl: u32) -> crate::Result<
                 0,
             )
         }
-        DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
-                "TLSA records are not supported by hosting.de".to_string(),
-            ));
-        }
+        DnsRecord::TLSA(tlsa) => ("TLSA", format!("{}", tlsa), 0),
     };
 
     Ok(DnsRecordPayload {
@@ -366,5 +441,232 @@ fn record_to_payload(record: &DnsRecord, name: &str, ttl: u32) -> crate::Result<
         content,
         ttl,
         priority,
+    })
+}
+
+fn payload_to_record(payload: &DnsRecordPayload) -> crate::Result<DnsRecord> {
+    match payload.record_type.to_ascii_uppercase().as_str() {
+        "A" => {
+            let addr: IpAddr = payload
+                .content
+                .parse()
+                .map_err(|e| Error::Parse(format!("invalid A content {}: {e}", payload.content)))?;
+            match addr {
+                IpAddr::V4(v4) => Ok(DnsRecord::A(v4)),
+                IpAddr::V6(_) => Err(Error::Parse(format!(
+                    "expected IPv4 for A record, got {}",
+                    payload.content
+                ))),
+            }
+        }
+        "AAAA" => {
+            let addr: IpAddr = payload.content.parse().map_err(|e| {
+                Error::Parse(format!("invalid AAAA content {}: {e}", payload.content))
+            })?;
+            match addr {
+                IpAddr::V6(v6) => Ok(DnsRecord::AAAA(v6)),
+                IpAddr::V4(_) => Err(Error::Parse(format!(
+                    "expected IPv6 for AAAA record, got {}",
+                    payload.content
+                ))),
+            }
+        }
+        "CNAME" => Ok(DnsRecord::CNAME(payload.content.clone())),
+        "NS" => Ok(DnsRecord::NS(payload.content.clone())),
+        "MX" => Ok(DnsRecord::MX(MXRecord {
+            exchange: payload.content.clone(),
+            priority: payload.priority,
+        })),
+        "TXT" => Ok(DnsRecord::TXT(unquote_txt(&payload.content))),
+        "SRV" => parse_srv(&payload.content, payload.priority).map(DnsRecord::SRV),
+        "CAA" => parse_caa(&payload.content).map(DnsRecord::CAA),
+        "TLSA" => parse_tlsa(&payload.content).map(DnsRecord::TLSA),
+        other => Err(Error::Parse(format!("unsupported record type: {other}"))),
+    }
+}
+
+fn unquote_txt(content: &str) -> String {
+    let mut out = String::with_capacity(content.len());
+    let mut chars = content.chars().peekable();
+    let mut in_quotes = false;
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' => {
+                if let Some(next) = chars.next() {
+                    out.push(next);
+                }
+            }
+            '"' => {
+                in_quotes = !in_quotes;
+            }
+            ' ' if !in_quotes => {}
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+fn parse_srv(content: &str, priority: u16) -> crate::Result<SRVRecord> {
+    let mut parts = content.split_ascii_whitespace();
+    let weight: u16 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV content: {content}")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid SRV weight: {e}")))?;
+    let port: u16 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV content: {content}")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid SRV port: {e}")))?;
+    let target = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV content: {content}")))?
+        .to_string();
+    Ok(SRVRecord {
+        priority,
+        weight,
+        port,
+        target,
+    })
+}
+
+fn parse_caa(content: &str) -> crate::Result<CAARecord> {
+    let mut parts = content.splitn(3, ' ');
+    let flags: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid CAA content: {content}")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid CAA flags: {e}")))?;
+    let tag = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid CAA content: {content}")))?;
+    let raw_value = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid CAA content: {content}")))?;
+    let value = strip_quotes(raw_value).replace("\\\"", "\"");
+    let issuer_critical = flags & 0x80 != 0;
+    match tag {
+        "issue" => {
+            let (name, options) = parse_caa_value(&value);
+            Ok(CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "issuewild" => {
+            let (name, options) = parse_caa_value(&value);
+            Ok(CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "iodef" => Ok(CAARecord::Iodef {
+            issuer_critical,
+            url: value,
+        }),
+        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
+    }
+}
+
+fn strip_quotes(s: &str) -> String {
+    s.strip_prefix('"')
+        .and_then(|t| t.strip_suffix('"'))
+        .unwrap_or(s)
+        .to_string()
+}
+
+fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name_part = parts.next().unwrap_or("").trim().to_string();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part)
+    };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
+}
+
+fn parse_tlsa(content: &str) -> crate::Result<TLSARecord> {
+    let mut parts = content.split_ascii_whitespace();
+    let usage: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA content: {content}")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid TLSA usage: {e}")))?;
+    let selector: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA content: {content}")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid TLSA selector: {e}")))?;
+    let matching: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA content: {content}")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid TLSA matching: {e}")))?;
+    let hex_bytes: String = parts.collect();
+    let cert_data = decode_hex(&hex_bytes)?;
+    Ok(TLSARecord {
+        cert_usage: tlsa_cert_usage_from_u8(usage)?,
+        selector: tlsa_selector_from_u8(selector)?,
+        matching: tlsa_matching_from_u8(matching)?,
+        cert_data,
+    })
+}
+
+fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
+    if !hex.len().is_multiple_of(2) {
+        return Err(Error::Parse(format!("invalid hex string: {hex}")));
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| {
+            u8::from_str_radix(&hex[i..i + 2], 16)
+                .map_err(|e| Error::Parse(format!("invalid hex byte: {e}")))
+        })
+        .collect()
+}
+
+fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
+    Ok(match value {
+        0 => TlsaCertUsage::PkixTa,
+        1 => TlsaCertUsage::PkixEe,
+        2 => TlsaCertUsage::DaneTa,
+        3 => TlsaCertUsage::DaneEe,
+        255 => TlsaCertUsage::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {value}"))),
+    })
+}
+
+fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
+    Ok(match value {
+        0 => TlsaSelector::Full,
+        1 => TlsaSelector::Spki,
+        255 => TlsaSelector::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA selector: {value}"))),
+    })
+}
+
+fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
+    Ok(match value {
+        0 => TlsaMatching::Raw,
+        1 => TlsaMatching::Sha256,
+        2 => TlsaMatching::Sha512,
+        255 => TlsaMatching::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
     })
 }

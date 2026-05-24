@@ -36,7 +36,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_txt_record_success() {
+    async fn set_rrset_empty_clears_txt() {
         let mut server = mockito::Server::new_async().await;
 
         let mock = server
@@ -47,97 +47,6 @@ mod tests {
                     "_acme-challenge.example.com".into(),
                 ),
                 mockito::Matcher::UrlEncoded("password".into(), "secret-token".into()),
-                mockito::Matcher::UrlEncoded("txt".into(), "token-value".into()),
-            ]))
-            .with_status(200)
-            .with_body("good 1.2.3.4")
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-
-        let result = provider
-            .create(
-                "_acme-challenge.example.com",
-                DnsRecord::TXT("token-value".to_string()),
-                300,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn create_non_txt_returns_error() {
-        let server = mockito::Server::new_async().await;
-        let provider = setup_provider(server.url().as_str());
-
-        let result = provider
-            .create(
-                "host.example.com",
-                DnsRecord::A("1.1.1.1".parse().unwrap()),
-                300,
-                "example.com",
-            )
-            .await;
-
-        assert!(matches!(result, Err(Error::Api(msg)) if msg.contains("Hurricane Electric")));
-    }
-
-    #[tokio::test]
-    async fn create_unknown_zone_returns_error() {
-        let server = mockito::Server::new_async().await;
-        let provider = setup_provider(server.url().as_str());
-
-        let result = provider
-            .create(
-                "host.unknown.example",
-                DnsRecord::TXT("v".to_string()),
-                300,
-                "unknown.example",
-            )
-            .await;
-
-        assert!(matches!(result, Err(Error::Api(msg)) if msg.contains("not found")));
-    }
-
-    #[tokio::test]
-    async fn create_badauth_returns_unauthorized() {
-        let mut server = mockito::Server::new_async().await;
-
-        let mock = server
-            .mock("POST", "/")
-            .with_status(200)
-            .with_body("badauth")
-            .create();
-
-        let provider = setup_provider(server.url().as_str());
-
-        let result = provider
-            .create(
-                "host.example.com",
-                DnsRecord::TXT("v".to_string()),
-                300,
-                "example.com",
-            )
-            .await;
-
-        assert!(matches!(result, Err(Error::Unauthorized)));
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn delete_txt_record_success() {
-        let mut server = mockito::Server::new_async().await;
-
-        let mock = server
-            .mock("POST", "/")
-            .match_body(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded(
-                    "hostname".into(),
-                    "_acme-challenge.example.com".into(),
-                ),
                 mockito::Matcher::UrlEncoded("txt".into(), ".".into()),
             ]))
             .with_status(200)
@@ -147,10 +56,12 @@ mod tests {
         let provider = setup_provider(server.url().as_str());
 
         let result = provider
-            .delete(
+            .set_rrset(
                 "_acme-challenge.example.com",
-                "example.com",
                 DnsRecordType::TXT,
+                300,
+                Vec::new(),
+                "example.com",
             )
             .await;
 
@@ -159,15 +70,137 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn delete_non_txt_returns_error() {
+    async fn set_rrset_single_txt_overwrites() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/")
+            .match_body(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded(
+                    "hostname".into(),
+                    "_acme-challenge.example.com".into(),
+                ),
+                mockito::Matcher::UrlEncoded("password".into(), "secret-token".into()),
+                mockito::Matcher::UrlEncoded("txt".into(), "new-value".into()),
+            ]))
+            .with_status(200)
+            .with_body("good 1.2.3.4")
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+
+        let result = provider
+            .set_rrset(
+                "_acme-challenge.example.com",
+                DnsRecordType::TXT,
+                300,
+                vec![DnsRecord::TXT("new-value".to_string())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn set_rrset_multiple_txt_rejected() {
         let server = mockito::Server::new_async().await;
         let provider = setup_provider(server.url().as_str());
 
         let result = provider
-            .delete("host.example.com", "example.com", DnsRecordType::A)
+            .set_rrset(
+                "_acme-challenge.example.com",
+                DnsRecordType::TXT,
+                300,
+                vec![
+                    DnsRecord::TXT("first".to_string()),
+                    DnsRecord::TXT("second".to_string()),
+                ],
+                "example.com",
+            )
             .await;
 
-        assert!(matches!(result, Err(Error::Api(msg)) if msg.contains("Hurricane Electric")));
+        assert!(
+            matches!(result, Err(Error::Api(msg)) if msg.contains("only supports one TXT record per host"))
+        );
+    }
+
+    #[tokio::test]
+    async fn set_rrset_non_txt_rejected() {
+        let server = mockito::Server::new_async().await;
+        let provider = setup_provider(server.url().as_str());
+
+        let result = provider
+            .set_rrset(
+                "host.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.2.3.4".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(Error::Api(msg)) if msg.contains("Only TXT records are supported by Hurricane Electric"))
+        );
+    }
+
+    #[tokio::test]
+    async fn add_to_rrset_rejected() {
+        let server = mockito::Server::new_async().await;
+        let provider = setup_provider(server.url().as_str());
+
+        let result = provider
+            .add_to_rrset(
+                "_acme-challenge.example.com",
+                DnsRecordType::TXT,
+                300,
+                vec![DnsRecord::TXT("value".to_string())],
+                "example.com",
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(Error::Api(msg)) if msg.contains("does not support add_to_rrset"))
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_from_rrset_rejected() {
+        let server = mockito::Server::new_async().await;
+        let provider = setup_provider(server.url().as_str());
+
+        let result = provider
+            .remove_from_rrset(
+                "_acme-challenge.example.com",
+                DnsRecordType::TXT,
+                vec![DnsRecord::TXT("value".to_string())],
+                "example.com",
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(Error::Api(msg)) if msg.contains("does not support remove_from_rrset"))
+        );
+    }
+
+    #[tokio::test]
+    async fn list_rrset_rejected() {
+        let server = mockito::Server::new_async().await;
+        let provider = setup_provider(server.url().as_str());
+
+        let result = provider
+            .list_rrset(
+                "_acme-challenge.example.com",
+                DnsRecordType::TXT,
+                "example.com",
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(Error::Api(msg)) if msg.contains("does not support listing records"))
+        );
     }
 
     #[tokio::test]
@@ -193,11 +226,12 @@ mod tests {
 
         assert!(
             provider
-                .create(
+                .set_rrset(
                     hostname,
-                    DnsRecord::TXT("integration-test-value".to_string()),
+                    DnsRecordType::TXT,
                     300,
-                    zone
+                    vec![DnsRecord::TXT("integration-test-value".to_string())],
+                    zone,
                 )
                 .await
                 .is_ok()
@@ -205,7 +239,7 @@ mod tests {
 
         assert!(
             provider
-                .delete(hostname, zone, DnsRecordType::TXT)
+                .set_rrset(hostname, DnsRecordType::TXT, 300, Vec::new(), zone)
                 .await
                 .is_ok()
         );

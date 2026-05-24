@@ -58,9 +58,7 @@ impl InMemoryProvider {
         let name = name.into_fqdn().into_owned();
         let mut store = self.records.lock().unwrap();
         for record in records {
-            let already_present = store
-                .iter()
-                .any(|r| r.name == name && r.record == record);
+            let already_present = store.iter().any(|r| r.name == name && r.record == record);
             if !already_present {
                 store.push(NamedDnsRecord {
                     name: name.clone(),
@@ -86,6 +84,17 @@ impl InMemoryProvider {
         let mut store = self.records.lock().unwrap();
         store.retain(|r| !(r.name == name && records.contains(&r.record)));
         Ok(())
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        _name: impl IntoFqdn<'_>,
+        _record_type: DnsRecordType,
+        _origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        Err(Error::Api(
+            "InMemory does not support listing records".to_string(),
+        ))
     }
 }
 

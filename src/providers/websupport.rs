@@ -10,8 +10,8 @@
  */
 
 use crate::{
-    DnsRecord, DnsRecordType, Error, IntoFqdn, crypto::hmac_sha1, http::HttpClientBuilder,
-    utils::strip_origin_from_name,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    crypto::hmac_sha1, http::HttpClientBuilder, utils::strip_origin_from_name,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use chrono::{SecondsFormat, Utc};
@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 const DEFAULT_ENDPOINT: &str = "https://rest.websupport.sk";
+const SERVICES_PAGE_SIZE: u32 = 500;
 
 #[derive(Clone)]
 pub struct WebSupportProvider {
@@ -42,10 +43,6 @@ struct CreateRecord<'a> {
     port: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     weight: Option<u16>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    flags: Option<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tag: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -54,6 +51,14 @@ struct WebSupportRecord {
     #[serde(rename = "type")]
     record_type: String,
     name: String,
+    #[serde(default)]
+    content: String,
+    #[serde(default)]
+    priority: Option<u16>,
+    #[serde(default)]
+    port: Option<u16>,
+    #[serde(default)]
+    weight: Option<u16>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -73,6 +78,30 @@ struct Service {
 #[derive(Deserialize, Debug)]
 struct ServicesResponse {
     items: Vec<Service>,
+    #[serde(default)]
+    pager: Option<Pager>,
+}
+
+#[derive(Deserialize, Debug)]
+struct Pager {
+    #[serde(default)]
+    pagesize: Option<u32>,
+    #[serde(default)]
+    items: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RecordContent {
+    content: String,
+    priority: Option<u16>,
+    port: Option<u16>,
+    weight: Option<u16>,
+}
+
+#[derive(Debug, Clone)]
+struct ListedRecord {
+    id: i64,
+    content: RecordContent,
 }
 
 impl WebSupportProvider {
@@ -123,111 +152,162 @@ impl WebSupportProvider {
             .with_header("Date", date)
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name();
-        let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
-        let service_id = self.obtain_service_id(&domain).await?;
-        let path = format!("/v2/service/{}/dns/record", service_id);
-        let body = build_create_record(&subdomain, &record, ttl)?;
-        let url = format!("{}{}", self.endpoint, path);
-        self.signed(self.client.post(url).with_body(body)?, Method::POST, &path)
-            .send_raw()
-            .await
-            .map(|_| ())
-    }
-
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name();
-        let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
-        let service_id = self.obtain_service_id(&domain).await?;
-        let record_type = record.as_type();
-        let record_ids = self
-            .find_record_ids(service_id, &subdomain, record_type)
-            .await?;
-        if record_ids.is_empty() {
-            return Err(Error::Api(format!(
-                "WebSupport record {} of type {} not found",
-                subdomain,
-                record_type.as_str()
-            )));
-        }
-        for id in record_ids {
-            let path = format!("/v2/service/{}/dns/record/{}", service_id, id);
-            let url = format!("{}{}", self.endpoint, path);
-            self.signed(self.client.delete(url), Method::DELETE, &path)
-                .send_raw()
-                .await?;
-        }
-        let path = format!("/v2/service/{}/dns/record", service_id);
-        let body = build_create_record(&subdomain, &record, ttl)?;
-        let url = format!("{}{}", self.endpoint, path);
-        self.signed(self.client.post(url).with_body(body)?, Method::POST, &path)
-            .send_raw()
-            .await
-            .map(|_| ())
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        reject_unsupported_type(record_type)?;
         let name = name.into_name();
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
         let service_id = self.obtain_service_id(&domain).await?;
-        let record_ids = self
-            .find_record_ids(service_id, &subdomain, record_type)
-            .await?;
-        if record_ids.is_empty() {
-            return Err(Error::NotFound);
+        let desired = build_contents(record_type, records)?;
+        let existing = self.list_at(service_id, &subdomain, record_type).await?;
+
+        let mut existing_pool: Vec<ListedRecord> = existing;
+        let mut to_add: Vec<RecordContent> = Vec::new();
+
+        for content in desired {
+            if let Some(idx) = existing_pool.iter().position(|r| r.content == content) {
+                existing_pool.swap_remove(idx);
+            } else {
+                to_add.push(content);
+            }
         }
-        for id in record_ids {
-            let path = format!("/v2/service/{}/dns/record/{}", service_id, id);
-            let url = format!("{}{}", self.endpoint, path);
-            self.signed(self.client.delete(url), Method::DELETE, &path)
-                .send_raw()
-                .await?;
+
+        for entry in existing_pool {
+            self.delete_record(service_id, entry.id).await?;
+        }
+        for content in to_add {
+            let body = content_to_create(record_type, &subdomain, ttl, content);
+            self.create_record(service_id, body).await?;
         }
         Ok(())
     }
 
-    async fn obtain_service_id(&self, domain: &str) -> crate::Result<i64> {
-        let path = "/v1/user/self/service";
-        let url = format!("{}{}", self.endpoint, path);
-        let response: ServicesResponse = self
-            .signed(self.client.get(url), Method::GET, path)
-            .send()
-            .await?;
-        response
-            .items
-            .into_iter()
-            .find(|s| s.service_name == "domain" && s.name == domain)
-            .map(|s| s.id)
-            .ok_or_else(|| Error::Api(format!("WebSupport domain service {} not found", domain)))
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        check_record_types(record_type, &records)?;
+        reject_unsupported_type(record_type)?;
+        let name = name.into_name();
+        let domain = origin.into_name();
+        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
+        let service_id = self.obtain_service_id(&domain).await?;
+        let desired = build_contents(record_type, records)?;
+        let existing = self.list_at(service_id, &subdomain, record_type).await?;
+
+        for content in desired {
+            if existing.iter().any(|r| r.content == content) {
+                continue;
+            }
+            let body = content_to_create(record_type, &subdomain, ttl, content);
+            self.create_record(service_id, body).await?;
+        }
+        Ok(())
     }
 
-    async fn find_record_ids(
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        check_record_types(record_type, &records)?;
+        reject_unsupported_type(record_type)?;
+        let name = name.into_name();
+        let domain = origin.into_name();
+        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
+        let service_id = self.obtain_service_id(&domain).await?;
+        let to_remove = build_contents(record_type, records)?;
+        let existing = self.list_at(service_id, &subdomain, record_type).await?;
+
+        for content in to_remove {
+            if let Some(entry) = existing.iter().find(|r| r.content == content) {
+                self.delete_record(service_id, entry.id).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        reject_unsupported_type(record_type)?;
+        let name = name.into_name();
+        let domain = origin.into_name();
+        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
+        let service_id = self.obtain_service_id(&domain).await?;
+        let existing = self.list_at(service_id, &subdomain, record_type).await?;
+        existing
+            .into_iter()
+            .map(|r| record_from_listed(record_type, r.content))
+            .collect()
+    }
+
+    async fn obtain_service_id(&self, domain: &str) -> crate::Result<i64> {
+        let mut page: u32 = 1;
+        loop {
+            let path = format!(
+                "/v1/user/self/service?page={}&pagesize={}",
+                page, SERVICES_PAGE_SIZE
+            );
+            let url = format!("{}{}", self.endpoint, path);
+            let response: ServicesResponse = self
+                .signed(self.client.get(url), Method::GET, &path)
+                .send()
+                .await?;
+            let returned = response.items.len() as u32;
+            if let Some(found) = response
+                .items
+                .into_iter()
+                .find(|s| s.service_name == "domain" && s.name == domain)
+            {
+                return Ok(found.id);
+            }
+            let total = response.pager.as_ref().map(|p| p.items).unwrap_or(0);
+            let pagesize = response
+                .pager
+                .as_ref()
+                .and_then(|p| p.pagesize)
+                .unwrap_or(SERVICES_PAGE_SIZE);
+            let seen = page.saturating_mul(pagesize.max(1));
+            if returned == 0 || total == 0 || seen >= total {
+                return Err(Error::Api(format!(
+                    "WebSupport domain service {} not found",
+                    domain
+                )));
+            }
+            page += 1;
+        }
+    }
+
+    async fn list_at(
         &self,
         service_id: i64,
         subdomain: &str,
         record_type: DnsRecordType,
-    ) -> crate::Result<Vec<i64>> {
+    ) -> crate::Result<Vec<ListedRecord>> {
         let path = format!("/v2/service/{}/dns/record", service_id);
         let url = format!("{}{}", self.endpoint, path);
         let response: RecordResponse = self
@@ -235,74 +315,264 @@ impl WebSupportProvider {
             .send()
             .await?;
         let type_str = record_type.as_str();
-        Ok(response
-            .data
-            .into_iter()
-            .filter(|r| r.name == subdomain && r.record_type == type_str)
-            .map(|r| r.id)
-            .collect())
+        let mut out = Vec::new();
+        for r in response.data {
+            if r.name != subdomain || r.record_type != type_str {
+                continue;
+            }
+            out.push(ListedRecord {
+                id: r.id,
+                content: RecordContent {
+                    content: r.content,
+                    priority: r.priority,
+                    port: r.port,
+                    weight: r.weight,
+                },
+            });
+        }
+        Ok(out)
+    }
+
+    async fn create_record<'a>(
+        &self,
+        service_id: i64,
+        body: CreateRecord<'a>,
+    ) -> crate::Result<()> {
+        let path = format!("/v2/service/{}/dns/record", service_id);
+        let url = format!("{}{}", self.endpoint, path);
+        self.signed(self.client.post(url).with_body(body)?, Method::POST, &path)
+            .send_raw()
+            .await
+            .map(|_| ())
+    }
+
+    async fn delete_record(&self, service_id: i64, record_id: i64) -> crate::Result<()> {
+        let path = format!("/v2/service/{}/dns/record/{}", service_id, record_id);
+        let url = format!("{}{}", self.endpoint, path);
+        self.signed(self.client.delete(url), Method::DELETE, &path)
+            .send_raw()
+            .await
+            .map(|_| ())
     }
 }
 
-fn build_create_record<'a>(
-    name: &'a str,
-    record: &DnsRecord,
-    ttl: u32,
-) -> crate::Result<CreateRecord<'a>> {
-    let mut req = CreateRecord {
-        record_type: dns_type(record)?,
-        name,
-        content: String::new(),
-        ttl,
-        priority: None,
-        port: None,
-        weight: None,
-        flags: None,
-        tag: None,
-    };
-    match record {
-        DnsRecord::A(addr) => req.content = addr.to_string(),
-        DnsRecord::AAAA(addr) => req.content = addr.to_string(),
-        DnsRecord::CNAME(target) => req.content = target.clone(),
-        DnsRecord::NS(target) => req.content = target.clone(),
-        DnsRecord::MX(mx) => {
-            req.content = mx.exchange.clone();
-            req.priority = Some(mx.priority);
+fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
+    for r in records {
+        if r.as_type() != expected {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected.as_str(),
+                r.as_type().as_str(),
+            )));
         }
-        DnsRecord::TXT(text) => req.content = text.clone(),
-        DnsRecord::SRV(srv) => {
-            req.content = srv.target.clone();
-            req.priority = Some(srv.priority);
-            req.port = Some(srv.port);
-            req.weight = Some(srv.weight);
+    }
+    Ok(())
+}
+
+fn reject_unsupported_type(record_type: DnsRecordType) -> crate::Result<()> {
+    if matches!(record_type, DnsRecordType::TLSA) {
+        return Err(Error::Api(
+            "TLSA records are not supported by WebSupport".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn build_contents(
+    expected_type: DnsRecordType,
+    records: Vec<DnsRecord>,
+) -> crate::Result<Vec<RecordContent>> {
+    let mut out = Vec::with_capacity(records.len());
+    for record in records {
+        if record.as_type() != expected_type {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected_type.as_str(),
+                record.as_type().as_str(),
+            )));
         }
+        out.push(record_to_content(record)?);
+    }
+    Ok(out)
+}
+
+fn record_to_content(record: DnsRecord) -> crate::Result<RecordContent> {
+    Ok(match record {
+        DnsRecord::A(addr) => RecordContent {
+            content: addr.to_string(),
+            priority: None,
+            port: None,
+            weight: None,
+        },
+        DnsRecord::AAAA(addr) => RecordContent {
+            content: addr.to_string(),
+            priority: None,
+            port: None,
+            weight: None,
+        },
+        DnsRecord::CNAME(target) => RecordContent {
+            content: target,
+            priority: None,
+            port: None,
+            weight: None,
+        },
+        DnsRecord::NS(target) => RecordContent {
+            content: target,
+            priority: None,
+            port: None,
+            weight: None,
+        },
+        DnsRecord::MX(mx) => RecordContent {
+            content: mx.exchange,
+            priority: Some(mx.priority),
+            port: None,
+            weight: None,
+        },
+        DnsRecord::TXT(text) => RecordContent {
+            content: text,
+            priority: None,
+            port: None,
+            weight: None,
+        },
+        DnsRecord::SRV(srv) => RecordContent {
+            content: srv.target,
+            priority: Some(srv.priority),
+            port: Some(srv.port),
+            weight: Some(srv.weight),
+        },
+        DnsRecord::CAA(caa) => RecordContent {
+            content: format!("{}", caa),
+            priority: None,
+            port: None,
+            weight: None,
+        },
         DnsRecord::TLSA(_) => {
             return Err(Error::Api(
                 "TLSA records are not supported by WebSupport".into(),
             ));
         }
-        DnsRecord::CAA(caa) => {
-            let (flags, tag, value) = caa.clone().decompose();
-            req.content = value;
-            req.flags = Some(flags);
-            req.tag = Some(tag);
-        }
-    }
-    Ok(req)
+    })
 }
 
-fn dns_type(record: &DnsRecord) -> crate::Result<&'static str> {
-    match record {
-        DnsRecord::A(_) => Ok("A"),
-        DnsRecord::AAAA(_) => Ok("AAAA"),
-        DnsRecord::CNAME(_) => Ok("CNAME"),
-        DnsRecord::NS(_) => Ok("NS"),
-        DnsRecord::MX(_) => Ok("MX"),
-        DnsRecord::TXT(_) => Ok("TXT"),
-        DnsRecord::SRV(_) => Ok("SRV"),
-        DnsRecord::CAA(_) => Ok("CAA"),
-        DnsRecord::TLSA(_) => Err(Error::Api(
-            "TLSA records are not supported by WebSupport".into(),
-        )),
+fn content_to_create<'a>(
+    record_type: DnsRecordType,
+    name: &'a str,
+    ttl: u32,
+    content: RecordContent,
+) -> CreateRecord<'a> {
+    CreateRecord {
+        record_type: record_type.as_str(),
+        name,
+        content: content.content,
+        ttl,
+        priority: content.priority,
+        port: content.port,
+        weight: content.weight,
     }
+}
+
+fn record_from_listed(
+    record_type: DnsRecordType,
+    content: RecordContent,
+) -> crate::Result<DnsRecord> {
+    Ok(match record_type {
+        DnsRecordType::A => {
+            DnsRecord::A(content.content.parse().map_err(|e| {
+                Error::Parse(format!("invalid A address {}: {}", content.content, e))
+            })?)
+        }
+        DnsRecordType::AAAA => DnsRecord::AAAA(content.content.parse().map_err(|e| {
+            Error::Parse(format!("invalid AAAA address {}: {}", content.content, e))
+        })?),
+        DnsRecordType::CNAME => DnsRecord::CNAME(content.content),
+        DnsRecordType::NS => DnsRecord::NS(content.content),
+        DnsRecordType::MX => DnsRecord::MX(MXRecord {
+            exchange: content.content,
+            priority: content.priority.unwrap_or(0),
+        }),
+        DnsRecordType::TXT => DnsRecord::TXT(content.content),
+        DnsRecordType::SRV => DnsRecord::SRV(SRVRecord {
+            target: content.content,
+            priority: content.priority.unwrap_or(0),
+            weight: content.weight.unwrap_or(0),
+            port: content.port.unwrap_or(0),
+        }),
+        DnsRecordType::CAA => DnsRecord::CAA(parse_caa(&content.content)?),
+        DnsRecordType::TLSA => {
+            return Err(Error::Api(
+                "TLSA records are not supported by WebSupport".into(),
+            ));
+        }
+    })
+}
+
+fn parse_caa(raw: &str) -> crate::Result<CAARecord> {
+    let trimmed = raw.trim();
+    let mut parts = trimmed.splitn(3, char::is_whitespace);
+    let flags_str = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid CAA record: {raw}")))?;
+    let tag = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid CAA record: {raw}")))?;
+    let value = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid CAA record: {raw}")))?;
+    let flags: u8 = flags_str
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid CAA flags {flags_str}: {e}")))?;
+    let issuer_critical = flags & 0x80 != 0;
+    let value_unquoted = value
+        .trim()
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(value.trim())
+        .to_string();
+    match tag {
+        "issue" => {
+            let (name, options) = parse_caa_issue_value(&value_unquoted);
+            Ok(CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "issuewild" => {
+            let (name, options) = parse_caa_issue_value(&value_unquoted);
+            Ok(CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "iodef" => Ok(CAARecord::Iodef {
+            issuer_critical,
+            url: value_unquoted,
+        }),
+        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
+    }
+}
+
+fn parse_caa_issue_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name_part = parts.next().unwrap_or("").trim().to_string();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part)
+    };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
 }

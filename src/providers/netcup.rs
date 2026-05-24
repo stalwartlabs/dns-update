@@ -10,17 +10,18 @@
  */
 
 use crate::{
-    DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
     utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    net::AddrParseError,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
-const DEFAULT_ENDPOINT: &str =
-    "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON";
+const DEFAULT_ENDPOINT: &str = "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON";
 const SESSION_TTL_SECS: u64 = 10 * 60;
 
 #[derive(Clone)]
@@ -103,6 +104,10 @@ fn ensure_trailing_dot(value: &str) -> String {
     }
 }
 
+fn strip_trailing_dot(value: &str) -> String {
+    value.strip_suffix('.').unwrap_or(value).to_string()
+}
+
 #[derive(Deserialize, Debug)]
 struct ResponseMsg {
     #[serde(default)]
@@ -155,82 +160,171 @@ impl NetcupProvider {
         }
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        _ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name().into_owned();
-        let origin = origin.into_name().into_owned();
-        let hostname = strip_origin_from_name(&name, &origin, Some("@"));
-        let payload = encode_record(&record, &hostname)?;
-        let session = self.ensure_session().await?;
-
-        self.update_dns_records(&origin, &session, vec![payload])
-            .await
-    }
-
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        _ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name().into_owned();
-        let origin = origin.into_name().into_owned();
-        let hostname = strip_origin_from_name(&name, &origin, Some("@"));
-        let record_type = record.as_type();
-        let session = self.ensure_session().await?;
-
-        let existing = self
-            .find_record_by_name_type(&origin, &session, &hostname, record_type.as_str())
-            .await?;
-
-        let new = encode_record(&record, &hostname)?;
-        let merged = NetcupRecord {
-            id: existing.id.clone(),
-            hostname: new.hostname,
-            record_type: new.record_type,
-            priority: new.priority,
-            destination: new.destination,
-            deleterecord: false,
-            state: String::new(),
-        };
-
-        self.update_dns_records(&origin, &session, vec![merged])
-            .await
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        _ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
         let name = name.into_name().into_owned();
         let origin = origin.into_name().into_owned();
         let hostname = strip_origin_from_name(&name, &origin, Some("@"));
         let session = self.ensure_session().await?;
+        let listed = self.list_all_records(&origin, &session).await?;
 
-        let existing = self
-            .find_record_by_name_type(&origin, &session, &hostname, record_type.as_str())
-            .await?;
+        let type_str = record_type.as_str();
+        let existing: Vec<NetcupRecord> = listed
+            .into_iter()
+            .filter(|r| r.hostname == hostname && r.record_type.eq_ignore_ascii_case(type_str))
+            .collect();
 
-        let to_delete = NetcupRecord {
-            id: existing.id.clone(),
-            hostname: existing.hostname.clone(),
-            record_type: existing.record_type.clone(),
-            priority: existing.priority.clone(),
-            destination: existing.destination.clone(),
-            deleterecord: true,
-            state: String::new(),
-        };
+        let desired: Vec<NetcupRecord> = records
+            .iter()
+            .map(|r| encode_record(r, &hostname))
+            .collect::<crate::Result<Vec<_>>>()?;
 
-        self.update_dns_records(&origin, &session, vec![to_delete])
-            .await
+        let mut batch: Vec<NetcupRecord> = Vec::new();
+        let mut remaining: Vec<NetcupRecord> = existing.clone();
+
+        for want in &desired {
+            if let Some(idx) = remaining.iter().position(|r| same_payload(r, want)) {
+                remaining.swap_remove(idx);
+            } else {
+                batch.push(want.clone());
+            }
+        }
+        for stale in remaining {
+            batch.push(NetcupRecord {
+                id: stale.id,
+                hostname: stale.hostname,
+                record_type: stale.record_type,
+                priority: stale.priority,
+                destination: stale.destination,
+                deleterecord: true,
+                state: String::new(),
+            });
+        }
+
+        if batch.is_empty() {
+            return Ok(());
+        }
+        self.update_dns_records(&origin, &session, batch).await
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        _ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let name = name.into_name().into_owned();
+        let origin = origin.into_name().into_owned();
+        let hostname = strip_origin_from_name(&name, &origin, Some("@"));
+        let session = self.ensure_session().await?;
+        let listed = self.list_all_records(&origin, &session).await?;
+
+        let type_str = record_type.as_str();
+        let existing: Vec<NetcupRecord> = listed
+            .into_iter()
+            .filter(|r| r.hostname == hostname && r.record_type.eq_ignore_ascii_case(type_str))
+            .collect();
+
+        let desired: Vec<NetcupRecord> = records
+            .iter()
+            .map(|r| encode_record(r, &hostname))
+            .collect::<crate::Result<Vec<_>>>()?;
+
+        let mut batch: Vec<NetcupRecord> = Vec::new();
+        for want in desired {
+            if !existing.iter().any(|r| same_payload(r, &want)) {
+                batch.push(want);
+            }
+        }
+
+        if batch.is_empty() {
+            return Ok(());
+        }
+        self.update_dns_records(&origin, &session, batch).await
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let name = name.into_name().into_owned();
+        let origin = origin.into_name().into_owned();
+        let hostname = strip_origin_from_name(&name, &origin, Some("@"));
+        let session = self.ensure_session().await?;
+        let listed = self.list_all_records(&origin, &session).await?;
+
+        let type_str = record_type.as_str();
+        let existing: Vec<NetcupRecord> = listed
+            .into_iter()
+            .filter(|r| r.hostname == hostname && r.record_type.eq_ignore_ascii_case(type_str))
+            .collect();
+
+        let targets: Vec<NetcupRecord> = records
+            .iter()
+            .map(|r| encode_record(r, &hostname))
+            .collect::<crate::Result<Vec<_>>>()?;
+
+        let mut batch: Vec<NetcupRecord> = Vec::new();
+        for target in &targets {
+            if let Some(found) = existing.iter().find(|r| same_payload(r, target)) {
+                batch.push(NetcupRecord {
+                    id: found.id.clone(),
+                    hostname: found.hostname.clone(),
+                    record_type: found.record_type.clone(),
+                    priority: found.priority.clone(),
+                    destination: found.destination.clone(),
+                    deleterecord: true,
+                    state: String::new(),
+                });
+            }
+        }
+
+        if batch.is_empty() {
+            return Ok(());
+        }
+        self.update_dns_records(&origin, &session, batch).await
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        let name = name.into_name().into_owned();
+        let origin = origin.into_name().into_owned();
+        let hostname = strip_origin_from_name(&name, &origin, Some("@"));
+        let session = self.ensure_session().await?;
+        let listed = self.list_all_records(&origin, &session).await?;
+
+        let type_str = record_type.as_str();
+        let mut out = Vec::new();
+        for r in listed {
+            if r.hostname == hostname && r.record_type.eq_ignore_ascii_case(type_str) {
+                out.push(decode_record(record_type, &r)?);
+            }
+        }
+        Ok(out)
     }
 
     async fn ensure_session(&self) -> crate::Result<String> {
@@ -245,9 +339,7 @@ impl NetcupProvider {
         Ok(id)
     }
 
-    fn session_lock(
-        &self,
-    ) -> crate::Result<std::sync::MutexGuard<'_, Option<(String, Instant)>>> {
+    fn session_lock(&self) -> crate::Result<std::sync::MutexGuard<'_, Option<(String, Instant)>>> {
         self.session
             .lock()
             .map_err(|_| Error::Client("Netcup session lock poisoned".into()))
@@ -287,7 +379,9 @@ impl NetcupProvider {
                 customernumber: &self.customer_number,
                 apikey: &self.api_key,
                 apisessionid: session,
-                dnsrecordset: DnsRecordSet { dnsrecords: records },
+                dnsrecordset: DnsRecordSet {
+                    dnsrecords: records,
+                },
             },
         };
 
@@ -301,13 +395,11 @@ impl NetcupProvider {
         Ok(())
     }
 
-    async fn find_record_by_name_type(
+    async fn list_all_records(
         &self,
         domain: &str,
         session: &str,
-        hostname: &str,
-        record_type: &str,
-    ) -> crate::Result<NetcupRecord> {
+    ) -> crate::Result<Vec<NetcupRecord>> {
         let payload = Request {
             action: "infoDnsRecords",
             param: InfoDnsRecordsParam {
@@ -325,20 +417,8 @@ impl NetcupProvider {
             .await?;
         check_status(&response)?;
         let parsed: InfoDnsRecordsResponse = serde_json::from_value(response.response_data)
-            .map_err(|e| {
-                Error::Serialize(format!("Failed to parse Netcup record list: {e}"))
-            })?;
-
-        parsed
-            .dnsrecords
-            .into_iter()
-            .find(|r| r.hostname == hostname && r.record_type.eq_ignore_ascii_case(record_type))
-            .ok_or_else(|| {
-                Error::Api(format!(
-                    "DNS Record {} of type {} not found in Netcup zone",
-                    hostname, record_type
-                ))
-            })
+            .map_err(|e| Error::Serialize(format!("Failed to parse Netcup record list: {e}")))?;
+        Ok(parsed.dnsrecords)
     }
 
     #[allow(dead_code)]
@@ -361,27 +441,48 @@ impl NetcupProvider {
     }
 }
 
+fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
+    for r in records {
+        if r.as_type() != expected {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected.as_str(),
+                r.as_type().as_str(),
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn check_status(response: &ResponseMsg) -> crate::Result<()> {
     if response.status == "success" {
         Ok(())
     } else {
         Err(Error::Api(format!(
             "Netcup API error: status={} code={} short={} long={}",
-            response.status,
-            response.status_code,
-            response.short_message,
-            response.long_message
+            response.status, response.status_code, response.short_message, response.long_message
         )))
     }
+}
+
+fn same_payload(a: &NetcupRecord, b: &NetcupRecord) -> bool {
+    a.hostname == b.hostname
+        && a.record_type.eq_ignore_ascii_case(&b.record_type)
+        && a.destination == b.destination
+        && a.priority == b.priority
 }
 
 fn encode_record(record: &DnsRecord, hostname: &str) -> crate::Result<NetcupRecord> {
     let (record_type, destination, priority) = match record {
         DnsRecord::A(addr) => ("A", addr.to_string(), String::new()),
         DnsRecord::AAAA(addr) => ("AAAA", addr.to_string(), String::new()),
-        DnsRecord::CNAME(value) => ("CNAME", value.clone(), String::new()),
-        DnsRecord::NS(value) => ("NS", value.clone(), String::new()),
-        DnsRecord::MX(mx) => ("MX", mx.exchange.clone(), mx.priority.to_string()),
+        DnsRecord::CNAME(value) => ("CNAME", ensure_trailing_dot(value), String::new()),
+        DnsRecord::NS(value) => ("NS", ensure_trailing_dot(value), String::new()),
+        DnsRecord::MX(mx) => (
+            "MX",
+            ensure_trailing_dot(&mx.exchange),
+            mx.priority.to_string(),
+        ),
         DnsRecord::TXT(value) => ("TXT", value.clone(), String::new()),
         DnsRecord::SRV(srv) => (
             "SRV",
@@ -426,5 +527,214 @@ fn encode_record(record: &DnsRecord, hostname: &str) -> crate::Result<NetcupReco
         destination,
         deleterecord: false,
         state: String::new(),
+    })
+}
+
+fn decode_record(record_type: DnsRecordType, record: &NetcupRecord) -> crate::Result<DnsRecord> {
+    Ok(match record_type {
+        DnsRecordType::A => {
+            DnsRecord::A(record.destination.parse().map_err(|e: AddrParseError| {
+                Error::Parse(format!(
+                    "invalid Netcup A value '{}': {e}",
+                    record.destination
+                ))
+            })?)
+        }
+        DnsRecordType::AAAA => {
+            DnsRecord::AAAA(record.destination.parse().map_err(|e: AddrParseError| {
+                Error::Parse(format!(
+                    "invalid Netcup AAAA value '{}': {e}",
+                    record.destination
+                ))
+            })?)
+        }
+        DnsRecordType::CNAME => DnsRecord::CNAME(strip_trailing_dot(&record.destination)),
+        DnsRecordType::NS => DnsRecord::NS(strip_trailing_dot(&record.destination)),
+        DnsRecordType::MX => {
+            let priority: u16 = record.priority.parse().map_err(|e| {
+                Error::Parse(format!(
+                    "invalid Netcup MX priority '{}': {e}",
+                    record.priority
+                ))
+            })?;
+            DnsRecord::MX(MXRecord {
+                priority,
+                exchange: strip_trailing_dot(&record.destination),
+            })
+        }
+        DnsRecordType::TXT => DnsRecord::TXT(record.destination.clone()),
+        DnsRecordType::SRV => parse_srv(&record.destination)?,
+        DnsRecordType::TLSA => parse_tlsa(&record.destination)?,
+        DnsRecordType::CAA => parse_caa(&record.destination)?,
+    })
+}
+
+fn parse_srv(value: &str) -> crate::Result<DnsRecord> {
+    let mut parts = value.split_whitespace();
+    let priority = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid SRV priority in '{value}': {e}")))?;
+    let weight = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid SRV weight in '{value}': {e}")))?;
+    let port = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid SRV port in '{value}': {e}")))?;
+    let target = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?;
+    Ok(DnsRecord::SRV(SRVRecord {
+        priority,
+        weight,
+        port,
+        target: strip_trailing_dot(target),
+    }))
+}
+
+fn parse_tlsa(value: &str) -> crate::Result<DnsRecord> {
+    let mut parts = value.split_whitespace();
+    let usage_raw: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid TLSA usage in '{value}': {e}")))?;
+    let selector_raw: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid TLSA selector in '{value}': {e}")))?;
+    let matching_raw: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid TLSA matching in '{value}': {e}")))?;
+    let hex = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA value '{value}'")))?;
+    Ok(DnsRecord::TLSA(TLSARecord {
+        cert_usage: tlsa_cert_usage_from_u8(usage_raw)?,
+        selector: tlsa_selector_from_u8(selector_raw)?,
+        matching: tlsa_matching_from_u8(matching_raw)?,
+        cert_data: decode_hex(hex)?,
+    }))
+}
+
+fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
+    let mut parts = value.splitn(3, char::is_whitespace);
+    let flags: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid CAA value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid CAA flags in '{value}': {e}")))?;
+    let tag = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid CAA value '{value}'")))?
+        .to_ascii_lowercase();
+    let raw_value = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid CAA value '{value}'")))?
+        .trim();
+    let unquoted = raw_value
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .map(|s| s.replace("\\\"", "\""))
+        .unwrap_or_else(|| raw_value.to_string());
+
+    let issuer_critical = flags & 0x80 != 0;
+    match tag.as_str() {
+        "issue" => {
+            let (name, options) = parse_caa_kv(&unquoted);
+            Ok(DnsRecord::CAA(CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            }))
+        }
+        "issuewild" => {
+            let (name, options) = parse_caa_kv(&unquoted);
+            Ok(DnsRecord::CAA(CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            }))
+        }
+        "iodef" => Ok(DnsRecord::CAA(CAARecord::Iodef {
+            issuer_critical,
+            url: unquoted,
+        })),
+        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
+    }
+}
+
+fn parse_caa_kv(value: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name_part = parts.next().unwrap_or("").trim().to_string();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part)
+    };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
+}
+
+fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
+    if !hex.len().is_multiple_of(2) {
+        return Err(Error::Parse(format!("invalid hex string: {hex}")));
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| {
+            u8::from_str_radix(&hex[i..i + 2], 16)
+                .map_err(|e| Error::Parse(format!("invalid hex byte: {e}")))
+        })
+        .collect()
+}
+
+fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
+    Ok(match value {
+        0 => TlsaCertUsage::PkixTa,
+        1 => TlsaCertUsage::PkixEe,
+        2 => TlsaCertUsage::DaneTa,
+        3 => TlsaCertUsage::DaneEe,
+        255 => TlsaCertUsage::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {value}"))),
+    })
+}
+
+fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
+    Ok(match value {
+        0 => TlsaSelector::Full,
+        1 => TlsaSelector::Spki,
+        255 => TlsaSelector::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA selector: {value}"))),
+    })
+}
+
+fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
+    Ok(match value {
+        0 => TlsaMatching::Raw,
+        1 => TlsaMatching::Sha256,
+        2 => TlsaMatching::Sha512,
+        255 => TlsaMatching::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
     })
 }

@@ -10,23 +10,42 @@
  */
 
 use crate::{
-    DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder,
-    utils::strip_origin_from_name,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    http::HttpClientBuilder, utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    borrow::Cow,
     net::{Ipv4Addr, Ipv6Addr},
     time::Duration,
 };
 
+const DEFAULT_API_ENDPOINT: &str = "https://api.digitalocean.com";
+const LIST_PAGE_SIZE: u32 = 200;
+
 #[derive(Clone)]
 pub struct DigitalOceanProvider {
     client: HttpClientBuilder,
+    endpoint: Cow<'static, str>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct ListDomainRecord {
     domain_records: Vec<DomainRecord>,
+    #[serde(default)]
+    links: ListLinks,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, Default)]
+pub struct ListLinks {
+    #[serde(default)]
+    pages: ListPages,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, Default)]
+pub struct ListPages {
+    #[serde(default)]
+    next: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
@@ -46,7 +65,7 @@ pub struct DomainRecord {
     data: RecordData,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(tag = "type")]
 #[allow(clippy::upper_case_acronyms)]
 pub enum RecordData {
@@ -94,108 +113,209 @@ impl DigitalOceanProvider {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Bearer {}", auth_token.as_ref()))
             .with_timeout(timeout);
-        Self { client }
+        Self {
+            client,
+            endpoint: Cow::Borrowed(DEFAULT_API_ENDPOINT),
+        }
     }
 
-    pub(crate) async fn create(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name();
-        let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, None);
-
-        self.client
-            .post(format!(
-                "https://api.digitalocean.com/v2/domains/{domain}/records",
-            ))
-            .with_body(UpdateDomainRecord {
-                ttl,
-                name: &subdomain,
-                data: RecordData::try_from(record).map_err(|err| Error::Api(err.to_string()))?,
-            })?
-            .send_raw()
-            .await
-            .map(|_| ())
+    #[cfg(test)]
+    pub(crate) fn with_endpoint(self, endpoint: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            endpoint: endpoint.into(),
+            ..self
+        }
     }
 
-    pub(crate) async fn update(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name();
-        let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, None);
-        let record_type = record.as_type();
-        let record_id = self.obtain_record_id(&name, &domain, record_type).await?;
-
-        self.client
-            .put(format!(
-                "https://api.digitalocean.com/v2/domains/{domain}/records/{record_id}",
-            ))
-            .with_body(UpdateDomainRecord {
-                ttl,
-                name: &subdomain,
-                data: RecordData::try_from(record).map_err(|err| Error::Api(err.to_string()))?,
-            })?
-            .send_raw()
-            .await
-            .map(|_| ())
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        let name = name.into_name();
-        let domain = origin.into_name();
-        let record_id = self.obtain_record_id(&name, &domain, record_type).await?;
+        let name = name.into_name().into_owned();
+        let domain = origin.into_name().into_owned();
+        let subdomain = strip_origin_from_name(&name, &domain, None);
+        let desired = build_record_data(record_type, records)?;
+        let existing = self
+            .list_at(&domain, &name, &subdomain, record_type)
+            .await?;
 
+        let mut existing_pool: Vec<DomainRecord> = existing;
+        let mut to_add: Vec<RecordData> = Vec::new();
+
+        for data in desired {
+            if let Some(idx) = existing_pool.iter().position(|r| r.data == data) {
+                existing_pool.swap_remove(idx);
+            } else {
+                to_add.push(data);
+            }
+        }
+
+        for entry in existing_pool {
+            self.delete_record(&domain, entry.id).await?;
+        }
+        for data in to_add {
+            self.create_record(&domain, &subdomain, ttl, data).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let name = name.into_name().into_owned();
+        let domain = origin.into_name().into_owned();
+        let subdomain = strip_origin_from_name(&name, &domain, None);
+        let desired = build_record_data(record_type, records)?;
+        let existing = self
+            .list_at(&domain, &name, &subdomain, record_type)
+            .await?;
+
+        for data in desired {
+            if existing.iter().any(|r| r.data == data) {
+                continue;
+            }
+            self.create_record(&domain, &subdomain, ttl, data).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let name = name.into_name().into_owned();
+        let domain = origin.into_name().into_owned();
+        let subdomain = strip_origin_from_name(&name, &domain, None);
+        let to_remove = build_record_data(record_type, records)?;
+        let existing = self
+            .list_at(&domain, &name, &subdomain, record_type)
+            .await?;
+
+        for data in to_remove {
+            if let Some(entry) = existing.iter().find(|r| r.data == data) {
+                self.delete_record(&domain, entry.id).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        let name = name.into_name().into_owned();
+        let domain = origin.into_name().into_owned();
+        let subdomain = strip_origin_from_name(&name, &domain, None);
+        let listed = self
+            .list_at(&domain, &name, &subdomain, record_type)
+            .await?;
+        listed.into_iter().map(|r| r.data.try_into()).collect()
+    }
+
+    async fn list_at(
+        &self,
+        domain: &str,
+        name: &str,
+        subdomain: &str,
+        record_type: DnsRecordType,
+    ) -> crate::Result<Vec<DomainRecord>> {
+        let mut out: Vec<DomainRecord> = Vec::new();
+        let mut page: u32 = 1;
+        loop {
+            let url = format!(
+                "{}/v2/domains/{domain}/records?{}&per_page={LIST_PAGE_SIZE}&page={page}",
+                self.endpoint,
+                Query::name_and_type(name, record_type).serialize()
+            );
+            let response: ListDomainRecord = self.client.get(url).send_with_retry(3).await?;
+            let returned = response.domain_records.len() as u32;
+            for record in response.domain_records {
+                if record.name == subdomain && record.data.is_type(record_type) {
+                    out.push(record);
+                }
+            }
+            if response.links.pages.next.is_none() || returned < LIST_PAGE_SIZE {
+                break;
+            }
+            page += 1;
+        }
+        Ok(out)
+    }
+
+    async fn create_record(
+        &self,
+        domain: &str,
+        subdomain: &str,
+        ttl: u32,
+        data: RecordData,
+    ) -> crate::Result<()> {
+        self.client
+            .post(format!("{}/v2/domains/{domain}/records", self.endpoint))
+            .with_body(UpdateDomainRecord {
+                ttl,
+                name: subdomain,
+                data,
+            })?
+            .send_raw()
+            .await
+            .map(|_| ())
+    }
+
+    async fn delete_record(&self, domain: &str, record_id: i64) -> crate::Result<()> {
         self.client
             .delete(format!(
-                "https://api.digitalocean.com/v2/domains/{domain}/records/{record_id}",
+                "{}/v2/domains/{domain}/records/{record_id}",
+                self.endpoint
             ))
             .send_raw()
             .await
             .map(|_| ())
     }
+}
 
-    async fn obtain_record_id(
-        &self,
-        name: &str,
-        domain: &str,
-        record_type: DnsRecordType,
-    ) -> crate::Result<i64> {
-        let subdomain = strip_origin_from_name(name, domain, None);
-        self.client
-            .get(format!(
-                "https://api.digitalocean.com/v2/domains/{domain}/records?{}",
-                Query::name_and_type(name, record_type).serialize()
-            ))
-            .send_with_retry::<ListDomainRecord>(3)
-            .await
-            .and_then(|result| {
-                result
-                    .domain_records
-                    .into_iter()
-                    .find(|record| record.name == subdomain && record.data.is_type(record_type))
-                    .map(|record| record.id)
-                    .ok_or_else(|| {
-                        Error::Api(format!(
-                            "DNS Record {} of type {} not found",
-                            subdomain,
-                            record_type.as_str()
-                        ))
-                    })
-            })
+fn build_record_data(
+    expected_type: DnsRecordType,
+    records: Vec<DnsRecord>,
+) -> crate::Result<Vec<RecordData>> {
+    let mut out = Vec::with_capacity(records.len());
+    for record in records {
+        if record.as_type() != expected_type {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected_type.as_str(),
+                record.as_type().as_str(),
+            )));
+        }
+        out.push(RecordData::try_from(record).map_err(|err| Error::Api(err.to_string()))?);
+    }
+    Ok(out)
+}
+
+fn ensure_absolute(host: String) -> String {
+    if host.is_empty() || host.ends_with('.') {
+        host
+    } else {
+        format!("{host}.")
     }
 }
 
@@ -242,15 +362,19 @@ impl TryFrom<DnsRecord> for RecordData {
         match record {
             DnsRecord::A(content) => Ok(RecordData::A { data: content }),
             DnsRecord::AAAA(content) => Ok(RecordData::AAAA { data: content }),
-            DnsRecord::CNAME(content) => Ok(RecordData::CNAME { data: content }),
-            DnsRecord::NS(content) => Ok(RecordData::NS { data: content }),
+            DnsRecord::CNAME(content) => Ok(RecordData::CNAME {
+                data: ensure_absolute(content),
+            }),
+            DnsRecord::NS(content) => Ok(RecordData::NS {
+                data: ensure_absolute(content),
+            }),
             DnsRecord::MX(mx) => Ok(RecordData::MX {
-                data: mx.exchange,
+                data: ensure_absolute(mx.exchange),
                 priority: mx.priority,
             }),
             DnsRecord::TXT(content) => Ok(RecordData::TXT { data: content }),
             DnsRecord::SRV(srv) => Ok(RecordData::SRV {
-                data: srv.target,
+                data: ensure_absolute(srv.target),
                 priority: srv.priority,
                 weight: srv.weight,
                 port: srv.port,
@@ -266,4 +390,85 @@ impl TryFrom<DnsRecord> for RecordData {
             }
         }
     }
+}
+
+impl TryFrom<RecordData> for DnsRecord {
+    type Error = Error;
+
+    fn try_from(data: RecordData) -> crate::Result<Self> {
+        Ok(match data {
+            RecordData::A { data } => DnsRecord::A(data),
+            RecordData::AAAA { data } => DnsRecord::AAAA(data),
+            RecordData::CNAME { data } => DnsRecord::CNAME(data),
+            RecordData::NS { data } => DnsRecord::NS(data),
+            RecordData::MX { data, priority } => DnsRecord::MX(MXRecord {
+                exchange: data,
+                priority,
+            }),
+            RecordData::TXT { data } => DnsRecord::TXT(data),
+            RecordData::SRV {
+                data,
+                priority,
+                port,
+                weight,
+            } => DnsRecord::SRV(SRVRecord {
+                priority,
+                weight,
+                port,
+                target: data,
+            }),
+            RecordData::CAA { data, flags, tag } => DnsRecord::CAA(build_caa(flags, tag, data)?),
+        })
+    }
+}
+
+fn build_caa(flags: u8, tag: String, value: String) -> crate::Result<CAARecord> {
+    let issuer_critical = flags & 0x80 != 0;
+    match tag.as_str() {
+        "issue" => {
+            let (name, options) = parse_caa_value(&value);
+            Ok(CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "issuewild" => {
+            let (name, options) = parse_caa_value(&value);
+            Ok(CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "iodef" => Ok(CAARecord::Iodef {
+            issuer_critical,
+            url: value,
+        }),
+        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
+    }
+}
+
+fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name_part = parts.next().unwrap_or("").trim().to_string();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part)
+    };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
 }

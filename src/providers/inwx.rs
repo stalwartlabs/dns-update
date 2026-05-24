@@ -9,7 +9,10 @@
  * except according to those terms.
  */
 
-use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn};
+use crate::{
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, utils::strip_origin_from_name,
+};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -64,7 +67,7 @@ struct NameserverInfoResData {
     record: Vec<NameserverRecord>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct NameserverRecord {
     id: i64,
     #[serde(default)]
@@ -73,6 +76,8 @@ struct NameserverRecord {
     record_type: String,
     #[serde(default)]
     content: String,
+    #[serde(default)]
+    prio: Option<u16>,
 }
 
 impl InwxProvider {
@@ -113,125 +118,194 @@ impl InwxProvider {
 
     #[cfg(test)]
     pub(crate) fn with_cached_session(self, cookie: impl Into<String>) -> Self {
-        *self
-            .session
-            .lock()
-            .expect("INWX test session lock") = Some(SessionState {
+        *self.session.lock().expect("INWX test session lock") = Some(SessionState {
             cookie: cookie.into(),
             expires: Instant::now() + SESSION_TTL,
         });
         self
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name().to_string();
-        let domain = origin.into_name().to_string();
-        let (record_type, content, prio) = inwx_record_payload(&record)?;
-
-        self.ensure_logged_in().await?;
-
-        let mut params = json!({
-            "domain": &domain,
-            "name": &name,
-            "type": record_type,
-            "content": content,
-            "ttl": ttl,
-        });
-        if let Some(prio) = prio {
-            params["prio"] = json!(prio);
-        }
-
-        self.call("nameserver.createRecord", params).await.map(|_| ())
-    }
-
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name().to_string();
-        let domain = origin.into_name().to_string();
-        let (record_type, content, prio) = inwx_record_payload(&record)?;
-
-        self.ensure_logged_in().await?;
-
-        let id = self
-            .find_record_id(&domain, &name, record_type, None)
-            .await?;
-
-        let mut params = json!({
-            "id": id,
-            "content": content,
-            "ttl": ttl,
-        });
-        if let Some(prio) = prio {
-            params["prio"] = json!(prio);
-        }
-
-        self.call("nameserver.updateRecord", params).await.map(|_| ())
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        check_record_types(record_type, &records)?;
+        let name = name.into_name().to_string();
+        let domain = origin.into_name().to_string();
+        let rtype = inwx_record_type(record_type);
+        let desired = build_payloads(&records);
+
+        self.ensure_logged_in().await?;
+        let existing = self.list_records_at(&domain, &name, rtype).await?;
+
+        let mut existing_pool = existing;
+        let mut to_add: Vec<(String, Option<u16>)> = Vec::new();
+
+        for payload in desired {
+            if let Some(idx) = existing_pool.iter().position(|r| {
+                r.content == payload.0 && r.prio.unwrap_or(0) == payload.1.unwrap_or(0)
+            }) {
+                existing_pool.swap_remove(idx);
+            } else {
+                to_add.push(payload);
+            }
+        }
+
+        for stale in existing_pool {
+            self.call("nameserver.deleteRecord", json!({ "id": stale.id }))
+                .await
+                .map(|_| ())?;
+        }
+
+        for (content, prio) in to_add {
+            self.create_record(&domain, &name, rtype, ttl, content, prio)
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        check_record_types(record_type, &records)?;
+        let name = name.into_name().to_string();
+        let domain = origin.into_name().to_string();
+        let rtype = inwx_record_type(record_type);
+        let desired = build_payloads(&records);
+
+        self.ensure_logged_in().await?;
+        let existing = self.list_records_at(&domain, &name, rtype).await?;
+
+        for (content, prio) in desired {
+            let already_present = existing
+                .iter()
+                .any(|r| r.content == content && r.prio.unwrap_or(0) == prio.unwrap_or(0));
+            if already_present {
+                continue;
+            }
+            self.create_record(&domain, &name, rtype, ttl, content, prio)
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        check_record_types(record_type, &records)?;
+        let name = name.into_name().to_string();
+        let domain = origin.into_name().to_string();
+        let rtype = inwx_record_type(record_type);
+        let to_remove = build_payloads(&records);
+
+        self.ensure_logged_in().await?;
+        let existing = self.list_records_at(&domain, &name, rtype).await?;
+
+        for (content, prio) in to_remove {
+            if let Some(entry) = existing
+                .iter()
+                .find(|r| r.content == content && r.prio.unwrap_or(0) == prio.unwrap_or(0))
+            {
+                self.call("nameserver.deleteRecord", json!({ "id": entry.id }))
+                    .await
+                    .map(|_| ())?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
         let name = name.into_name().to_string();
         let domain = origin.into_name().to_string();
         let rtype = inwx_record_type(record_type);
 
         self.ensure_logged_in().await?;
-
-        let id = self.find_record_id(&domain, &name, rtype, None).await?;
-        self.call("nameserver.deleteRecord", json!({ "id": id }))
-            .await
-            .map(|_| ())
+        let existing = self.list_records_at(&domain, &name, rtype).await?;
+        existing
+            .into_iter()
+            .map(|r| parse_record(record_type, &r.content, r.prio))
+            .collect()
     }
 
-    async fn find_record_id(
+    async fn list_records_at(
         &self,
         domain: &str,
         name: &str,
         record_type: &str,
-        content_filter: Option<&str>,
-    ) -> crate::Result<i64> {
+    ) -> crate::Result<Vec<NameserverRecord>> {
         let params = json!({
             "domain": domain,
             "name": name,
             "type": record_type,
         });
         let resp = self.call("nameserver.info", params).await?;
-        let res_data = resp.res_data.ok_or_else(|| {
-            Error::Api(format!(
-                "INWX nameserver.info returned no resData for {name} {record_type}"
-            ))
-        })?;
+        let Some(res_data) = resp.res_data else {
+            return Ok(Vec::new());
+        };
         let info: NameserverInfoResData = serde_json::from_value(res_data)
             .map_err(|err| Error::Api(format!("Failed to parse INWX nameserver.info: {err}")))?;
 
-        info.record
+        let apex = strip_origin_from_name(name, domain, Some("@"));
+        let bare_name = name.trim_end_matches('.');
+        Ok(info
+            .record
             .into_iter()
-            .find(|record| {
-                record.record_type.eq_ignore_ascii_case(record_type)
-                    && content_filter.is_none_or(|expected| record.content == expected)
-                    && (record.name == name
-                        || record.name.trim_end_matches('.') == name.trim_end_matches('.'))
+            .filter(|record| {
+                if !record.record_type.eq_ignore_ascii_case(record_type) {
+                    return false;
+                }
+                let echoed = record.name.trim_end_matches('.');
+                echoed == bare_name || echoed == apex
             })
-            .map(|record| record.id)
-            .ok_or_else(|| {
-                Error::Api(format!(
-                    "INWX record {name} of type {record_type} not found"
-                ))
-            })
+            .collect())
+    }
+
+    async fn create_record(
+        &self,
+        domain: &str,
+        name: &str,
+        record_type: &str,
+        ttl: u32,
+        content: String,
+        prio: Option<u16>,
+    ) -> crate::Result<()> {
+        let mut params = json!({
+            "domain": domain,
+            "name": name,
+            "type": record_type,
+            "content": content,
+            "ttl": ttl,
+        });
+        if let Some(prio) = prio {
+            params["prio"] = json!(prio);
+        }
+        self.call("nameserver.createRecord", params)
+            .await
+            .map(|_| ())
     }
 
     async fn ensure_logged_in(&self) -> crate::Result<()> {
@@ -268,9 +342,10 @@ impl InwxProvider {
             .find_map(|value| value.split(';').next().map(|part| part.trim().to_string()))
             .unwrap_or_default();
 
-        let rpc: RpcResponse = response.json().await.map_err(|err| {
-            Error::Api(format!("Failed to parse INWX login response: {err}"))
-        })?;
+        let rpc: RpcResponse = response
+            .json()
+            .await
+            .map_err(|err| Error::Api(format!("Failed to parse INWX login response: {err}")))?;
         if rpc.code / 1000 != 1 {
             return Err(Error::Api(format!(
                 "INWX login failed: code={} message={}",
@@ -326,13 +401,15 @@ impl InwxProvider {
             request = request.header(reqwest::header::COOKIE, &cookie);
         }
 
-        let response = request.send().await.map_err(|err| {
-            Error::Api(format!("INWX request to {method} failed: {err}"))
-        })?;
+        let response = request
+            .send()
+            .await
+            .map_err(|err| Error::Api(format!("INWX request to {method} failed: {err}")))?;
         let status = response.status();
-        let body = response.text().await.map_err(|err| {
-            Error::Api(format!("Failed to read INWX response body: {err}"))
-        })?;
+        let body = response
+            .text()
+            .await
+            .map_err(|err| Error::Api(format!("Failed to read INWX response body: {err}")))?;
 
         if !status.is_success() {
             return match status.as_u16() {
@@ -346,7 +423,9 @@ impl InwxProvider {
         }
 
         let rpc: RpcResponse = serde_json::from_str(&body).map_err(|err| {
-            Error::Api(format!("Failed to parse INWX response from {method}: {err}"))
+            Error::Api(format!(
+                "Failed to parse INWX response from {method}: {err}"
+            ))
         })?;
         if rpc.code / 1000 != 1 {
             return Err(Error::Api(format!(
@@ -373,34 +452,236 @@ fn inwx_record_type(record_type: DnsRecordType) -> &'static str {
     }
 }
 
-fn inwx_record_payload(
-    record: &DnsRecord,
-) -> crate::Result<(&'static str, String, Option<u16>)> {
-    Ok(match record {
+fn inwx_record_payload(record: &DnsRecord) -> (&'static str, String, Option<u16>) {
+    match record {
         DnsRecord::A(ip) => ("A", ip.to_string(), None),
         DnsRecord::AAAA(ip) => ("AAAA", ip.to_string(), None),
-        DnsRecord::CNAME(name) => ("CNAME", name.clone(), None),
-        DnsRecord::NS(name) => ("NS", name.clone(), None),
-        DnsRecord::MX(mx) => ("MX", mx.exchange.clone(), Some(mx.priority)),
+        DnsRecord::CNAME(name) => ("CNAME", name.as_str().into_fqdn().into_owned(), None),
+        DnsRecord::NS(name) => ("NS", name.as_str().into_fqdn().into_owned(), None),
+        DnsRecord::MX(mx) => (
+            "MX",
+            mx.exchange.as_str().into_fqdn().into_owned(),
+            Some(mx.priority),
+        ),
         DnsRecord::TXT(value) => ("TXT", value.clone(), None),
         DnsRecord::SRV(srv) => (
             "SRV",
-            format!("{} {} {}", srv.weight, srv.port, srv.target),
+            format!(
+                "{} {} {}",
+                srv.weight,
+                srv.port,
+                srv.target.as_str().into_fqdn()
+            ),
             Some(srv.priority),
         ),
-        DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
-                "TLSA records are not supported by INWX".into(),
-            ));
+        DnsRecord::TLSA(tlsa) => ("TLSA", format!("{tlsa}"), None),
+        DnsRecord::CAA(caa) => ("CAA", format!("{caa}"), None),
+    }
+}
+
+fn build_payloads(records: &[DnsRecord]) -> Vec<(String, Option<u16>)> {
+    records
+        .iter()
+        .map(|r| {
+            let (_, content, prio) = inwx_record_payload(r);
+            (content, prio)
+        })
+        .collect()
+}
+
+fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
+    for r in records {
+        if r.as_type() != expected {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected.as_str(),
+                r.as_type().as_str(),
+            )));
         }
-        DnsRecord::CAA(caa) => {
-            let (flags, tag, value) = caa.clone().decompose();
-            (
-                "CAA",
-                format!("{flags} {tag} \"{value}\""),
-                None,
-            )
+    }
+    Ok(())
+}
+
+fn parse_record(
+    record_type: DnsRecordType,
+    content: &str,
+    prio: Option<u16>,
+) -> crate::Result<DnsRecord> {
+    match record_type {
+        DnsRecordType::A => content
+            .parse()
+            .map(DnsRecord::A)
+            .map_err(|err| Error::Parse(format!("invalid INWX A content {content}: {err}"))),
+        DnsRecordType::AAAA => content
+            .parse()
+            .map(DnsRecord::AAAA)
+            .map_err(|err| Error::Parse(format!("invalid INWX AAAA content {content}: {err}"))),
+        DnsRecordType::CNAME => Ok(DnsRecord::CNAME(content.to_string())),
+        DnsRecordType::NS => Ok(DnsRecord::NS(content.to_string())),
+        DnsRecordType::MX => Ok(DnsRecord::MX(MXRecord {
+            exchange: content.to_string(),
+            priority: prio.unwrap_or(0),
+        })),
+        DnsRecordType::TXT => Ok(DnsRecord::TXT(content.to_string())),
+        DnsRecordType::SRV => parse_srv(content, prio.unwrap_or(0)),
+        DnsRecordType::TLSA => parse_tlsa(content),
+        DnsRecordType::CAA => parse_caa(content),
+    }
+}
+
+fn parse_srv(content: &str, priority: u16) -> crate::Result<DnsRecord> {
+    let mut parts = content.split_ascii_whitespace();
+    let weight: u16 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid INWX SRV content: {content}")))?
+        .parse()
+        .map_err(|err| Error::Parse(format!("invalid SRV weight: {err}")))?;
+    let port: u16 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid INWX SRV content: {content}")))?
+        .parse()
+        .map_err(|err| Error::Parse(format!("invalid SRV port: {err}")))?;
+    let target = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid INWX SRV content: {content}")))?
+        .to_string();
+    Ok(DnsRecord::SRV(SRVRecord {
+        priority,
+        weight,
+        port,
+        target,
+    }))
+}
+
+fn parse_tlsa(content: &str) -> crate::Result<DnsRecord> {
+    let mut parts = content.split_ascii_whitespace();
+    let usage: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid INWX TLSA content: {content}")))?
+        .parse()
+        .map_err(|err| Error::Parse(format!("invalid TLSA usage: {err}")))?;
+    let selector: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid INWX TLSA content: {content}")))?
+        .parse()
+        .map_err(|err| Error::Parse(format!("invalid TLSA selector: {err}")))?;
+    let matching: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid INWX TLSA content: {content}")))?
+        .parse()
+        .map_err(|err| Error::Parse(format!("invalid TLSA matching: {err}")))?;
+    let hex = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid INWX TLSA content: {content}")))?;
+    Ok(DnsRecord::TLSA(TLSARecord {
+        cert_usage: tlsa_cert_usage_from_u8(usage)?,
+        selector: tlsa_selector_from_u8(selector)?,
+        matching: tlsa_matching_from_u8(matching)?,
+        cert_data: decode_hex(hex)?,
+    }))
+}
+
+fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
+    let (flags_str, rest) = content
+        .split_once(' ')
+        .ok_or_else(|| Error::Parse(format!("invalid INWX CAA content: {content}")))?;
+    let flags: u8 = flags_str
+        .parse()
+        .map_err(|err| Error::Parse(format!("invalid CAA flags: {err}")))?;
+    let (tag, raw_value) = rest
+        .split_once(' ')
+        .ok_or_else(|| Error::Parse(format!("invalid INWX CAA content: {content}")))?;
+    let value = raw_value.trim().trim_matches('"').to_string();
+    let issuer_critical = flags & 0x80 != 0;
+
+    match tag {
+        "issue" => {
+            let (name, options) = split_caa_value(&value);
+            Ok(DnsRecord::CAA(CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            }))
         }
+        "issuewild" => {
+            let (name, options) = split_caa_value(&value);
+            Ok(DnsRecord::CAA(CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            }))
+        }
+        "iodef" => Ok(DnsRecord::CAA(CAARecord::Iodef {
+            issuer_critical,
+            url: value,
+        })),
+        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
+    }
+}
+
+fn split_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name_part = parts.next().unwrap_or("").to_string();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part)
+    };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
+}
+
+fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
+    if !hex.len().is_multiple_of(2) {
+        return Err(Error::Parse(format!("invalid hex string: {hex}")));
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| {
+            u8::from_str_radix(&hex[i..i + 2], 16)
+                .map_err(|e| Error::Parse(format!("invalid hex byte: {e}")))
+        })
+        .collect()
+}
+
+fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
+    Ok(match value {
+        0 => TlsaCertUsage::PkixTa,
+        1 => TlsaCertUsage::PkixEe,
+        2 => TlsaCertUsage::DaneTa,
+        3 => TlsaCertUsage::DaneEe,
+        255 => TlsaCertUsage::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {value}"))),
     })
 }
 
+fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
+    Ok(match value {
+        0 => TlsaSelector::Full,
+        1 => TlsaSelector::Spki,
+        255 => TlsaSelector::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA selector: {value}"))),
+    })
+}
+
+fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
+    Ok(match value {
+        0 => TlsaMatching::Raw,
+        1 => TlsaMatching::Sha256,
+        2 => TlsaMatching::Sha512,
+        255 => TlsaMatching::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
+    })
+}

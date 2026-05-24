@@ -12,8 +12,8 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        CAARecord, DnsRecord, DnsRecordType, DnsUpdater, Error, MXRecord, SRVRecord, TLSARecord,
-        TlsaCertUsage, TlsaMatching, TlsaSelector, providers::cloudflare::CloudflareProvider,
+        CAARecord, DnsRecord, DnsRecordType, Error, MXRecord, SRVRecord, TLSARecord, TlsaCertUsage,
+        TlsaMatching, TlsaSelector, providers::cloudflare::CloudflareProvider,
     };
     use mockito::{Matcher, Mock, ServerGuard};
     use serde_json::json;
@@ -1181,25 +1181,6 @@ mod tests {
         zone.assert();
         list.assert();
         create.assert();
-    }
-
-    #[tokio::test]
-    async fn test_legacy_create_via_dispatch_returns_error() {
-        // The old DnsUpdater::create dispatch path now refuses Cloudflare.
-        let updater =
-            DnsUpdater::new_cloudflare("test_token", Some(Duration::from_secs(1))).unwrap();
-        let result = updater
-            .create(
-                "test.example.com",
-                DnsRecord::A("1.1.1.1".parse().unwrap()),
-                300,
-                "example.com",
-            )
-            .await;
-        assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("RRSet API")),
-            "expected Error::Api(RRSet API ...), got {result:?}"
-        );
     }
 
     #[tokio::test]

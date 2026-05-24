@@ -10,18 +10,29 @@
  */
 
 use crate::{
-    DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
     utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
-use std::{
-    net::{Ipv4Addr, Ipv6Addr},
-    time::Duration,
-};
+use std::{borrow::Cow, time::Duration};
+
+const DEFAULT_API_ENDPOINT: &str = "https://api.bunny.net";
+
+const BUNNY_TYPE_A: u8 = 0;
+const BUNNY_TYPE_AAAA: u8 = 1;
+const BUNNY_TYPE_CNAME: u8 = 2;
+const BUNNY_TYPE_TXT: u8 = 3;
+const BUNNY_TYPE_MX: u8 = 4;
+const BUNNY_TYPE_SRV: u8 = 8;
+const BUNNY_TYPE_CAA: u8 = 9;
+const BUNNY_TYPE_NS: u8 = 12;
+const BUNNY_TYPE_TLSA: u8 = 15;
 
 #[derive(Clone)]
 pub struct BunnyProvider {
     client: HttpClientBuilder,
+    endpoint: Cow<'static, str>,
 }
 
 impl BunnyProvider {
@@ -30,116 +41,158 @@ impl BunnyProvider {
             client: HttpClientBuilder::default()
                 .with_header("AccessKey", api_key.as_ref())
                 .with_timeout(timeout),
+            endpoint: Cow::Borrowed(DEFAULT_API_ENDPOINT),
         })
     }
 
-    // ---
-    // Library functions
-
-    pub(crate) async fn create(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let zone_data = self.get_zone_data(origin).await?;
-        let name = strip_origin_from_name(name.into_name().as_ref(), &zone_data.domain, Some(""));
-
-        let (flags, tag) = extract_caa_fields(&record);
-        let body = DnsRecordData {
-            name,
-            record_type: (&record).into(),
-            ttl: Some(ttl),
-            flags,
-            tag,
-        };
-
-        self.client
-            .put(format!(
-                "https://api.bunny.net/dnszone/{}/records",
-                zone_data.id
-            ))
-            .with_body(&body)?
-            .send_with_retry::<BunnyDnsRecord>(3)
-            .await
-            .map(|_| ())
+    #[cfg(test)]
+    pub(crate) fn with_endpoint(self, endpoint: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            endpoint: endpoint.into(),
+            ..self
+        }
     }
 
-    pub(crate) async fn update(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        record_type: DnsRecordType,
         ttl: u32,
+        records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         let zone_data = self.get_zone_data(origin).await?;
         let name = strip_origin_from_name(name.into_name().as_ref(), &zone_data.domain, Some(""));
-        let zone_id = zone_data.id;
-        let bunny_record = zone_data
+        let desired = build_contents(record_type, records)?;
+        let mut existing_pool: Vec<BunnyDnsRecord> = zone_data
             .records
-            .iter()
-            .find(|r| r.record.name == name && r.record.record_type.eq_type(&record))
-            .ok_or(Error::NotFound)?;
+            .into_iter()
+            .filter(|r| r.name == name && r.content.matches_type(record_type))
+            .collect();
 
+        let mut to_add = Vec::new();
+        for content in desired {
+            if let Some(idx) = existing_pool.iter().position(|r| r.content == content) {
+                existing_pool.swap_remove(idx);
+            } else {
+                to_add.push(content);
+            }
+        }
+
+        for stale in existing_pool {
+            self.delete_record(zone_data.id, stale.id).await?;
+        }
+        for content in to_add {
+            self.add_record(zone_data.id, &name, ttl, &content).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let zone_data = self.get_zone_data(origin).await?;
+        let name = strip_origin_from_name(name.into_name().as_ref(), &zone_data.domain, Some(""));
+        let desired = build_contents(record_type, records)?;
+        let existing: Vec<BunnyDnsRecord> = zone_data
+            .records
+            .into_iter()
+            .filter(|r| r.name == name && r.content.matches_type(record_type))
+            .collect();
+
+        for content in desired {
+            if existing.iter().any(|r| r.content == content) {
+                continue;
+            }
+            self.add_record(zone_data.id, &name, ttl, &content).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let zone_data = self.get_zone_data(origin).await?;
+        let name = strip_origin_from_name(name.into_name().as_ref(), &zone_data.domain, Some(""));
+        let to_remove = build_contents(record_type, records)?;
+        let existing: Vec<BunnyDnsRecord> = zone_data
+            .records
+            .into_iter()
+            .filter(|r| r.name == name && r.content.matches_type(record_type))
+            .collect();
+
+        for content in to_remove {
+            if let Some(entry) = existing.iter().find(|r| r.content == content) {
+                self.delete_record(zone_data.id, entry.id).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        let zone_data = self.get_zone_data(origin).await?;
+        let name = strip_origin_from_name(name.into_name().as_ref(), &zone_data.domain, Some(""));
+        zone_data
+            .records
+            .into_iter()
+            .filter(|r| r.name == name && r.content.matches_type(record_type))
+            .map(|r| DnsRecord::try_from(r.content))
+            .collect()
+    }
+
+    async fn add_record(
+        &self,
+        zone_id: u32,
+        name: &str,
+        ttl: u32,
+        content: &BunnyRecordContent,
+    ) -> crate::Result<()> {
+        let body = AddDnsRecordBody { name, ttl, content };
         self.client
-            .post(format!(
-                "https://api.bunny.net/dnszone/{zone_id}/records/{}",
-                bunny_record.id
-            ))
-            .with_body({
-                let (flags, tag) = extract_caa_fields(&record);
-                BunnyDnsRecord {
-                    id: bunny_record.id,
-                    record: DnsRecordData {
-                        name: bunny_record.record.name.clone(),
-                        record_type: (&record).into(),
-                        ttl: Some(ttl),
-                        flags,
-                        tag,
-                    },
-                }
-            })?
+            .put(format!("{}/dnszone/{zone_id}/records", self.endpoint))
+            .with_body(&body)?
             .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
 
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
-        record: DnsRecordType,
-    ) -> crate::Result<()> {
-        let zone_data = self.get_zone_data(origin).await?;
-        let name = strip_origin_from_name(name.into_name().as_ref(), &zone_data.domain, Some(""));
-        let zone_id = zone_data.id;
-        let record_id = zone_data
-            .records
-            .iter()
-            .find(|r| r.record.name == name && r.record.record_type == record)
-            .map(|r| r.id)
-            .ok_or(Error::NotFound)?;
-
+    async fn delete_record(&self, zone_id: u32, record_id: u32) -> crate::Result<()> {
         self.client
             .delete(format!(
-                "https://api.bunny.net/dnszone/{zone_id}/records/{record_id}",
+                "{}/dnszone/{zone_id}/records/{record_id}",
+                self.endpoint
             ))
             .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
-
-    // ---
-    // Utility functions
 
     async fn get_zone_data(&self, origin: impl IntoFqdn<'_>) -> crate::Result<PartialDnsZone> {
         let origin = origin.into_name();
-
         let query_string = serde_urlencoded::to_string([("search", origin.as_ref())])
             .expect("Unable to convert DNS origin into HTTP query string");
         self.client
-            .get(format!("https://api.bunny.net/dnszone?{query_string}"))
+            .get(format!("{}/dnszone?{query_string}", self.endpoint))
             .send_with_retry::<ApiItems<PartialDnsZone>>(3)
             .await
             .and_then(|r| {
@@ -151,145 +204,325 @@ impl BunnyProvider {
     }
 }
 
-// -----------
-// Data types
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "Type")]
-#[repr(u8)]
-pub enum BunnyDnsRecordType {
-    #[serde(rename_all = "PascalCase")]
-    A {
-        value: Ipv4Addr,
-    },
-    #[serde(rename_all = "PascalCase")]
-    AAAA {
-        value: Ipv6Addr,
-    },
-    #[serde(rename_all = "PascalCase")]
-    CNAME {
-        value: String,
-    },
-    #[serde(rename_all = "PascalCase")]
-    TXT {
-        value: String,
-    },
-    #[serde(rename_all = "PascalCase")]
-    MX {
-        value: String,
-        priority: u16,
-    },
-    Redirect,
-    Flatten,
-    PullZone,
-    #[serde(rename_all = "PascalCase")]
-    SRV {
-        value: String,
-        priority: u16,
-        port: u16,
-        weight: u16,
-    },
-    #[serde(rename_all = "PascalCase")]
-    CAA {
-        value: String,
-    },
-    PTR,
-    Script,
-    #[serde(rename_all = "PascalCase")]
-    NS {
-        value: String,
-    },
-    SVCB,
-    HTTPS,
-    #[serde(rename_all = "PascalCase")]
-    TLSA {
-        value: String,
-    },
+fn build_contents(
+    expected_type: DnsRecordType,
+    records: Vec<DnsRecord>,
+) -> crate::Result<Vec<BunnyRecordContent>> {
+    let mut out = Vec::with_capacity(records.len());
+    for record in records {
+        if record.as_type() != expected_type {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected_type.as_str(),
+                record.as_type().as_str(),
+            )));
+        }
+        out.push(BunnyRecordContent::try_from(&record)?);
+    }
+    Ok(out)
 }
 
-impl From<&DnsRecord> for BunnyDnsRecordType {
-    fn from(record: &DnsRecord) -> Self {
-        match record {
-            DnsRecord::A(content) => BunnyDnsRecordType::A { value: *content },
-            DnsRecord::AAAA(content) => BunnyDnsRecordType::AAAA { value: *content },
-            DnsRecord::CNAME(content) => BunnyDnsRecordType::CNAME {
-                value: content.to_string(),
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "PascalCase")]
+pub struct BunnyRecordContent {
+    #[serde(rename = "Type")]
+    pub record_type: u8,
+    #[serde(default)]
+    pub value: String,
+    #[serde(default, skip_serializing_if = "is_zero_u16")]
+    pub priority: u16,
+    #[serde(default, skip_serializing_if = "is_zero_u16")]
+    pub weight: u16,
+    #[serde(default, skip_serializing_if = "is_zero_u16")]
+    pub port: u16,
+    #[serde(default, skip_serializing_if = "is_zero_u8")]
+    pub flags: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+}
+
+fn is_zero_u8(v: &u8) -> bool {
+    *v == 0
+}
+
+fn is_zero_u16(v: &u16) -> bool {
+    *v == 0
+}
+
+impl BunnyRecordContent {
+    fn matches_type(&self, record_type: DnsRecordType) -> bool {
+        bunny_type_for(record_type)
+            .map(|t| t == self.record_type)
+            .unwrap_or(false)
+    }
+}
+
+fn bunny_type_for(record_type: DnsRecordType) -> Option<u8> {
+    Some(match record_type {
+        DnsRecordType::A => BUNNY_TYPE_A,
+        DnsRecordType::AAAA => BUNNY_TYPE_AAAA,
+        DnsRecordType::CNAME => BUNNY_TYPE_CNAME,
+        DnsRecordType::TXT => BUNNY_TYPE_TXT,
+        DnsRecordType::MX => BUNNY_TYPE_MX,
+        DnsRecordType::SRV => BUNNY_TYPE_SRV,
+        DnsRecordType::CAA => BUNNY_TYPE_CAA,
+        DnsRecordType::NS => BUNNY_TYPE_NS,
+        DnsRecordType::TLSA => BUNNY_TYPE_TLSA,
+    })
+}
+
+impl TryFrom<&DnsRecord> for BunnyRecordContent {
+    type Error = Error;
+
+    fn try_from(record: &DnsRecord) -> crate::Result<Self> {
+        Ok(match record {
+            DnsRecord::A(addr) => BunnyRecordContent {
+                record_type: BUNNY_TYPE_A,
+                value: addr.to_string(),
+                ..Default::default()
             },
-            DnsRecord::NS(content) => BunnyDnsRecordType::NS {
-                value: content.to_string(),
+            DnsRecord::AAAA(addr) => BunnyRecordContent {
+                record_type: BUNNY_TYPE_AAAA,
+                value: addr.to_string(),
+                ..Default::default()
             },
-            DnsRecord::MX(mx) => BunnyDnsRecordType::MX {
-                value: mx.exchange.to_string(),
+            DnsRecord::CNAME(target) => BunnyRecordContent {
+                record_type: BUNNY_TYPE_CNAME,
+                value: target.clone(),
+                ..Default::default()
+            },
+            DnsRecord::NS(target) => BunnyRecordContent {
+                record_type: BUNNY_TYPE_NS,
+                value: target.clone(),
+                ..Default::default()
+            },
+            DnsRecord::TXT(text) => BunnyRecordContent {
+                record_type: BUNNY_TYPE_TXT,
+                value: text.clone(),
+                ..Default::default()
+            },
+            DnsRecord::MX(mx) => BunnyRecordContent {
+                record_type: BUNNY_TYPE_MX,
+                value: mx.exchange.clone(),
                 priority: mx.priority,
+                ..Default::default()
             },
-            DnsRecord::TXT(content) => BunnyDnsRecordType::TXT {
-                value: content.to_string(),
-            },
-            DnsRecord::SRV(srv) => BunnyDnsRecordType::SRV {
-                value: srv.target.to_string(),
+            DnsRecord::SRV(srv) => BunnyRecordContent {
+                record_type: BUNNY_TYPE_SRV,
+                value: srv.target.clone(),
                 priority: srv.priority,
-                port: srv.port,
                 weight: srv.weight,
+                port: srv.port,
+                ..Default::default()
             },
-            DnsRecord::TLSA(tlsa) => BunnyDnsRecordType::TLSA {
+            DnsRecord::TLSA(tlsa) => BunnyRecordContent {
+                record_type: BUNNY_TYPE_TLSA,
                 value: tlsa.to_string(),
+                ..Default::default()
             },
             DnsRecord::CAA(caa) => {
-                let (_flags, _tag, value) = caa.clone().decompose();
-                BunnyDnsRecordType::CAA { value }
+                let (flags, tag, value) = caa.clone().decompose();
+                BunnyRecordContent {
+                    record_type: BUNNY_TYPE_CAA,
+                    value,
+                    flags,
+                    tag: Some(tag),
+                    ..Default::default()
+                }
             }
-        }
+        })
     }
 }
 
-impl BunnyDnsRecordType {
-    /// Tests `self` and `other`'s DNS record type to be equal
-    fn eq_type(&self, other: &DnsRecord) -> bool {
-        match other {
-            DnsRecord::A(..) => matches!(self, BunnyDnsRecordType::A { .. }),
-            DnsRecord::AAAA(..) => matches!(self, BunnyDnsRecordType::AAAA { .. }),
-            DnsRecord::CNAME(..) => matches!(self, BunnyDnsRecordType::CNAME { .. }),
-            DnsRecord::NS(..) => matches!(self, BunnyDnsRecordType::NS { .. }),
-            DnsRecord::MX(..) => matches!(self, BunnyDnsRecordType::MX { .. }),
-            DnsRecord::TXT(..) => matches!(self, BunnyDnsRecordType::TXT { .. }),
-            DnsRecord::SRV(..) => matches!(self, BunnyDnsRecordType::SRV { .. }),
-            DnsRecord::TLSA(..) => matches!(self, BunnyDnsRecordType::TLSA { .. }),
-            DnsRecord::CAA(..) => matches!(self, BunnyDnsRecordType::CAA { .. }),
-        }
+impl TryFrom<BunnyRecordContent> for DnsRecord {
+    type Error = Error;
+
+    fn try_from(content: BunnyRecordContent) -> crate::Result<Self> {
+        Ok(match content.record_type {
+            BUNNY_TYPE_A => DnsRecord::A(content.value.parse().map_err(|e| {
+                Error::Parse(format!("invalid IPv4 address {:?}: {e}", content.value))
+            })?),
+            BUNNY_TYPE_AAAA => DnsRecord::AAAA(content.value.parse().map_err(|e| {
+                Error::Parse(format!("invalid IPv6 address {:?}: {e}", content.value))
+            })?),
+            BUNNY_TYPE_CNAME => DnsRecord::CNAME(content.value),
+            BUNNY_TYPE_NS => DnsRecord::NS(content.value),
+            BUNNY_TYPE_TXT => DnsRecord::TXT(content.value),
+            BUNNY_TYPE_MX => DnsRecord::MX(MXRecord {
+                exchange: content.value,
+                priority: content.priority,
+            }),
+            BUNNY_TYPE_SRV => DnsRecord::SRV(SRVRecord {
+                target: content.value,
+                priority: content.priority,
+                weight: content.weight,
+                port: content.port,
+            }),
+            BUNNY_TYPE_CAA => {
+                let tag = content
+                    .tag
+                    .ok_or_else(|| Error::Parse("CAA record missing Tag field".to_string()))?;
+                DnsRecord::CAA(build_caa(content.flags, &tag, content.value)?)
+            }
+            BUNNY_TYPE_TLSA => DnsRecord::TLSA(parse_tlsa(&content.value)?),
+            other => {
+                return Err(Error::Parse(format!(
+                    "unsupported Bunny record type: {other}"
+                )));
+            }
+        })
     }
 }
 
-impl PartialEq<DnsRecordType> for BunnyDnsRecordType {
-    fn eq(&self, other: &DnsRecordType) -> bool {
-        match other {
-            DnsRecordType::A => matches!(self, BunnyDnsRecordType::A { .. }),
-            DnsRecordType::AAAA => matches!(self, BunnyDnsRecordType::AAAA { .. }),
-            DnsRecordType::CNAME => matches!(self, BunnyDnsRecordType::CNAME { .. }),
-            DnsRecordType::NS => matches!(self, BunnyDnsRecordType::NS { .. }),
-            DnsRecordType::MX => matches!(self, BunnyDnsRecordType::MX { .. }),
-            DnsRecordType::TXT => matches!(self, BunnyDnsRecordType::TXT { .. }),
-            DnsRecordType::SRV => matches!(self, BunnyDnsRecordType::SRV { .. }),
-            DnsRecordType::TLSA => matches!(self, BunnyDnsRecordType::TLSA { .. }),
-            DnsRecordType::CAA => matches!(self, BunnyDnsRecordType::CAA { .. }),
+fn build_caa(flags: u8, tag: &str, value: String) -> crate::Result<CAARecord> {
+    let issuer_critical = flags & 0x80 != 0;
+    match tag {
+        "issue" => {
+            let (name, options) = parse_caa_value(&value);
+            Ok(CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            })
         }
+        "issuewild" => {
+            let (name, options) = parse_caa_value(&value);
+            Ok(CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "iodef" => Ok(CAARecord::Iodef {
+            issuer_critical,
+            url: value,
+        }),
+        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
     }
 }
 
-// -----------
-// API Responses
+fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name_part = parts.next().unwrap_or("").trim().to_string();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part)
+    };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
+}
+
+fn parse_tlsa(value: &str) -> crate::Result<TLSARecord> {
+    let mut parts = value.split_whitespace();
+    let usage = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("TLSA missing usage field: {value:?}")))?;
+    let selector = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("TLSA missing selector field: {value:?}")))?;
+    let matching = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("TLSA missing matching field: {value:?}")))?;
+    let cert_hex = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("TLSA missing certificate data: {value:?}")))?;
+    if parts.next().is_some() {
+        return Err(Error::Parse(format!(
+            "TLSA unexpected extra fields: {value:?}"
+        )));
+    }
+    let usage = usage
+        .parse::<u8>()
+        .map_err(|e| Error::Parse(format!("TLSA invalid usage {usage:?}: {e}")))?;
+    let selector = selector
+        .parse::<u8>()
+        .map_err(|e| Error::Parse(format!("TLSA invalid selector {selector:?}: {e}")))?;
+    let matching = matching
+        .parse::<u8>()
+        .map_err(|e| Error::Parse(format!("TLSA invalid matching {matching:?}: {e}")))?;
+    Ok(TLSARecord {
+        cert_usage: tlsa_cert_usage_from_u8(usage)?,
+        selector: tlsa_selector_from_u8(selector)?,
+        matching: tlsa_matching_from_u8(matching)?,
+        cert_data: decode_hex(cert_hex)?,
+    })
+}
+
+fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
+    Ok(match value {
+        0 => TlsaCertUsage::PkixTa,
+        1 => TlsaCertUsage::PkixEe,
+        2 => TlsaCertUsage::DaneTa,
+        3 => TlsaCertUsage::DaneEe,
+        255 => TlsaCertUsage::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {value}"))),
+    })
+}
+
+fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
+    Ok(match value {
+        0 => TlsaSelector::Full,
+        1 => TlsaSelector::Spki,
+        255 => TlsaSelector::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA selector: {value}"))),
+    })
+}
+
+fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
+    Ok(match value {
+        0 => TlsaMatching::Raw,
+        1 => TlsaMatching::Sha256,
+        2 => TlsaMatching::Sha512,
+        255 => TlsaMatching::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
+    })
+}
+
+fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
+    if !hex.len().is_multiple_of(2) {
+        return Err(Error::Parse(format!("invalid hex string: {hex}")));
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| {
+            u8::from_str_radix(&hex[i..i + 2], 16)
+                .map_err(|e| Error::Parse(format!("invalid hex byte: {e}")))
+        })
+        .collect()
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "PascalCase")]
+struct AddDnsRecordBody<'a> {
+    name: &'a str,
+    ttl: u32,
+    #[serde(flatten)]
+    content: &'a BunnyRecordContent,
+}
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase")]
 pub struct ApiItems<T> {
     pub items: Vec<T>,
-
     pub current_page: u32,
     pub total_items: u32,
-
     pub has_more_items: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase")]
 pub struct PartialDnsZone {
     pub id: u32,
@@ -297,37 +530,11 @@ pub struct PartialDnsZone {
     pub records: Vec<BunnyDnsRecord>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase")]
 pub struct BunnyDnsRecord {
     pub id: u32,
-    #[serde(flatten)]
-    pub record: DnsRecordData,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "PascalCase")]
-pub struct DnsRecordData {
     pub name: String,
-
     #[serde(flatten)]
-    pub record_type: BunnyDnsRecordType,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl: Option<u32>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub flags: Option<u8>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>,
-}
-
-fn extract_caa_fields(record: &DnsRecord) -> (Option<u8>, Option<String>) {
-    if let DnsRecord::CAA(caa) = record {
-        let (flags, tag, _value) = caa.clone().decompose();
-        (Some(flags), Some(tag))
-    } else {
-        (None, None)
-    }
+    pub content: BunnyRecordContent,
 }

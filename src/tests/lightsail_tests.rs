@@ -12,7 +12,7 @@
 #[cfg(test)]
 mod tests {
     use crate::providers::lightsail::{LightsailConfig, LightsailProvider};
-    use crate::{DnsRecord, DnsRecordType, DnsUpdater, Error, MXRecord};
+    use crate::{DnsRecord, DnsRecordType, DnsUpdater, Error};
     use mockito::Matcher;
     use serde_json::{Value, json};
     use std::time::Duration;
@@ -26,303 +26,13 @@ mod tests {
             domain: Some("example.com".to_string()),
             request_timeout: Some(Duration::from_secs(5)),
         };
-        LightsailProvider::new(config).unwrap().with_endpoint(endpoint)
+        LightsailProvider::new(config)
+            .unwrap()
+            .with_endpoint(endpoint)
     }
 
     fn build_url(server_url: &str) -> String {
         server_url.trim_end_matches('/').to_string()
-    }
-
-    #[tokio::test]
-    async fn create_a_record_success() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("POST", "/")
-            .match_header("x-amz-target", "Lightsail_20161128.CreateDomainEntry")
-            .match_header("content-type", "application/x-amz-json-1.1")
-            .match_body(Matcher::Json(json!({
-                "domainName": "example.com",
-                "domainEntry": {
-                    "name": "www.example.com",
-                    "target": "1.2.3.4",
-                    "type": "A"
-                }
-            })))
-            .with_status(200)
-            .with_body("{}")
-            .create_async()
-            .await;
-
-        let provider = provider_with_endpoint(&build_url(&server.url()));
-        let result = provider
-            .create(
-                "www.example.com",
-                DnsRecord::A("1.2.3.4".parse().unwrap()),
-                300,
-                "example.com",
-            )
-            .await;
-        assert!(result.is_ok(), "create failed: {:?}", result);
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn create_mx_record_serializes_priority() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("POST", "/")
-            .match_header("x-amz-target", "Lightsail_20161128.CreateDomainEntry")
-            .match_body(Matcher::PartialJson(json!({
-                "domainName": "example.com",
-                "domainEntry": {
-                    "name": "example.com",
-                    "target": "10 mail.example.com.",
-                    "type": "MX"
-                }
-            })))
-            .with_status(200)
-            .with_body("{}")
-            .create_async()
-            .await;
-
-        let provider = provider_with_endpoint(&build_url(&server.url()));
-        let result = provider
-            .create(
-                "example.com",
-                DnsRecord::MX(MXRecord {
-                    exchange: "mail.example.com".to_string(),
-                    priority: 10,
-                }),
-                300,
-                "example.com",
-            )
-            .await;
-        assert!(result.is_ok(), "create failed: {:?}", result);
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn create_txt_record_quotes_value() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("POST", "/")
-            .match_header("x-amz-target", "Lightsail_20161128.CreateDomainEntry")
-            .match_body(Matcher::PartialJson(json!({
-                "domainName": "example.com",
-                "domainEntry": {
-                    "name": "challenge.example.com",
-                    "target": "\"abc123\"",
-                    "type": "TXT"
-                }
-            })))
-            .with_status(200)
-            .with_body("{}")
-            .create_async()
-            .await;
-
-        let provider = provider_with_endpoint(&build_url(&server.url()));
-        let result = provider
-            .create(
-                "challenge.example.com",
-                DnsRecord::TXT("abc123".to_string()),
-                300,
-                "example.com",
-            )
-            .await;
-        assert!(result.is_ok(), "create failed: {:?}", result);
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn create_tlsa_returns_api_error() {
-        let provider = provider_with_endpoint("http://127.0.0.1:1");
-        let result = provider
-            .create(
-                "_443._tcp.example.com",
-                DnsRecord::TLSA(crate::TLSARecord {
-                    cert_usage: crate::TlsaCertUsage::DaneEe,
-                    selector: crate::TlsaSelector::Spki,
-                    matching: crate::TlsaMatching::Sha256,
-                    cert_data: vec![0xde, 0xad],
-                }),
-                300,
-                "example.com",
-            )
-            .await;
-        assert!(matches!(result, Err(Error::Api(_))));
-    }
-
-    #[tokio::test]
-    async fn delete_record_lookups_then_deletes() {
-        let mut server = mockito::Server::new_async().await;
-        let get_domain_response = json!({
-            "domain": {
-                "name": "example.com",
-                "domainEntries": [
-                    {
-                        "id": "entry-123",
-                        "name": "www.example.com",
-                        "target": "1.2.3.4",
-                        "type": "A"
-                    }
-                ]
-            }
-        });
-        let get_mock = server
-            .mock("POST", "/")
-            .match_header("x-amz-target", "Lightsail_20161128.GetDomain")
-            .with_status(200)
-            .with_body(get_domain_response.to_string())
-            .create_async()
-            .await;
-
-        let delete_mock = server
-            .mock("POST", "/")
-            .match_header("x-amz-target", "Lightsail_20161128.DeleteDomainEntry")
-            .match_body(Matcher::PartialJson(json!({
-                "domainName": "example.com",
-                "domainEntry": {
-                    "id": "entry-123",
-                    "name": "www.example.com",
-                    "target": "1.2.3.4",
-                    "type": "A"
-                }
-            })))
-            .with_status(200)
-            .with_body("{}")
-            .create_async()
-            .await;
-
-        let provider = provider_with_endpoint(&build_url(&server.url()));
-        let result = provider
-            .delete("www.example.com", "example.com", DnsRecordType::A)
-            .await;
-        assert!(result.is_ok(), "delete failed: {:?}", result);
-        get_mock.assert_async().await;
-        delete_mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn delete_missing_record_is_ok() {
-        let mut server = mockito::Server::new_async().await;
-        let get_mock = server
-            .mock("POST", "/")
-            .match_header("x-amz-target", "Lightsail_20161128.GetDomain")
-            .with_status(200)
-            .with_body(
-                json!({
-                    "domain": {
-                        "name": "example.com",
-                        "domainEntries": []
-                    }
-                })
-                .to_string(),
-            )
-            .create_async()
-            .await;
-
-        let provider = provider_with_endpoint(&build_url(&server.url()));
-        let result = provider
-            .delete("missing.example.com", "example.com", DnsRecordType::A)
-            .await;
-        assert!(result.is_ok());
-        get_mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn create_record_propagates_400_error() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("POST", "/")
-            .match_header("x-amz-target", "Lightsail_20161128.CreateDomainEntry")
-            .with_status(400)
-            .with_body(r#"{"__type":"InvalidInputException","message":"bad"}"#)
-            .create_async()
-            .await;
-
-        let provider = provider_with_endpoint(&build_url(&server.url()));
-        let result = provider
-            .create(
-                "bad.example.com",
-                DnsRecord::A("1.2.3.4".parse().unwrap()),
-                300,
-                "example.com",
-            )
-            .await;
-        assert!(matches!(result, Err(Error::Api(_))));
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn update_creates_when_missing() {
-        let mut server = mockito::Server::new_async().await;
-        let get_mock = server
-            .mock("POST", "/")
-            .match_header("x-amz-target", "Lightsail_20161128.GetDomain")
-            .with_status(200)
-            .with_body(
-                json!({
-                    "domain": {
-                        "name": "example.com",
-                        "domainEntries": []
-                    }
-                })
-                .to_string(),
-            )
-            .create_async()
-            .await;
-
-        let create_mock = server
-            .mock("POST", "/")
-            .match_header("x-amz-target", "Lightsail_20161128.CreateDomainEntry")
-            .with_status(200)
-            .with_body("{}")
-            .create_async()
-            .await;
-
-        let provider = provider_with_endpoint(&build_url(&server.url()));
-        let result = provider
-            .update(
-                "www.example.com",
-                DnsRecord::A("9.9.9.9".parse().unwrap()),
-                300,
-                "example.com",
-            )
-            .await;
-        assert!(result.is_ok(), "update failed: {:?}", result);
-        get_mock.assert_async().await;
-        create_mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn signs_authorization_header() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("POST", "/")
-            .match_header(
-                "authorization",
-                Matcher::Regex(
-                    "^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/.*lightsail/aws4_request.*"
-                        .to_string(),
-                ),
-            )
-            .match_header("x-amz-target", "Lightsail_20161128.CreateDomainEntry")
-            .with_status(200)
-            .with_body("{}")
-            .create_async()
-            .await;
-
-        let provider = provider_with_endpoint(&build_url(&server.url()));
-        let result = provider
-            .create(
-                "x.example.com",
-                DnsRecord::A("1.2.3.4".parse().unwrap()),
-                300,
-                "example.com",
-            )
-            .await;
-        assert!(result.is_ok(), "create failed: {:?}", result);
-        mock.assert_async().await;
     }
 
     #[test]
@@ -343,6 +53,500 @@ mod tests {
     fn dns_record_serialization_smoke() {
         let value: Value = serde_json::from_str(r#"{"name":"x","target":"y","type":"A"}"#).unwrap();
         assert_eq!(value["type"], "A");
+    }
+
+    #[tokio::test]
+    async fn set_rrset_empty_vec_deletes_only_matching_type() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("POST", "/")
+            .match_header("x-amz-target", "Lightsail_20161128.GetDomain")
+            .with_status(200)
+            .with_body(
+                json!({
+                    "domain": {
+                        "name": "example.com",
+                        "domainEntries": [
+                            {
+                                "id": "id-a",
+                                "name": "www.example.com",
+                                "target": "1.1.1.1",
+                                "type": "A"
+                            },
+                            {
+                                "id": "id-b",
+                                "name": "www.example.com",
+                                "target": "::1",
+                                "type": "AAAA"
+                            }
+                        ]
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let delete_mock = server
+            .mock("POST", "/")
+            .match_header("x-amz-target", "Lightsail_20161128.DeleteDomainEntry")
+            .match_body(Matcher::PartialJson(json!({
+                "domainName": "example.com",
+                "domainEntry": {
+                    "id": "id-a",
+                    "type": "A"
+                }
+            })))
+            .with_status(200)
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let provider = provider_with_endpoint(&build_url(&server.url()));
+        let result = provider
+            .set_rrset(
+                "www.example.com",
+                DnsRecordType::A,
+                300,
+                Vec::new(),
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "set_rrset failed: {:?}", result);
+        get_mock.assert_async().await;
+        delete_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn set_rrset_diffs_creates_missing_and_deletes_extras() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("POST", "/")
+            .match_header("x-amz-target", "Lightsail_20161128.GetDomain")
+            .with_status(200)
+            .with_body(
+                json!({
+                    "domain": {
+                        "name": "example.com",
+                        "domainEntries": [
+                            {
+                                "id": "id-keep",
+                                "name": "www.example.com",
+                                "target": "1.1.1.1",
+                                "type": "A"
+                            },
+                            {
+                                "id": "id-drop",
+                                "name": "www.example.com",
+                                "target": "9.9.9.9",
+                                "type": "A"
+                            }
+                        ]
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let delete_mock = server
+            .mock("POST", "/")
+            .match_header("x-amz-target", "Lightsail_20161128.DeleteDomainEntry")
+            .match_body(Matcher::PartialJson(json!({
+                "domainEntry": { "id": "id-drop" }
+            })))
+            .with_status(200)
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let create_mock = server
+            .mock("POST", "/")
+            .match_header("x-amz-target", "Lightsail_20161128.CreateDomainEntry")
+            .match_body(Matcher::PartialJson(json!({
+                "domainName": "example.com",
+                "domainEntry": {
+                    "name": "www.example.com",
+                    "target": "2.2.2.2",
+                    "type": "A"
+                }
+            })))
+            .with_status(200)
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let provider = provider_with_endpoint(&build_url(&server.url()));
+        let result = provider
+            .set_rrset(
+                "www.example.com",
+                DnsRecordType::A,
+                300,
+                vec![
+                    DnsRecord::A("1.1.1.1".parse().unwrap()),
+                    DnsRecord::A("2.2.2.2".parse().unwrap()),
+                ],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "set_rrset failed: {:?}", result);
+        get_mock.assert_async().await;
+        delete_mock.assert_async().await;
+        create_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn set_rrset_idempotent_no_writes_when_matched() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("POST", "/")
+            .match_header("x-amz-target", "Lightsail_20161128.GetDomain")
+            .with_status(200)
+            .with_body(
+                json!({
+                    "domain": {
+                        "name": "example.com",
+                        "domainEntries": [
+                            {
+                                "id": "id-1",
+                                "name": "www.example.com",
+                                "target": "1.1.1.1",
+                                "type": "A"
+                            }
+                        ]
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let provider = provider_with_endpoint(&build_url(&server.url()));
+        let result = provider
+            .set_rrset(
+                "www.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "set_rrset failed: {:?}", result);
+        get_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn set_rrset_rejects_type_mismatch() {
+        let provider = provider_with_endpoint("http://127.0.0.1:1");
+        let result = provider
+            .set_rrset(
+                "www.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::TXT("nope".to_string())],
+                "example.com",
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Api(_))));
+    }
+
+    #[tokio::test]
+    async fn set_rrset_rejects_caa() {
+        let provider = provider_with_endpoint("http://127.0.0.1:1");
+        let result = provider
+            .set_rrset(
+                "example.com",
+                DnsRecordType::CAA,
+                300,
+                Vec::new(),
+                "example.com",
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Api(_))));
+    }
+
+    #[tokio::test]
+    async fn set_rrset_rejects_tlsa() {
+        let provider = provider_with_endpoint("http://127.0.0.1:1");
+        let result = provider
+            .set_rrset(
+                "_443._tcp.example.com",
+                DnsRecordType::TLSA,
+                300,
+                Vec::new(),
+                "example.com",
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Api(_))));
+    }
+
+    #[tokio::test]
+    async fn add_to_rrset_empty_vec_short_circuits() {
+        let server = mockito::Server::new_async().await;
+        let provider = provider_with_endpoint(&build_url(&server.url()));
+        let result = provider
+            .add_to_rrset(
+                "www.example.com",
+                DnsRecordType::A,
+                300,
+                Vec::new(),
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "add_to_rrset failed: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn add_to_rrset_skips_existing_and_creates_missing() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("POST", "/")
+            .match_header("x-amz-target", "Lightsail_20161128.GetDomain")
+            .with_status(200)
+            .with_body(
+                json!({
+                    "domain": {
+                        "name": "example.com",
+                        "domainEntries": [
+                            {
+                                "id": "id-1",
+                                "name": "www.example.com",
+                                "target": "1.1.1.1",
+                                "type": "A"
+                            }
+                        ]
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let create_mock = server
+            .mock("POST", "/")
+            .match_header("x-amz-target", "Lightsail_20161128.CreateDomainEntry")
+            .match_body(Matcher::PartialJson(json!({
+                "domainEntry": {
+                    "name": "www.example.com",
+                    "target": "2.2.2.2",
+                    "type": "A"
+                }
+            })))
+            .with_status(200)
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let provider = provider_with_endpoint(&build_url(&server.url()));
+        let result = provider
+            .add_to_rrset(
+                "www.example.com",
+                DnsRecordType::A,
+                300,
+                vec![
+                    DnsRecord::A("1.1.1.1".parse().unwrap()),
+                    DnsRecord::A("2.2.2.2".parse().unwrap()),
+                ],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "add_to_rrset failed: {:?}", result);
+        get_mock.assert_async().await;
+        create_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn remove_from_rrset_empty_vec_short_circuits() {
+        let server = mockito::Server::new_async().await;
+        let provider = provider_with_endpoint(&build_url(&server.url()));
+        let result = provider
+            .remove_from_rrset(
+                "www.example.com",
+                DnsRecordType::A,
+                Vec::new(),
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "remove_from_rrset failed: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn remove_from_rrset_deletes_present_skips_absent() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("POST", "/")
+            .match_header("x-amz-target", "Lightsail_20161128.GetDomain")
+            .with_status(200)
+            .with_body(
+                json!({
+                    "domain": {
+                        "name": "example.com",
+                        "domainEntries": [
+                            {
+                                "id": "id-1",
+                                "name": "www.example.com",
+                                "target": "1.1.1.1",
+                                "type": "A"
+                            }
+                        ]
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let delete_mock = server
+            .mock("POST", "/")
+            .match_header("x-amz-target", "Lightsail_20161128.DeleteDomainEntry")
+            .match_body(Matcher::PartialJson(json!({
+                "domainEntry": { "id": "id-1" }
+            })))
+            .with_status(200)
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+
+        let provider = provider_with_endpoint(&build_url(&server.url()));
+        let result = provider
+            .remove_from_rrset(
+                "www.example.com",
+                DnsRecordType::A,
+                vec![
+                    DnsRecord::A("1.1.1.1".parse().unwrap()),
+                    DnsRecord::A("9.9.9.9".parse().unwrap()),
+                ],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "remove_from_rrset failed: {:?}", result);
+        get_mock.assert_async().await;
+        delete_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn list_rrset_returns_filtered_records() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("POST", "/")
+            .match_header("x-amz-target", "Lightsail_20161128.GetDomain")
+            .with_status(200)
+            .with_body(
+                json!({
+                    "domain": {
+                        "name": "example.com",
+                        "domainEntries": [
+                            {
+                                "id": "id-a",
+                                "name": "www.example.com",
+                                "target": "1.1.1.1",
+                                "type": "A"
+                            },
+                            {
+                                "id": "id-b",
+                                "name": "www.example.com",
+                                "target": "2.2.2.2",
+                                "type": "A"
+                            },
+                            {
+                                "id": "id-c",
+                                "name": "www.example.com",
+                                "target": "::1",
+                                "type": "AAAA"
+                            }
+                        ]
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let provider = provider_with_endpoint(&build_url(&server.url()));
+        let result = provider
+            .list_rrset("www.example.com", DnsRecordType::A, "example.com")
+            .await
+            .expect("list_rrset failed");
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&DnsRecord::A("1.1.1.1".parse().unwrap())));
+        assert!(result.contains(&DnsRecord::A("2.2.2.2".parse().unwrap())));
+        get_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn list_rrset_unquotes_txt() {
+        let mut server = mockito::Server::new_async().await;
+        let get_mock = server
+            .mock("POST", "/")
+            .match_header("x-amz-target", "Lightsail_20161128.GetDomain")
+            .with_status(200)
+            .with_body(
+                json!({
+                    "domain": {
+                        "name": "example.com",
+                        "domainEntries": [
+                            {
+                                "id": "id-t",
+                                "name": "challenge.example.com",
+                                "target": "\"abc123\"",
+                                "type": "TXT"
+                            }
+                        ]
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let provider = provider_with_endpoint(&build_url(&server.url()));
+        let result = provider
+            .list_rrset("challenge.example.com", DnsRecordType::TXT, "example.com")
+            .await
+            .expect("list_rrset failed");
+        assert_eq!(result, vec![DnsRecord::TXT("abc123".to_string())]);
+        get_mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn list_rrset_unquotes_chunked_txt() {
+        let mut server = mockito::Server::new_async().await;
+        let chunked_target = format!("\"{}\" \"{}\"", "a".repeat(255), "a".repeat(45));
+        let get_mock = server
+            .mock("POST", "/")
+            .match_header("x-amz-target", "Lightsail_20161128.GetDomain")
+            .with_status(200)
+            .with_body(
+                json!({
+                    "domain": {
+                        "name": "example.com",
+                        "domainEntries": [
+                            {
+                                "id": "id-t",
+                                "name": "long.example.com",
+                                "target": chunked_target,
+                                "type": "TXT"
+                            }
+                        ]
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let provider = provider_with_endpoint(&build_url(&server.url()));
+        let result = provider
+            .list_rrset("long.example.com", DnsRecordType::TXT, "example.com")
+            .await
+            .expect("list_rrset failed");
+        assert_eq!(result, vec![DnsRecord::TXT("a".repeat(300))]);
+        get_mock.assert_async().await;
     }
 
     #[tokio::test]
@@ -367,19 +571,29 @@ mod tests {
         .unwrap();
 
         let test_name = format!("dns-update-test.{domain}");
-        let create_result = provider
-            .create(
+        let set_result = provider
+            .set_rrset(
                 &test_name,
-                DnsRecord::A("1.2.3.4".parse().unwrap()),
+                DnsRecordType::A,
                 300,
+                vec![
+                    DnsRecord::A("1.2.3.4".parse().unwrap()),
+                    DnsRecord::A("5.6.7.8".parse().unwrap()),
+                ],
                 &domain,
             )
             .await;
-        assert!(create_result.is_ok(), "create failed: {:?}", create_result);
+        assert!(set_result.is_ok(), "set_rrset failed: {:?}", set_result);
 
-        let delete_result = provider
-            .delete(&test_name, &domain, DnsRecordType::A)
+        let listed = provider
+            .list_rrset(&test_name, DnsRecordType::A, &domain)
+            .await
+            .expect("list_rrset failed");
+        assert_eq!(listed.len(), 2);
+
+        let cleanup = provider
+            .set_rrset(&test_name, DnsRecordType::A, 300, Vec::new(), &domain)
             .await;
-        assert!(delete_result.is_ok(), "delete failed: {:?}", delete_result);
+        assert!(cleanup.is_ok(), "cleanup failed: {:?}", cleanup);
     }
 }

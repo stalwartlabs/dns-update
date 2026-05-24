@@ -44,37 +44,13 @@ impl DuckDnsProvider {
         }
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        _ttl: u32,
-        _origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let domain = main_domain(name.into_name().as_ref())?;
-        match record {
-            DnsRecord::TXT(value) => self.update_txt(&domain, &value, false).await,
-            _ => Err(Error::Api(
-                "Only TXT records are supported by DuckDNS".to_string(),
-            )),
-        }
-    }
-
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        self.create(name, record, ttl, origin).await
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        _origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        _ttl: u32,
+        records: Vec<DnsRecord>,
+        _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         if record_type != DnsRecordType::TXT {
             return Err(Error::Api(
@@ -82,7 +58,54 @@ impl DuckDnsProvider {
             ));
         }
         let domain = main_domain(name.into_name().as_ref())?;
-        self.update_txt(&domain, "", true).await
+        match records.len() {
+            0 => self.update_txt(&domain, "", true).await,
+            1 => match records.into_iter().next() {
+                Some(DnsRecord::TXT(value)) => self.update_txt(&domain, &value, false).await,
+                _ => Err(Error::Api(
+                    "Only TXT records are supported by DuckDNS".to_string(),
+                )),
+            },
+            _ => Err(Error::Api(
+                "DuckDNS only supports one TXT record per host".to_string(),
+            )),
+        }
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        _name: impl IntoFqdn<'_>,
+        _record_type: DnsRecordType,
+        _ttl: u32,
+        _records: Vec<DnsRecord>,
+        _origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        Err(Error::Api(
+            "DuckDNS does not support add_to_rrset (no list endpoint)".to_string(),
+        ))
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        _name: impl IntoFqdn<'_>,
+        _record_type: DnsRecordType,
+        _records: Vec<DnsRecord>,
+        _origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        Err(Error::Api(
+            "DuckDNS does not support remove_from_rrset (no list endpoint)".to_string(),
+        ))
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        _name: impl IntoFqdn<'_>,
+        _record_type: DnsRecordType,
+        _origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        Err(Error::Api(
+            "DuckDNS does not support listing records".to_string(),
+        ))
     }
 
     async fn update_txt(&self, domain: &str, value: &str, clear: bool) -> crate::Result<()> {

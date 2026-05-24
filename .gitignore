@@ -1,9 +1,7 @@
 /target
-_ignore
 Cargo.lock
 /.claude
-
 .idea/
-
-# ignore vscode dir
+.ignore
 **/.vscode
+docs/

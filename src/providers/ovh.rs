@@ -9,9 +9,12 @@
  * except according to those terms.
  */
 
-use crate::{DnsRecord, Error, IntoFqdn, crypto, utils::strip_origin_from_name};
+use crate::{
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, crypto, utils::strip_origin_from_name,
+};
 use reqwest::Method;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
@@ -39,10 +42,18 @@ pub struct UpdateDnsRecordParams {
     pub ttl: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OvhRecordFormat {
     pub field_type: String,
     pub target: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct OvhRecordBody {
+    id: u64,
+    #[serde(rename = "fieldType")]
+    field_type: String,
+    target: String,
 }
 
 #[derive(Debug)]
@@ -97,11 +108,11 @@ impl From<&DnsRecord> for OvhRecordFormat {
             },
             DnsRecord::CNAME(content) => OvhRecordFormat {
                 field_type: "CNAME".to_string(),
-                target: content.clone(),
+                target: format!("{}.", content.trim_end_matches('.')),
             },
             DnsRecord::NS(content) => OvhRecordFormat {
                 field_type: "NS".to_string(),
-                target: content.clone(),
+                target: format!("{}.", content.trim_end_matches('.')),
             },
             DnsRecord::MX(mx) => OvhRecordFormat {
                 field_type: "MX".to_string(),
@@ -218,21 +229,19 @@ impl OvhProvider {
         }
     }
 
-    async fn get_record_id(
+    async fn list_record_ids(
         &self,
         zone: &str,
-        name: impl IntoFqdn<'_>,
-        record_type: &str,
-    ) -> crate::Result<u64> {
-        let name = name.into_name();
-        let subdomain = strip_origin_from_name(&name, zone, None);
-        let subdomain = if subdomain == "@" { "" } else { &subdomain };
-
+        subdomain: &str,
+        record_type: DnsRecordType,
+    ) -> crate::Result<Vec<u64>> {
         let url = format!(
             "{}/domain/zone/{}/record?fieldType={}&subDomain={}",
-            self.endpoint, zone, record_type, subdomain
+            self.endpoint,
+            zone,
+            record_type.as_str(),
+            subdomain
         );
-
         let response = self
             .send_authenticated_request(Method::GET, &url, "")
             .await?;
@@ -244,44 +253,80 @@ impl OvhProvider {
             )));
         }
 
-        let record_ids: Vec<u64> = serde_json::from_slice(
-            response
-                .bytes()
-                .await
-                .map_err(|e| Error::Api(format!("Failed to fetch record list: {}", e)))?
-                .as_ref(),
-        )
-        .map_err(|e| Error::Api(format!("Failed to parse record list: {}", e)))?;
-
-        record_ids.into_iter().next().ok_or(Error::NotFound)
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| Error::Api(format!("Failed to fetch record list: {}", e)))?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| Error::Api(format!("Failed to parse record list: {}", e)))
     }
 
-    pub(crate) async fn create(
+    async fn fetch_record(&self, zone: &str, id: u64) -> crate::Result<OvhRecordBody> {
+        let url = format!("{}/domain/zone/{}/record/{}", self.endpoint, zone, id);
+        let response = self
+            .send_authenticated_request(Method::GET, &url, "")
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(Error::Api(format!(
+                "Failed to fetch record {}: HTTP {}",
+                id,
+                response.status()
+            )));
+        }
+
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| Error::Api(format!("Failed to read record {}: {}", id, e)))?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| Error::Api(format!("Failed to parse record {}: {}", id, e)))
+    }
+
+    async fn list_at(
         &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        zone: &str,
+        subdomain: &str,
+        record_type: DnsRecordType,
+    ) -> crate::Result<Vec<OvhRecordBody>> {
+        let ids = self.list_record_ids(zone, subdomain, record_type).await?;
+        let mut out = Vec::with_capacity(ids.len());
+        for id in ids {
+            let body = self.fetch_record(zone, id).await?;
+            if body.field_type == record_type.as_str() {
+                out.push(body);
+            }
+        }
+        Ok(out)
+    }
+
+    async fn refresh_zone(&self, zone: &str) -> crate::Result<()> {
+        let url = format!("{}/domain/zone/{}/refresh", self.endpoint, zone);
+        let response = self
+            .send_authenticated_request(Method::POST, &url, "")
+            .await?;
+        if !response.status().is_success() {
+            return Err(Error::Api(format!(
+                "Failed to refresh zone: HTTP {}",
+                response.status()
+            )));
+        }
+        Ok(())
+    }
+
+    async fn post_record(
+        &self,
+        zone: &str,
+        subdomain: &str,
         ttl: u32,
-        origin: impl IntoFqdn<'_>,
+        wire: &OvhRecordFormat,
     ) -> crate::Result<()> {
-        let zone = self.get_zone_name(origin).await?;
-        let name = name.into_name();
-        let subdomain = strip_origin_from_name(&name, &zone, None);
-        let subdomain = if subdomain == "@" {
-            String::new()
-        } else {
-            subdomain
-        };
-
-        let ovh_record: OvhRecordFormat = (&record).into();
-        let (field_type, target) = (ovh_record.field_type, ovh_record.target);
-
         let params = CreateDnsRecordParams {
-            field_type,
-            sub_domain: subdomain,
-            target,
+            field_type: wire.field_type.clone(),
+            sub_domain: subdomain.to_string(),
+            target: wire.target.clone(),
             ttl,
         };
-
         let body = serde_json::to_string(&params)
             .map_err(|e| Error::Serialize(format!("Failed to serialize record: {}", e)))?;
 
@@ -289,7 +334,6 @@ impl OvhProvider {
         let response = self
             .send_authenticated_request(Method::POST, &url, &body)
             .await?;
-
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response
@@ -301,96 +345,14 @@ impl OvhProvider {
                 status, error_text
             )));
         }
-
-        let url = format!("{}/domain/zone/{}/refresh", self.endpoint, zone);
-        let _response = self
-            .send_authenticated_request(Method::POST, &url, "")
-            .await
-            .map_err(|e| {
-                Error::Api(format!(
-                    "Failed to refresh zone (record created but zone not refreshed): {:?}",
-                    e
-                ))
-            })?;
-
         Ok(())
     }
 
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let zone = self.get_zone_name(origin).await?;
-        let name = name.into_name();
-
-        let ovh_record: OvhRecordFormat = (&record).into();
-        let (field_type, target) = (ovh_record.field_type, ovh_record.target);
-
-        let record_id = self
-            .get_record_id(&zone, name.as_ref(), &field_type)
-            .await?;
-
-        let params = UpdateDnsRecordParams { target, ttl };
-
-        let body = serde_json::to_string(&params)
-            .map_err(|e| Error::Serialize(format!("Failed to serialize record: {}", e)))?;
-
-        let url = format!(
-            "{}/domain/zone/{}/record/{}",
-            self.endpoint, zone, record_id
-        );
-        let response = self
-            .send_authenticated_request(Method::PUT, &url, &body)
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(Error::Api(format!(
-                "Failed to update record: HTTP {} - {}",
-                status, error_text
-            )));
-        }
-
-        let url = format!("{}/domain/zone/{}/refresh", self.endpoint, zone);
-        let _response = self
-            .send_authenticated_request(Method::POST, &url, "")
-            .await
-            .map_err(|e| {
-                Error::Api(format!(
-                    "Failed to refresh zone (record updated but zone not refreshed): {:?}",
-                    e
-                ))
-            })?;
-
-        Ok(())
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
-        record_type: crate::DnsRecordType,
-    ) -> crate::Result<()> {
-        let zone = self.get_zone_name(origin).await?;
-        let record_id = self
-            .get_record_id(&zone, name, &record_type.to_string())
-            .await?;
-
-        let url = format!(
-            "{}/domain/zone/{}/record/{}",
-            self.endpoint, zone, record_id
-        );
+    async fn delete_record_id(&self, zone: &str, id: u64) -> crate::Result<()> {
+        let url = format!("{}/domain/zone/{}/record/{}", self.endpoint, zone, id);
         let response = self
             .send_authenticated_request(Method::DELETE, &url, "")
             .await?;
-
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response
@@ -398,22 +360,370 @@ impl OvhProvider {
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(Error::Api(format!(
-                "Failed to delete record: HTTP {} - {}",
-                status, error_text
+                "Failed to delete record {}: HTTP {} - {}",
+                id, status, error_text
             )));
         }
-
-        let url = format!("{}/domain/zone/{}/refresh", self.endpoint, zone);
-        let _response = self
-            .send_authenticated_request(Method::POST, &url, "")
-            .await
-            .map_err(|e| {
-                Error::Api(format!(
-                    "Failed to refresh zone (record deleted but zone not refreshed): {:?}",
-                    e
-                ))
-            })?;
-
         Ok(())
     }
+
+    fn subdomain_for<'a>(&self, zone: &str, name: impl IntoFqdn<'a>) -> String {
+        let name = name.into_name();
+        let subdomain = strip_origin_from_name(&name, zone, Some(""));
+        if subdomain == "@" {
+            String::new()
+        } else {
+            subdomain
+        }
+    }
+
+    pub(crate) async fn set_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        let desired = build_wire(record_type, &records)?;
+        let zone = self.get_zone_name(origin).await?;
+        let subdomain = self.subdomain_for(&zone, name);
+
+        let existing = self.list_at(&zone, &subdomain, record_type).await?;
+
+        let mut to_add: Vec<OvhRecordFormat> = Vec::new();
+        let mut leftovers: Vec<&OvhRecordBody> = existing.iter().collect();
+
+        for wanted in &desired {
+            if let Some(pos) = leftovers
+                .iter()
+                .position(|e| e.field_type == wanted.field_type && e.target == wanted.target)
+            {
+                leftovers.swap_remove(pos);
+            } else {
+                to_add.push(wanted.clone());
+            }
+        }
+
+        let mut mutated = false;
+        for stale in leftovers {
+            self.delete_record_id(&zone, stale.id).await?;
+            mutated = true;
+        }
+        for wire in to_add {
+            self.post_record(&zone, &subdomain, ttl, &wire).await?;
+            mutated = true;
+        }
+
+        if mutated {
+            self.refresh_zone(&zone).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let desired = build_wire(record_type, &records)?;
+        let zone = self.get_zone_name(origin).await?;
+        let subdomain = self.subdomain_for(&zone, name);
+
+        let existing = self.list_at(&zone, &subdomain, record_type).await?;
+
+        let mut mutated = false;
+        for wire in desired {
+            if existing
+                .iter()
+                .any(|e| e.field_type == wire.field_type && e.target == wire.target)
+            {
+                continue;
+            }
+            self.post_record(&zone, &subdomain, ttl, &wire).await?;
+            mutated = true;
+        }
+
+        if mutated {
+            self.refresh_zone(&zone).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let to_remove = build_wire(record_type, &records)?;
+        let zone = self.get_zone_name(origin).await?;
+        let subdomain = self.subdomain_for(&zone, name);
+
+        let existing = self.list_at(&zone, &subdomain, record_type).await?;
+
+        let mut mutated = false;
+        for wire in to_remove {
+            if let Some(entry) = existing
+                .iter()
+                .find(|e| e.field_type == wire.field_type && e.target == wire.target)
+            {
+                self.delete_record_id(&zone, entry.id).await?;
+                mutated = true;
+            }
+        }
+
+        if mutated {
+            self.refresh_zone(&zone).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        let zone = self.get_zone_name(origin).await?;
+        let subdomain = self.subdomain_for(&zone, name);
+        let existing = self.list_at(&zone, &subdomain, record_type).await?;
+        existing
+            .into_iter()
+            .map(|e| parse_ovh_target(record_type, &e.target))
+            .collect()
+    }
+}
+
+fn build_wire(
+    expected_type: DnsRecordType,
+    records: &[DnsRecord],
+) -> crate::Result<Vec<OvhRecordFormat>> {
+    let mut out = Vec::with_capacity(records.len());
+    for record in records {
+        if record.as_type() != expected_type {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected_type.as_str(),
+                record.as_type().as_str(),
+            )));
+        }
+        out.push(record.into());
+    }
+    Ok(out)
+}
+
+fn parse_ovh_target(record_type: DnsRecordType, target: &str) -> crate::Result<DnsRecord> {
+    match record_type {
+        DnsRecordType::A => target
+            .parse()
+            .map(DnsRecord::A)
+            .map_err(|e| Error::Parse(format!("invalid A target {}: {}", target, e))),
+        DnsRecordType::AAAA => target
+            .parse()
+            .map(DnsRecord::AAAA)
+            .map_err(|e| Error::Parse(format!("invalid AAAA target {}: {}", target, e))),
+        DnsRecordType::CNAME => Ok(DnsRecord::CNAME(target.to_string())),
+        DnsRecordType::NS => Ok(DnsRecord::NS(target.to_string())),
+        DnsRecordType::TXT => Ok(DnsRecord::TXT(target.to_string())),
+        DnsRecordType::MX => {
+            let mut parts = target.splitn(2, char::is_whitespace);
+            let priority = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("invalid MX target: {}", target)))?
+                .parse::<u16>()
+                .map_err(|e| Error::Parse(format!("invalid MX priority in {}: {}", target, e)))?;
+            let exchange = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("MX target missing exchange: {}", target)))?
+                .trim()
+                .to_string();
+            Ok(DnsRecord::MX(MXRecord { exchange, priority }))
+        }
+        DnsRecordType::SRV => {
+            let mut parts = target.split_whitespace();
+            let priority = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("invalid SRV target: {}", target)))?
+                .parse::<u16>()
+                .map_err(|e| Error::Parse(format!("invalid SRV priority in {}: {}", target, e)))?;
+            let weight = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("invalid SRV target: {}", target)))?
+                .parse::<u16>()
+                .map_err(|e| Error::Parse(format!("invalid SRV weight in {}: {}", target, e)))?;
+            let port = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("invalid SRV target: {}", target)))?
+                .parse::<u16>()
+                .map_err(|e| Error::Parse(format!("invalid SRV port in {}: {}", target, e)))?;
+            let srv_target = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("SRV target missing host: {}", target)))?
+                .to_string();
+            Ok(DnsRecord::SRV(SRVRecord {
+                priority,
+                weight,
+                port,
+                target: srv_target,
+            }))
+        }
+        DnsRecordType::TLSA => {
+            let mut parts = target.split_whitespace();
+            let usage = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("invalid TLSA target: {}", target)))?
+                .parse::<u8>()
+                .map_err(|e| Error::Parse(format!("invalid TLSA usage in {}: {}", target, e)))?;
+            let selector = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("invalid TLSA target: {}", target)))?
+                .parse::<u8>()
+                .map_err(|e| Error::Parse(format!("invalid TLSA selector in {}: {}", target, e)))?;
+            let matching = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("invalid TLSA target: {}", target)))?
+                .parse::<u8>()
+                .map_err(|e| Error::Parse(format!("invalid TLSA matching in {}: {}", target, e)))?;
+            let cert_hex = parts
+                .next()
+                .ok_or_else(|| Error::Parse(format!("TLSA target missing data: {}", target)))?;
+            Ok(DnsRecord::TLSA(TLSARecord {
+                cert_usage: tlsa_cert_usage_from_u8(usage)?,
+                selector: tlsa_selector_from_u8(selector)?,
+                matching: tlsa_matching_from_u8(matching)?,
+                cert_data: decode_hex(cert_hex)?,
+            }))
+        }
+        DnsRecordType::CAA => parse_caa(target),
+    }
+}
+
+fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
+    Ok(match value {
+        0 => TlsaCertUsage::PkixTa,
+        1 => TlsaCertUsage::PkixEe,
+        2 => TlsaCertUsage::DaneTa,
+        3 => TlsaCertUsage::DaneEe,
+        255 => TlsaCertUsage::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {}", value))),
+    })
+}
+
+fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
+    Ok(match value {
+        0 => TlsaSelector::Full,
+        1 => TlsaSelector::Spki,
+        255 => TlsaSelector::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA selector: {}", value))),
+    })
+}
+
+fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
+    Ok(match value {
+        0 => TlsaMatching::Raw,
+        1 => TlsaMatching::Sha256,
+        2 => TlsaMatching::Sha512,
+        255 => TlsaMatching::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA matching: {}", value))),
+    })
+}
+
+fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
+    if !hex.len().is_multiple_of(2) {
+        return Err(Error::Parse(format!("invalid hex string: {}", hex)));
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| {
+            u8::from_str_radix(&hex[i..i + 2], 16)
+                .map_err(|e| Error::Parse(format!("invalid hex byte: {}", e)))
+        })
+        .collect()
+}
+
+fn parse_caa(target: &str) -> crate::Result<DnsRecord> {
+    let mut parts = target.splitn(3, char::is_whitespace);
+    let flags = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid CAA target: {}", target)))?
+        .parse::<u8>()
+        .map_err(|e| Error::Parse(format!("invalid CAA flags in {}: {}", target, e)))?;
+    let tag = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("CAA target missing tag: {}", target)))?
+        .to_string();
+    let raw_value = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("CAA target missing value: {}", target)))?
+        .trim();
+    let unquoted_full = strip_caa_quotes(raw_value);
+
+    let issuer_critical = flags & 0x80 != 0;
+    match tag.as_str() {
+        "issue" => {
+            let (name, options) = parse_caa_value(&unquoted_full);
+            Ok(DnsRecord::CAA(CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            }))
+        }
+        "issuewild" => {
+            let (name, options) = parse_caa_value(&unquoted_full);
+            Ok(DnsRecord::CAA(CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            }))
+        }
+        "iodef" => Ok(DnsRecord::CAA(CAARecord::Iodef {
+            issuer_critical,
+            url: unquoted_full,
+        })),
+        other => Err(Error::Parse(format!("unknown CAA tag: {}", other))),
+    }
+}
+
+fn strip_caa_quotes(s: &str) -> String {
+    let s = s.trim();
+    if let Some(inner) = s.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
+        inner.to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name_part = parts.next().unwrap_or("").trim().to_string();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part)
+    };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
 }

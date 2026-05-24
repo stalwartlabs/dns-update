@@ -49,44 +49,68 @@ impl HurricaneProvider {
         }
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        _ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let txt = extract_txt(&record)?;
-        self.update_txt(name.into_name().as_ref(), origin.into_name().as_ref(), &txt)
-            .await
-    }
-
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        _ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let txt = extract_txt(&record)?;
-        self.update_txt(name.into_name().as_ref(), origin.into_name().as_ref(), &txt)
-            .await
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        _ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         if record_type != DnsRecordType::TXT {
-            return Err(Error::Api(format!(
-                "{} records are not supported by Hurricane Electric",
-                record_type.as_str()
-            )));
+            return Err(Error::Api(
+                "Only TXT records are supported by Hurricane Electric".to_string(),
+            ));
         }
-        self.update_txt(name.into_name().as_ref(), origin.into_name().as_ref(), ".")
-            .await
+        let hostname = name.into_name().into_owned();
+        let zone = origin.into_name().into_owned();
+
+        match records.len() {
+            0 => self.update_txt(&hostname, &zone, ".").await,
+            1 => {
+                let txt = extract_txt(&records[0])?;
+                self.update_txt(&hostname, &zone, &txt).await
+            }
+            _ => Err(Error::Api(
+                "Hurricane Electric only supports one TXT record per host".to_string(),
+            )),
+        }
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        _name: impl IntoFqdn<'_>,
+        _record_type: DnsRecordType,
+        _ttl: u32,
+        _records: Vec<DnsRecord>,
+        _origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        Err(Error::Api(
+            "Hurricane Electric does not support add_to_rrset (no list endpoint)".to_string(),
+        ))
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        _name: impl IntoFqdn<'_>,
+        _record_type: DnsRecordType,
+        _records: Vec<DnsRecord>,
+        _origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        Err(Error::Api(
+            "Hurricane Electric does not support remove_from_rrset (no list endpoint)".to_string(),
+        ))
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        _name: impl IntoFqdn<'_>,
+        _record_type: DnsRecordType,
+        _origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        Err(Error::Api(
+            "Hurricane Electric does not support listing records".to_string(),
+        ))
     }
 
     async fn update_txt(&self, hostname: &str, zone: &str, txt: &str) -> crate::Result<()> {

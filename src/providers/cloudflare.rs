@@ -9,7 +9,10 @@
  * except according to those terms.
  */
 
-use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder};
+use crate::{
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -245,6 +248,18 @@ impl CloudflareProvider {
         Ok(())
     }
 
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        let zone_id = self.obtain_zone_id(origin).await?;
+        let name = name.into_name().into_owned();
+        let listed = self.list_at(&zone_id, &name, record_type).await?;
+        listed.into_iter().map(|r| r.content.try_into()).collect()
+    }
+
     #[cfg(test)]
     pub(crate) async fn list_contents_for_tests(
         &self,
@@ -269,11 +284,8 @@ impl CloudflareProvider {
             self.endpoint,
             Query::name_and_type(name, record_type).serialize()
         );
-        let response: ApiResult<Vec<ListedRecord>> = self
-            .client
-            .get(url)
-            .send_with_retry(3)
-            .await?;
+        let response: ApiResult<Vec<ListedRecord>> =
+            self.client.get(url).send_with_retry(3).await?;
         response.unwrap_response("list DNS records")
     }
 
@@ -405,4 +417,137 @@ impl From<DnsRecord> for DnsContent {
             }
         }
     }
+}
+
+impl TryFrom<DnsContent> for DnsRecord {
+    type Error = Error;
+
+    fn try_from(content: DnsContent) -> crate::Result<Self> {
+        Ok(match content {
+            DnsContent::A { content } => DnsRecord::A(content),
+            DnsContent::AAAA { content } => DnsRecord::AAAA(content),
+            DnsContent::CNAME { content } => DnsRecord::CNAME(content),
+            DnsContent::NS { content } => DnsRecord::NS(content),
+            DnsContent::MX { content, priority } => DnsRecord::MX(MXRecord {
+                exchange: content,
+                priority,
+            }),
+            DnsContent::TXT { content } => DnsRecord::TXT(unquote_txt(&content)),
+            DnsContent::SRV { data } => DnsRecord::SRV(SRVRecord {
+                priority: data.priority,
+                weight: data.weight,
+                port: data.port,
+                target: data.target,
+            }),
+            DnsContent::TLSA { data } => DnsRecord::TLSA(TLSARecord {
+                cert_usage: tlsa_cert_usage_from_u8(data.usage)?,
+                selector: tlsa_selector_from_u8(data.selector)?,
+                matching: tlsa_matching_from_u8(data.matching_type)?,
+                cert_data: decode_hex(&data.certificate)?,
+            }),
+            DnsContent::CAA { data } => DnsRecord::CAA(build_caa(data)?),
+        })
+    }
+}
+
+fn unquote_txt(content: &str) -> String {
+    let trimmed = content
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(content);
+    trimmed.replace("\\\"", "\"")
+}
+
+fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
+    if !hex.len().is_multiple_of(2) {
+        return Err(Error::Parse(format!("invalid hex string: {hex}")));
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| {
+            u8::from_str_radix(&hex[i..i + 2], 16)
+                .map_err(|e| Error::Parse(format!("invalid hex byte: {e}")))
+        })
+        .collect()
+}
+
+fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
+    Ok(match value {
+        0 => TlsaCertUsage::PkixTa,
+        1 => TlsaCertUsage::PkixEe,
+        2 => TlsaCertUsage::DaneTa,
+        3 => TlsaCertUsage::DaneEe,
+        255 => TlsaCertUsage::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {value}"))),
+    })
+}
+
+fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
+    Ok(match value {
+        0 => TlsaSelector::Full,
+        1 => TlsaSelector::Spki,
+        255 => TlsaSelector::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA selector: {value}"))),
+    })
+}
+
+fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
+    Ok(match value {
+        0 => TlsaMatching::Raw,
+        1 => TlsaMatching::Sha256,
+        2 => TlsaMatching::Sha512,
+        255 => TlsaMatching::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
+    })
+}
+
+fn build_caa(data: CaaData) -> crate::Result<CAARecord> {
+    let issuer_critical = data.flags & 0x80 != 0;
+    match data.tag.as_str() {
+        "issue" => {
+            let (name, options) = parse_caa_value(&data.value);
+            Ok(CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "issuewild" => {
+            let (name, options) = parse_caa_value(&data.value);
+            Ok(CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "iodef" => Ok(CAARecord::Iodef {
+            issuer_critical,
+            url: data.value,
+        }),
+        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
+    }
+}
+
+fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name_part = parts.next().unwrap_or("").trim().to_string();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part)
+    };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
 }

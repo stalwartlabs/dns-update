@@ -12,8 +12,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        CAARecord, DnsRecord, DnsRecordType, DnsUpdater, Error, KeyValue, MXRecord, SRVRecord,
-        TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+        CAARecord, DnsRecord, DnsRecordType, Error, MXRecord, SRVRecord,
         providers::google_cloud_dns::{GoogleCloudDnsConfig, GoogleCloudDnsProvider},
     };
     use serde_json::json;
@@ -44,254 +43,6 @@ mod tests {
             .expect("provider")
             .with_endpoints(dns_base_url, iam_base_url)
             .with_cached_token("cached-token")
-    }
-
-    #[test]
-    fn dns_updater_creation() {
-        let updater = DnsUpdater::new_google_cloud_dns(config());
-
-        assert!(updater.is_ok());
-        assert!(matches!(updater, Ok(DnsUpdater::GoogleCloudDns(..))));
-    }
-
-    #[tokio::test]
-    async fn create_record_success() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock(
-                "POST",
-                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
-            )
-            .match_header("authorization", "Bearer cached-token")
-            .match_header("content-type", "application/json")
-            .match_body(mockito::Matcher::Json(json!({
-                "additions": [{
-                    "name": "test.example.com.",
-                    "type": "A",
-                    "ttl": 300,
-                    "rrdatas": ["1.1.1.1"]
-                }]
-            })))
-            .with_status(200)
-            .with_body(r#"{"id":"change-1"}"#)
-            .create();
-
-        let provider = setup_provider(server.url().as_str(), server.url().as_str());
-        let result = provider
-            .create(
-                "test.example.com",
-                DnsRecord::A("1.1.1.1".parse().expect("ipv4")),
-                300,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn update_record_success() {
-        let mut server = mockito::Server::new_async().await;
-        let list_mock = server
-            .mock(
-                "GET",
-                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
-            )
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("name".into(), "test.example.com.".into()),
-                mockito::Matcher::UrlEncoded("type".into(), "TXT".into()),
-            ]))
-            .match_header("authorization", "Bearer cached-token")
-            .with_status(200)
-            .with_body(r#"{"rrsets":[{"name":"test.example.com.","type":"TXT","ttl":60,"rrdatas":["\"old\""]}]}"#)
-            .create();
-        let change_mock = server
-            .mock(
-                "POST",
-                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
-            )
-            .match_header("authorization", "Bearer cached-token")
-            .match_body(mockito::Matcher::Json(json!({
-                "additions": [{
-                    "name": "test.example.com.",
-                    "type": "TXT",
-                    "ttl": 120,
-                    "rrdatas": ["\"new value\""]
-                }],
-                "deletions": [{
-                    "name": "test.example.com.",
-                    "type": "TXT",
-                    "ttl": 60,
-                    "rrdatas": ["\"old\""]
-                }]
-            })))
-            .with_status(200)
-            .with_body(r#"{"id":"change-2"}"#)
-            .create();
-
-        let provider = setup_provider(server.url().as_str(), server.url().as_str());
-        let result = provider
-            .update(
-                "test.example.com",
-                DnsRecord::TXT("new value".to_string()),
-                120,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        list_mock.assert();
-        change_mock.assert();
-    }
-
-    #[tokio::test]
-    async fn delete_record_success() {
-        let mut server = mockito::Server::new_async().await;
-        let list_mock = server
-            .mock(
-                "GET",
-                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
-            )
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("name".into(), "test.example.com.".into()),
-                mockito::Matcher::UrlEncoded("type".into(), "A".into()),
-            ]))
-            .with_status(200)
-            .with_body(r#"{"rrsets":[{"name":"test.example.com.","type":"A","ttl":300,"rrdatas":["1.1.1.1"]}]}"#)
-            .create();
-        let delete_mock = server
-            .mock(
-                "POST",
-                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
-            )
-            .match_body(mockito::Matcher::Json(json!({
-                "deletions": [{
-                    "name": "test.example.com.",
-                    "type": "A",
-                    "ttl": 300,
-                    "rrdatas": ["1.1.1.1"]
-                }]
-            })))
-            .with_status(200)
-            .with_body(r#"{"id":"change-3"}"#)
-            .create();
-
-        let provider = setup_provider(server.url().as_str(), server.url().as_str());
-        let result = provider
-            .delete("test.example.com", "example.com", DnsRecordType::A)
-            .await;
-
-        assert!(result.is_ok());
-        list_mock.assert();
-        delete_mock.assert();
-    }
-
-    #[tokio::test]
-    async fn resolve_managed_zone_uses_longest_suffix_match() {
-        let mut server = mockito::Server::new_async().await;
-        let zones_mock = server
-            .mock("GET", "/dns/v1/projects/test-project/managedZones")
-            .match_header("authorization", "Bearer cached-token")
-            .with_status(200)
-            .with_body(
-                r#"{"managedZones":[{"name":"example-zone","dnsName":"example.com.","visibility":"public"},{"name":"dev-zone","dnsName":"dev.example.com.","visibility":"public"}]}"#,
-            )
-            .create();
-        let change_mock = server
-            .mock(
-                "POST",
-                "/dns/v1/projects/test-project/managedZones/dev-zone/changes",
-            )
-            .with_status(200)
-            .with_body(r#"{"id":"change-dev"}"#)
-            .create();
-
-        let mut cfg = config();
-        cfg.managed_zone = None;
-        let provider = GoogleCloudDnsProvider::new(cfg)
-            .expect("provider")
-            .with_endpoints(server.url().as_str(), server.url().as_str())
-            .with_cached_token("cached-token");
-
-        let zone = provider
-            .create(
-                "api.dev.example.com",
-                DnsRecord::A("1.1.1.1".parse().expect("ipv4")),
-                300,
-                "example.com",
-            )
-            .await;
-
-        assert!(zone.is_ok());
-        zones_mock.assert();
-        change_mock.assert();
-    }
-
-    #[tokio::test]
-    async fn resolve_managed_zone_filters_private_zones() {
-        let mut server = mockito::Server::new_async().await;
-        let zones_mock = server
-            .mock("GET", "/dns/v1/projects/test-project/managedZones")
-            .with_status(200)
-            .with_body(
-                r#"{"managedZones":[{"name":"public-zone","dnsName":"example.com.","visibility":"public"},{"name":"private-zone","dnsName":"example.com.","visibility":"private"}]}"#,
-            )
-            .create();
-        let create_mock = server
-            .mock(
-                "POST",
-                "/dns/v1/projects/test-project/managedZones/private-zone/changes",
-            )
-            .with_status(200)
-            .with_body(r#"{"id":"change-private"}"#)
-            .create();
-
-        let mut cfg = config();
-        cfg.managed_zone = None;
-        cfg.private_zone = true;
-        let provider = GoogleCloudDnsProvider::new(cfg)
-            .expect("provider")
-            .with_endpoints(server.url().as_str(), server.url().as_str())
-            .with_cached_token("cached-token");
-
-        let result = provider
-            .create(
-                "test.example.com",
-                DnsRecord::A("1.1.1.1".parse().expect("ipv4")),
-                300,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        zones_mock.assert();
-        create_mock.assert();
-    }
-
-    #[tokio::test]
-    async fn delete_missing_record_is_idempotent() {
-        let mut server = mockito::Server::new_async().await;
-        let list_mock = server
-            .mock(
-                "GET",
-                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
-            )
-            .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("name".into(), "missing.example.com.".into()),
-                mockito::Matcher::UrlEncoded("type".into(), "TXT".into()),
-            ]))
-            .with_status(200)
-            .with_body(r#"{"rrsets":[]}"#)
-            .create();
-
-        let provider = setup_provider(server.url().as_str(), server.url().as_str());
-        let result = provider
-            .delete("missing.example.com", "example.com", DnsRecordType::TXT)
-            .await;
-
-        assert!(result.is_ok());
-        list_mock.assert();
     }
 
     #[tokio::test]
@@ -348,128 +99,732 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn record_serialization_cases() {
+    async fn set_rrset_empty_no_existing_is_noop() {
         let mut server = mockito::Server::new_async().await;
-        let mock = server
+        let list_mock = server
             .mock(
-                "POST",
-                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
             )
-            .match_body(mockito::Matcher::Json(json!({
-                "additions": [
-                    {
-                        "name": "text.example.com.",
-                        "type": "TXT",
-                        "ttl": 60,
-                        "rrdatas": ["\"hello \\\"world\\\"\""]
-                    }
-                ]
-            })))
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "missing.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "A".into()),
+            ]))
             .with_status(200)
-            .with_body(r#"{"id":"change-text"}"#)
+            .with_body(r#"{"rrsets":[]}"#)
             .create();
 
         let provider = setup_provider(server.url().as_str(), server.url().as_str());
         let result = provider
-            .create(
-                "text.example.com",
-                DnsRecord::TXT("hello \"world\"".to_string()),
-                60,
+            .set_rrset(
+                "missing.example.com",
+                DnsRecordType::A,
+                300,
+                Vec::new(),
                 "example.com",
             )
             .await;
 
         assert!(result.is_ok());
-        mock.assert();
+        list_mock.assert();
+    }
 
-        let tlsa = TLSARecord {
-            cert_usage: TlsaCertUsage::DaneEe,
-            selector: TlsaSelector::Spki,
-            matching: TlsaMatching::Sha256,
-            cert_data: vec![0xde, 0xad, 0xbe, 0xef],
-        };
-        assert_eq!(tlsa.to_string(), "3 1 1 deadbeef");
+    #[tokio::test]
+    async fn set_rrset_empty_deletes_existing() {
+        let mut server = mockito::Server::new_async().await;
+        let list_mock = server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "test.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "A".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[{"name":"test.example.com.","type":"A","ttl":300,"rrdatas":["1.1.1.1"]}]}"#)
+            .create();
+        let change_mock = server
+            .mock(
+                "POST",
+                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
+            )
+            .match_body(mockito::Matcher::Json(json!({
+                "deletions": [{
+                    "name": "test.example.com.",
+                    "type": "A",
+                    "ttl": 300,
+                    "rrdatas": ["1.1.1.1"]
+                }]
+            })))
+            .with_status(200)
+            .with_body(r#"{"id":"change-del"}"#)
+            .create();
 
-        let caa = CAARecord::Issue {
-            issuer_critical: false,
-            name: Some("letsencrypt.org".to_string()),
-            options: vec![KeyValue {
-                key: "accounturi".to_string(),
-                value: "https://example.test/acct/1".to_string(),
-            }],
-        };
-        let (flags, tag, value) = caa.clone().decompose();
-        assert_eq!(flags, 0);
-        assert_eq!(tag, "issue");
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                300,
+                Vec::new(),
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        list_mock.assert();
+        change_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn set_rrset_replaces_existing_with_multiple_records() {
+        let mut server = mockito::Server::new_async().await;
+        let list_mock = server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "test.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "A".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[{"name":"test.example.com.","type":"A","ttl":300,"rrdatas":["1.1.1.1"]}]}"#)
+            .create();
+        let change_mock = server
+            .mock(
+                "POST",
+                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
+            )
+            .match_body(mockito::Matcher::Json(json!({
+                "additions": [{
+                    "name": "test.example.com.",
+                    "type": "A",
+                    "ttl": 120,
+                    "rrdatas": ["2.2.2.2", "3.3.3.3"]
+                }],
+                "deletions": [{
+                    "name": "test.example.com.",
+                    "type": "A",
+                    "ttl": 300,
+                    "rrdatas": ["1.1.1.1"]
+                }]
+            })))
+            .with_status(200)
+            .with_body(r#"{"id":"change-replace"}"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                120,
+                vec![
+                    DnsRecord::A("2.2.2.2".parse().expect("ipv4")),
+                    DnsRecord::A("3.3.3.3".parse().expect("ipv4")),
+                ],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        list_mock.assert();
+        change_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn set_rrset_idempotent_skips_when_unchanged() {
+        let mut server = mockito::Server::new_async().await;
+        let list_mock = server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "test.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "A".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[{"name":"test.example.com.","type":"A","ttl":300,"rrdatas":["1.1.1.1"]}]}"#)
+            .expect(1)
+            .create();
+        let change_mock = server
+            .mock(
+                "POST",
+                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
+            )
+            .expect(0)
+            .with_status(200)
+            .with_body(r#"{"id":"unused"}"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.1.1.1".parse().expect("ipv4"))],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        list_mock.assert();
+        change_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn set_rrset_rejects_mismatched_record_type() {
+        let server = mockito::Server::new_async().await;
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::TXT("nope".into())],
+                "example.com",
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Api(ref m)) if m.contains("type mismatch")));
+    }
+
+    #[tokio::test]
+    async fn add_to_rrset_empty_is_noop() {
+        let server = mockito::Server::new_async().await;
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .add_to_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                300,
+                Vec::new(),
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn add_to_rrset_creates_union_with_existing() {
+        let mut server = mockito::Server::new_async().await;
+        let list_mock = server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "test.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "A".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[{"name":"test.example.com.","type":"A","ttl":300,"rrdatas":["1.1.1.1"]}]}"#)
+            .create();
+        let change_mock = server
+            .mock(
+                "POST",
+                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
+            )
+            .match_body(mockito::Matcher::Json(json!({
+                "additions": [{
+                    "name": "test.example.com.",
+                    "type": "A",
+                    "ttl": 300,
+                    "rrdatas": ["1.1.1.1", "2.2.2.2"]
+                }],
+                "deletions": [{
+                    "name": "test.example.com.",
+                    "type": "A",
+                    "ttl": 300,
+                    "rrdatas": ["1.1.1.1"]
+                }]
+            })))
+            .with_status(200)
+            .with_body(r#"{"id":"change-add"}"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .add_to_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                300,
+                vec![
+                    DnsRecord::A("1.1.1.1".parse().expect("ipv4")),
+                    DnsRecord::A("2.2.2.2".parse().expect("ipv4")),
+                ],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        list_mock.assert();
+        change_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn add_to_rrset_idempotent_when_all_present() {
+        let mut server = mockito::Server::new_async().await;
+        let list_mock = server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "test.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "A".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[{"name":"test.example.com.","type":"A","ttl":300,"rrdatas":["1.1.1.1","2.2.2.2"]}]}"#)
+            .expect(1)
+            .create();
+        let change_mock = server
+            .mock(
+                "POST",
+                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
+            )
+            .expect(0)
+            .with_status(200)
+            .with_body(r#"{}"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .add_to_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                300,
+                vec![
+                    DnsRecord::A("1.1.1.1".parse().expect("ipv4")),
+                    DnsRecord::A("2.2.2.2".parse().expect("ipv4")),
+                ],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        list_mock.assert();
+        change_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn add_to_rrset_creates_new_rrset_when_missing() {
+        let mut server = mockito::Server::new_async().await;
+        let list_mock = server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "fresh.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "A".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[]}"#)
+            .create();
+        let change_mock = server
+            .mock(
+                "POST",
+                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
+            )
+            .match_body(mockito::Matcher::Json(json!({
+                "additions": [{
+                    "name": "fresh.example.com.",
+                    "type": "A",
+                    "ttl": 60,
+                    "rrdatas": ["9.9.9.9"]
+                }]
+            })))
+            .with_status(200)
+            .with_body(r#"{"id":"change-fresh"}"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .add_to_rrset(
+                "fresh.example.com",
+                DnsRecordType::A,
+                60,
+                vec![DnsRecord::A("9.9.9.9".parse().expect("ipv4"))],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        list_mock.assert();
+        change_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn remove_from_rrset_empty_is_noop() {
+        let server = mockito::Server::new_async().await;
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .remove_from_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                Vec::new(),
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn remove_from_rrset_missing_rrset_is_noop() {
+        let mut server = mockito::Server::new_async().await;
+        let list_mock = server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "absent.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "A".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[]}"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .remove_from_rrset(
+                "absent.example.com",
+                DnsRecordType::A,
+                vec![DnsRecord::A("1.1.1.1".parse().expect("ipv4"))],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok());
+        list_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn remove_from_rrset_absent_value_is_noop() {
+        let mut server = mockito::Server::new_async().await;
+        let list_mock = server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "test.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "A".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[{"name":"test.example.com.","type":"A","ttl":300,"rrdatas":["1.1.1.1"]}]}"#)
+            .create();
+        let change_mock = server
+            .mock(
+                "POST",
+                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
+            )
+            .expect(0)
+            .with_status(200)
+            .with_body(r#"{}"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .remove_from_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                vec![DnsRecord::A("9.9.9.9".parse().expect("ipv4"))],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok());
+        list_mock.assert();
+        change_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn remove_from_rrset_removes_subset_keeps_rest() {
+        let mut server = mockito::Server::new_async().await;
+        let list_mock = server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "test.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "A".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[{"name":"test.example.com.","type":"A","ttl":300,"rrdatas":["1.1.1.1","2.2.2.2"]}]}"#)
+            .create();
+        let change_mock = server
+            .mock(
+                "POST",
+                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
+            )
+            .match_body(mockito::Matcher::Json(json!({
+                "additions": [{
+                    "name": "test.example.com.",
+                    "type": "A",
+                    "ttl": 300,
+                    "rrdatas": ["2.2.2.2"]
+                }],
+                "deletions": [{
+                    "name": "test.example.com.",
+                    "type": "A",
+                    "ttl": 300,
+                    "rrdatas": ["1.1.1.1", "2.2.2.2"]
+                }]
+            })))
+            .with_status(200)
+            .with_body(r#"{"id":"change-subset"}"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .remove_from_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                vec![DnsRecord::A("1.1.1.1".parse().expect("ipv4"))],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok());
+        list_mock.assert();
+        change_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn remove_from_rrset_removes_all_deletes_rrset() {
+        let mut server = mockito::Server::new_async().await;
+        let list_mock = server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "test.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "A".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[{"name":"test.example.com.","type":"A","ttl":300,"rrdatas":["1.1.1.1"]}]}"#)
+            .create();
+        let change_mock = server
+            .mock(
+                "POST",
+                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
+            )
+            .match_body(mockito::Matcher::Json(json!({
+                "deletions": [{
+                    "name": "test.example.com.",
+                    "type": "A",
+                    "ttl": 300,
+                    "rrdatas": ["1.1.1.1"]
+                }]
+            })))
+            .with_status(200)
+            .with_body(r#"{"id":"change-all"}"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .remove_from_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                vec![DnsRecord::A("1.1.1.1".parse().expect("ipv4"))],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok());
+        list_mock.assert();
+        change_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn list_rrset_returns_parsed_records() {
+        let mut server = mockito::Server::new_async().await;
+        let list_mock = server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "test.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "A".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[{"name":"test.example.com.","type":"A","ttl":300,"rrdatas":["1.1.1.1","2.2.2.2"]}]}"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .list_rrset("test.example.com", DnsRecordType::A, "example.com")
+            .await
+            .expect("list");
+
         assert_eq!(
-            value,
-            "letsencrypt.org; accounturi=https://example.test/acct/1"
+            result,
+            vec![
+                DnsRecord::A("1.1.1.1".parse().expect("ipv4")),
+                DnsRecord::A("2.2.2.2".parse().expect("ipv4")),
+            ]
+        );
+        list_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn list_rrset_missing_returns_empty() {
+        let mut server = mockito::Server::new_async().await;
+        let list_mock = server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "absent.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "TXT".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[]}"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+        let result = provider
+            .list_rrset("absent.example.com", DnsRecordType::TXT, "example.com")
+            .await
+            .expect("list");
+
+        assert!(result.is_empty());
+        list_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn list_rrset_parses_each_supported_type() {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "host.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "MX".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[{"name":"host.example.com.","type":"MX","ttl":60,"rrdatas":["10 mail.example.com."]}]}"#)
+            .create();
+        server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "host.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "TXT".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[{"name":"host.example.com.","type":"TXT","ttl":60,"rrdatas":["\"hello world\""]}]}"#)
+            .create();
+        server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "_sip._tcp.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "SRV".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[{"name":"_sip._tcp.example.com.","type":"SRV","ttl":60,"rrdatas":["5 10 443 sip.example.com."]}]}"#)
+            .create();
+        server
+            .mock(
+                "GET",
+                "/dns/v1/projects/test-project/managedZones/example-zone/rrsets",
+            )
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("name".into(), "host.example.com.".into()),
+                mockito::Matcher::UrlEncoded("type".into(), "CAA".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"rrsets":[{"name":"host.example.com.","type":"CAA","ttl":60,"rrdatas":["0 issue \"letsencrypt.org\""]}]}"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
+
+        let mx = provider
+            .list_rrset("host.example.com", DnsRecordType::MX, "example.com")
+            .await
+            .expect("mx");
+        assert_eq!(
+            mx,
+            vec![DnsRecord::MX(MXRecord {
+                exchange: "mail.example.com".into(),
+                priority: 10,
+            })]
         );
 
-        let mx_mock = server
-            .mock(
-                "POST",
-                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
-            )
-            .match_body(mockito::Matcher::Json(json!({
-                "additions": [{
-                    "name": "example.com.",
-                    "type": "MX",
-                    "ttl": 60,
-                    "rrdatas": ["10 mail.example.com."]
-                }]
-            })))
-            .with_status(200)
-            .with_body(r#"{"id":"change-mx"}"#)
-            .create();
+        let txt = provider
+            .list_rrset("host.example.com", DnsRecordType::TXT, "example.com")
+            .await
+            .expect("txt");
+        assert_eq!(txt, vec![DnsRecord::TXT("hello world".into())]);
 
+        let srv = provider
+            .list_rrset("_sip._tcp.example.com", DnsRecordType::SRV, "example.com")
+            .await
+            .expect("srv");
+        assert_eq!(
+            srv,
+            vec![DnsRecord::SRV(SRVRecord {
+                target: "sip.example.com".into(),
+                priority: 5,
+                weight: 10,
+                port: 443,
+            })]
+        );
+
+        let caa = provider
+            .list_rrset("host.example.com", DnsRecordType::CAA, "example.com")
+            .await
+            .expect("caa");
+        assert_eq!(
+            caa,
+            vec![DnsRecord::CAA(CAARecord::Issue {
+                issuer_critical: false,
+                name: Some("letsencrypt.org".into()),
+                options: vec![],
+            })]
+        );
+    }
+
+    #[tokio::test]
+    async fn add_to_rrset_rejects_mismatched_record_type() {
+        let server = mockito::Server::new_async().await;
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
         let result = provider
-            .create(
-                "example.com",
-                DnsRecord::MX(MXRecord {
-                    exchange: "mail.example.com".to_string(),
-                    priority: 10,
-                }),
-                60,
+            .add_to_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::TXT("nope".into())],
                 "example.com",
             )
             .await;
+        assert!(matches!(result, Err(Error::Api(ref m)) if m.contains("type mismatch")));
+    }
 
-        assert!(result.is_ok());
-        mx_mock.assert();
-
-        let srv_mock = server
-            .mock(
-                "POST",
-                "/dns/v1/projects/test-project/managedZones/example-zone/changes",
-            )
-            .match_body(mockito::Matcher::Json(json!({
-                "additions": [{
-                    "name": "_sip._tcp.example.com.",
-                    "type": "SRV",
-                    "ttl": 60,
-                    "rrdatas": ["5 10 443 sip.example.com."]
-                }]
-            })))
-            .with_status(200)
-            .with_body(r#"{"id":"change-srv"}"#)
-            .create();
-
+    #[tokio::test]
+    async fn remove_from_rrset_rejects_mismatched_record_type() {
+        let server = mockito::Server::new_async().await;
+        let provider = setup_provider(server.url().as_str(), server.url().as_str());
         let result = provider
-            .create(
-                "_sip._tcp.example.com",
-                DnsRecord::SRV(SRVRecord {
-                    target: "sip.example.com".to_string(),
-                    priority: 5,
-                    weight: 10,
-                    port: 443,
-                }),
-                60,
+            .remove_from_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                vec![DnsRecord::TXT("nope".into())],
                 "example.com",
             )
             .await;
-
-        assert!(result.is_ok());
-        srv_mock.assert();
+        assert!(matches!(result, Err(Error::Api(ref m)) if m.contains("type mismatch")));
     }
 }

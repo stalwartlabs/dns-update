@@ -12,17 +12,17 @@
 #![cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 
 use crate::crypto::{hmac_sha256, sha256_digest};
-use crate::utils::txt_chunks_to_text;
-use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn};
+use crate::http::HttpClientBuilder;
+use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
+use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord};
 use chrono::Utc;
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
 
 const VOLCENGINE_DEFAULT_HOST: &str = "open.volcengineapi.com";
 const VOLCENGINE_DEFAULT_REGION: &str = "cn-north-1";
-const VOLCENGINE_SERVICE: &str = "DNS";
+const VOLCENGINE_SERVICE: &str = "dns";
 const VOLCENGINE_API_VERSION: &str = "2018-08-01";
 const VOLCENGINE_SIGN_ALGORITHM: &str = "HMAC-SHA256";
 
@@ -38,11 +38,30 @@ pub struct VolcengineConfig {
 
 #[derive(Clone)]
 pub struct VolcengineProvider {
-    client: Client,
-    config: VolcengineConfig,
+    access_key: String,
+    secret_key: String,
     region: String,
     host: String,
     scheme: String,
+    timeout: Option<Duration>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ListedRecord {
+    #[serde(rename = "RecordID")]
+    record_id: String,
+    #[serde(rename = "Host")]
+    host: String,
+    #[serde(rename = "Type")]
+    record_type: String,
+    #[serde(rename = "Value", default)]
+    value: String,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedZone {
+    id: i64,
+    name: String,
 }
 
 impl VolcengineProvider {
@@ -55,28 +74,19 @@ impl VolcengineProvider {
 
         let region = config
             .region
-            .clone()
             .unwrap_or_else(|| VOLCENGINE_DEFAULT_REGION.to_string());
         let host = config
             .host
-            .clone()
             .unwrap_or_else(|| VOLCENGINE_DEFAULT_HOST.to_string());
-        let scheme = config.scheme.clone().unwrap_or_else(|| "https".to_string());
-
-        let mut builder = Client::builder();
-        if let Some(timeout) = config.request_timeout {
-            builder = builder.timeout(timeout);
-        }
-        let client = builder
-            .build()
-            .map_err(|e| Error::Client(format!("Failed to build reqwest client: {}", e)))?;
+        let scheme = config.scheme.unwrap_or_else(|| "https".to_string());
 
         Ok(Self {
-            client,
-            config,
+            access_key: config.access_key,
+            secret_key: config.secret_key,
             region,
             host,
             scheme,
+            timeout: config.request_timeout,
         })
     }
 
@@ -95,88 +105,113 @@ impl VolcengineProvider {
         self
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name().to_string();
-        let origin = origin.into_name().to_string();
-        let zone = self.get_zone(&origin).await?;
-        let host = subdomain_for(&name, &zone.name);
-        let entry = record_to_entry(&record)?;
-
-        let body = serde_json::json!({
-            "ZID": zone.id,
-            "Host": host,
-            "Type": entry.record_type,
-            "Value": entry.value,
-            "TTL": ttl,
-        });
-
-        let final_body = if let Some(priority) = entry.priority {
-            let mut value = body;
-            value["Weight"] = priority.into();
-            value
-        } else {
-            body
-        };
-
-        self.send_action("CreateRecord", final_body).await.map(|_| ())
-    }
-
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let name = name.into_name().to_string();
-        let origin = origin.into_name().to_string();
-        let zone = self.get_zone(&origin).await?;
-        let host = subdomain_for(&name, &zone.name);
-        let entry = record_to_entry(&record)?;
-        let record_id = self
-            .find_record_id(&zone.id, &host, &entry.record_type)
-            .await?;
-
-        let body = serde_json::json!({
-            "RecordID": record_id,
-            "Host": host,
-            "Type": entry.record_type,
-            "Value": entry.value,
-            "TTL": ttl,
-        });
-
-        let final_body = if let Some(priority) = entry.priority {
-            let mut value = body;
-            value["Weight"] = priority.into();
-            value
-        } else {
-            body
-        };
-
-        self.send_action("UpdateRecord", final_body).await.map(|_| ())
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        let type_str = record_type_str(record_type)?;
+        let desired = build_values(record_type, records)?;
         let name = name.into_name().to_string();
         let origin = origin.into_name().to_string();
         let zone = self.get_zone(&origin).await?;
-        let host = subdomain_for(&name, &zone.name);
-        let type_str = record_type_str(record_type)?;
-        let record_id = self.find_record_id(&zone.id, &host, type_str).await?;
+        let host = strip_origin_from_name(&name, &zone.name, None);
+        let existing = self.list_records(zone.id, &host, type_str).await?;
 
-        let body = serde_json::json!({ "RecordID": record_id });
-        self.send_action("DeleteRecord", body).await.map(|_| ())
+        let mut pool = existing;
+        let mut to_add: Vec<String> = Vec::new();
+        for value in desired {
+            if let Some(idx) = pool.iter().position(|r| r.value == value) {
+                pool.swap_remove(idx);
+            } else {
+                to_add.push(value);
+            }
+        }
+
+        for stale in pool {
+            self.delete_record(&stale.record_id).await?;
+        }
+        for value in to_add {
+            self.create_record(zone.id, &host, type_str, &value, ttl)
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let type_str = record_type_str(record_type)?;
+        let desired = build_values(record_type, records)?;
+        let name = name.into_name().to_string();
+        let origin = origin.into_name().to_string();
+        let zone = self.get_zone(&origin).await?;
+        let host = strip_origin_from_name(&name, &zone.name, None);
+        let existing = self.list_records(zone.id, &host, type_str).await?;
+
+        for value in desired {
+            if existing.iter().any(|r| r.value == value) {
+                continue;
+            }
+            self.create_record(zone.id, &host, type_str, &value, ttl)
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let type_str = record_type_str(record_type)?;
+        let to_remove = build_values(record_type, records)?;
+        let name = name.into_name().to_string();
+        let origin = origin.into_name().to_string();
+        let zone = self.get_zone(&origin).await?;
+        let host = strip_origin_from_name(&name, &zone.name, None);
+        let existing = self.list_records(zone.id, &host, type_str).await?;
+
+        for value in to_remove {
+            if let Some(entry) = existing.iter().find(|r| r.value == value) {
+                self.delete_record(&entry.record_id).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        let type_str = record_type_str(record_type)?;
+        let name = name.into_name().to_string();
+        let origin = origin.into_name().to_string();
+        let zone = self.get_zone(&origin).await?;
+        let host = strip_origin_from_name(&name, &zone.name, None);
+        let existing = self.list_records(zone.id, &host, type_str).await?;
+        existing
+            .into_iter()
+            .map(|r| value_to_record(record_type, &r.value))
+            .collect()
     }
 
     async fn get_zone(&self, origin: &str) -> crate::Result<ResolvedZone> {
@@ -189,34 +224,24 @@ impl VolcengineProvider {
         let result = response
             .get("Result")
             .ok_or_else(|| Error::Api("Volcengine ListZones response missing Result".into()))?;
-        let total = result
-            .get("Total")
-            .and_then(Value::as_u64)
-            .unwrap_or(0);
-        if total == 0 {
-            return Err(Error::Api(format!(
-                "No Volcengine zone found for origin {}",
-                origin
-            )));
-        }
-        if total > 1 {
-            return Err(Error::Api(format!(
-                "Multiple Volcengine zones matched origin {}",
-                origin
-            )));
-        }
         let zones = result
             .get("Zones")
             .and_then(Value::as_array)
             .ok_or_else(|| Error::Api("Volcengine ListZones response missing Zones".into()))?;
-        let zone = zones.first().ok_or_else(|| {
-            Error::Api(format!("Volcengine zone list empty for origin {}", origin))
-        })?;
-        let id = zone
+        let matched = zones
+            .iter()
+            .find(|z| {
+                z.get("ZoneName")
+                    .and_then(Value::as_str)
+                    .map(|n| n.trim_end_matches('.') == trimmed)
+                    .unwrap_or(false)
+            })
+            .ok_or_else(|| Error::Api(format!("No Volcengine zone found for origin {}", origin)))?;
+        let id = matched
             .get("ZID")
             .and_then(Value::as_i64)
             .ok_or_else(|| Error::Api("Volcengine zone missing ZID".into()))?;
-        let name = zone
+        let name = matched
             .get("ZoneName")
             .and_then(Value::as_str)
             .ok_or_else(|| Error::Api("Volcengine zone missing ZoneName".into()))?
@@ -225,44 +250,55 @@ impl VolcengineProvider {
         Ok(ResolvedZone { id, name })
     }
 
-    async fn find_record_id(
+    async fn list_records(
         &self,
-        zone_id: &i64,
+        zone_id: i64,
         host: &str,
         record_type: &str,
-    ) -> crate::Result<String> {
+    ) -> crate::Result<Vec<ListedRecord>> {
         let body = serde_json::json!({
             "ZID": zone_id,
             "Host": host,
             "Type": record_type,
-            "PageSize": 100,
+            "SearchMode": "exact",
+            "PageSize": "100",
         });
         let response = self.send_action("ListRecords", body).await?;
-        let result = response
+        let records = response
             .get("Result")
-            .ok_or_else(|| Error::Api("Volcengine ListRecords response missing Result".into()))?;
-        let records = result
-            .get("Records")
-            .and_then(Value::as_array)
-            .ok_or_else(|| Error::Api("Volcengine ListRecords response missing Records".into()))?;
-        let record = records
-            .iter()
-            .find(|r| {
-                let h = r.get("Host").and_then(Value::as_str).unwrap_or("");
-                let t = r.get("Type").and_then(Value::as_str).unwrap_or("");
-                h == host && t == record_type
-            })
-            .ok_or_else(|| {
-                Error::Api(format!(
-                    "Volcengine record {} of type {} not found",
-                    host, record_type
-                ))
-            })?;
-        record
-            .get("RecordID")
-            .and_then(Value::as_str)
-            .map(ToString::to_string)
-            .ok_or_else(|| Error::Api("Volcengine record missing RecordID".into()))
+            .and_then(|r| r.get("Records"))
+            .cloned()
+            .unwrap_or(Value::Array(Vec::new()));
+        let parsed: Vec<ListedRecord> = serde_json::from_value(records).map_err(|e| {
+            Error::Serialize(format!("Failed to parse Volcengine record list: {}", e))
+        })?;
+        Ok(parsed
+            .into_iter()
+            .filter(|r| r.host == host && r.record_type == record_type)
+            .collect())
+    }
+
+    async fn create_record(
+        &self,
+        zone_id: i64,
+        host: &str,
+        record_type: &str,
+        value: &str,
+        ttl: u32,
+    ) -> crate::Result<()> {
+        let body = serde_json::json!({
+            "ZID": zone_id,
+            "Host": host,
+            "Type": record_type,
+            "Value": value,
+            "TTL": ttl,
+        });
+        self.send_action("CreateRecord", body).await.map(|_| ())
+    }
+
+    async fn delete_record(&self, record_id: &str) -> crate::Result<()> {
+        let body = serde_json::json!({ "RecordID": record_id });
+        self.send_action("DeleteRecord", body).await.map(|_| ())
     }
 
     async fn send_action(&self, action: &str, body: Value) -> crate::Result<Value> {
@@ -304,41 +340,18 @@ impl VolcengineProvider {
 
         let authorization = format!(
             "{} Credential={}/{}, SignedHeaders={}, Signature={}",
-            VOLCENGINE_SIGN_ALGORITHM,
-            self.config.access_key,
-            credential_scope,
-            signed_headers,
-            signature
+            VOLCENGINE_SIGN_ALGORITHM, self.access_key, credential_scope, signed_headers, signature
         );
 
         let url = format!("{}://{}/?{}", self.scheme, self.host, query);
-        let response = self
-            .client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .header("Host", &self.host)
-            .header("X-Date", &amz_date)
-            .header("X-Content-Sha256", &payload_hash)
-            .header("Authorization", &authorization)
-            .body(body_text)
-            .send()
-            .await
-            .map_err(|e| Error::Api(format!("Volcengine request failed: {}", e)))?;
+        let client = HttpClientBuilder::default()
+            .with_timeout(self.timeout)
+            .with_header("Host", &self.host)
+            .with_header("X-Date", &amz_date)
+            .with_header("X-Content-Sha256", &payload_hash)
+            .with_header("Authorization", &authorization);
 
-        let status = response.status();
-        let text = response
-            .text()
-            .await
-            .map_err(|e| Error::Api(format!("Failed to read Volcengine response: {}", e)))?;
-
-        if !status.is_success() {
-            return Err(match status.as_u16() {
-                400 => Error::Api(format!("BadRequest {}", text)),
-                401 | 403 => Error::Unauthorized,
-                404 => Error::NotFound,
-                _ => Error::Api(format!("Volcengine API error {}: {}", status, text)),
-            });
-        }
+        let text = client.post(url).with_raw_body(body_text).send_raw().await?;
 
         let parsed: Value = if text.is_empty() {
             Value::Null
@@ -366,88 +379,217 @@ impl VolcengineProvider {
     }
 
     fn derive_signing_key(&self, date_stamp: &str) -> Vec<u8> {
-        let k_date = hmac_sha256(self.config.secret_key.as_bytes(), date_stamp.as_bytes());
+        let k_date = hmac_sha256(self.secret_key.as_bytes(), date_stamp.as_bytes());
         let k_region = hmac_sha256(&k_date, self.region.as_bytes());
         let k_service = hmac_sha256(&k_region, VOLCENGINE_SERVICE.as_bytes());
         hmac_sha256(&k_service, b"request")
     }
 }
 
-#[derive(Debug, Clone)]
-struct ResolvedZone {
-    id: i64,
-    name: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RecordEntry {
-    record_type: String,
-    value: String,
-    priority: Option<u16>,
-}
-
-fn record_to_entry(record: &DnsRecord) -> crate::Result<RecordEntry> {
-    let entry = match record {
-        DnsRecord::A(ip) => RecordEntry {
-            record_type: "A".into(),
-            value: ip.to_string(),
-            priority: None,
-        },
-        DnsRecord::AAAA(ip) => RecordEntry {
-            record_type: "AAAA".into(),
-            value: ip.to_string(),
-            priority: None,
-        },
-        DnsRecord::CNAME(target) => RecordEntry {
-            record_type: "CNAME".into(),
-            value: target.trim_end_matches('.').to_string(),
-            priority: None,
-        },
-        DnsRecord::NS(target) => RecordEntry {
-            record_type: "NS".into(),
-            value: target.trim_end_matches('.').to_string(),
-            priority: None,
-        },
-        DnsRecord::MX(mx) => RecordEntry {
-            record_type: "MX".into(),
-            value: mx.exchange.trim_end_matches('.').to_string(),
-            priority: Some(mx.priority),
-        },
+fn record_to_value(record: &DnsRecord) -> crate::Result<(&'static str, String)> {
+    Ok(match record {
+        DnsRecord::A(ip) => ("A", ip.to_string()),
+        DnsRecord::AAAA(ip) => ("AAAA", ip.to_string()),
+        DnsRecord::CNAME(target) => ("CNAME", target.trim_end_matches('.').to_string()),
+        DnsRecord::NS(target) => ("NS", target.trim_end_matches('.').to_string()),
+        DnsRecord::MX(mx) => (
+            "MX",
+            format!("{} {}", mx.priority, mx.exchange.trim_end_matches('.')),
+        ),
         DnsRecord::TXT(txt) => {
             let mut buf = String::new();
             txt_chunks_to_text(&mut buf, txt, " ");
-            RecordEntry {
-                record_type: "TXT".into(),
-                value: buf,
-                priority: None,
-            }
+            ("TXT", buf)
         }
-        DnsRecord::SRV(srv) => RecordEntry {
-            record_type: "SRV".into(),
-            value: format!(
+        DnsRecord::SRV(srv) => (
+            "SRV",
+            format!(
                 "{} {} {} {}",
                 srv.priority,
                 srv.weight,
                 srv.port,
                 srv.target.trim_end_matches('.')
             ),
-            priority: None,
-        },
+        ),
         DnsRecord::CAA(caa) => {
             let (flags, tag, value) = caa.clone().decompose();
-            RecordEntry {
-                record_type: "CAA".into(),
-                value: format!("{} {} \"{}\"", flags, tag, value),
-                priority: None,
-            }
+            ("CAA", format!("{} {} \"{}\"", flags, tag, value))
         }
         DnsRecord::TLSA(_) => {
             return Err(Error::Api(
                 "TLSA records are not supported by Volcengine".into(),
             ));
         }
+    })
+}
+
+fn build_values(
+    expected_type: DnsRecordType,
+    records: Vec<DnsRecord>,
+) -> crate::Result<Vec<String>> {
+    let mut out = Vec::with_capacity(records.len());
+    for record in records {
+        if record.as_type() != expected_type {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected_type.as_str(),
+                record.as_type().as_str(),
+            )));
+        }
+        let (_, value) = record_to_value(&record)?;
+        out.push(value);
+    }
+    Ok(out)
+}
+
+fn value_to_record(record_type: DnsRecordType, value: &str) -> crate::Result<DnsRecord> {
+    match record_type {
+        DnsRecordType::A => value
+            .parse()
+            .map(DnsRecord::A)
+            .map_err(|e| Error::Parse(format!("Invalid A value {}: {}", value, e))),
+        DnsRecordType::AAAA => value
+            .parse()
+            .map(DnsRecord::AAAA)
+            .map_err(|e| Error::Parse(format!("Invalid AAAA value {}: {}", value, e))),
+        DnsRecordType::CNAME => Ok(DnsRecord::CNAME(value.to_string())),
+        DnsRecordType::NS => Ok(DnsRecord::NS(value.to_string())),
+        DnsRecordType::MX => {
+            let (priority, exchange) = value
+                .split_once(' ')
+                .ok_or_else(|| Error::Parse(format!("Invalid MX value (no space): {}", value)))?;
+            let priority: u16 = priority
+                .parse()
+                .map_err(|e| Error::Parse(format!("Invalid MX priority {}: {}", priority, e)))?;
+            Ok(DnsRecord::MX(MXRecord {
+                priority,
+                exchange: exchange.to_string(),
+            }))
+        }
+        DnsRecordType::TXT => Ok(DnsRecord::TXT(unquote_txt(value))),
+        DnsRecordType::SRV => {
+            let parts: Vec<&str> = value.splitn(4, ' ').collect();
+            if parts.len() != 4 {
+                return Err(Error::Parse(format!("Invalid SRV value: {}", value)));
+            }
+            Ok(DnsRecord::SRV(SRVRecord {
+                priority: parts[0]
+                    .parse()
+                    .map_err(|e| Error::Parse(format!("Invalid SRV priority: {}", e)))?,
+                weight: parts[1]
+                    .parse()
+                    .map_err(|e| Error::Parse(format!("Invalid SRV weight: {}", e)))?,
+                port: parts[2]
+                    .parse()
+                    .map_err(|e| Error::Parse(format!("Invalid SRV port: {}", e)))?,
+                target: parts[3].to_string(),
+            }))
+        }
+        DnsRecordType::CAA => parse_caa_value(value).map(DnsRecord::CAA),
+        DnsRecordType::TLSA => Err(Error::Api(
+            "TLSA records are not supported by Volcengine".into(),
+        )),
+    }
+}
+
+fn unquote_txt(content: &str) -> String {
+    let mut out = String::with_capacity(content.len());
+    let bytes = content.as_bytes();
+    let mut i = 0;
+    let mut in_quotes = false;
+    let mut any_quotes = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'"' {
+            any_quotes = true;
+            in_quotes = !in_quotes;
+            i += 1;
+            continue;
+        }
+        if in_quotes && b == b'\\' && i + 1 < bytes.len() {
+            let next = bytes[i + 1];
+            if next == b'"' || next == b'\\' {
+                out.push(next as char);
+                i += 2;
+                continue;
+            }
+        }
+        if !any_quotes || in_quotes {
+            out.push(b as char);
+        }
+        i += 1;
+    }
+    if !any_quotes {
+        return content.to_string();
+    }
+    out
+}
+
+fn parse_caa_value(value: &str) -> crate::Result<CAARecord> {
+    let trimmed = value.trim();
+    let (flags_str, rest) = trimmed
+        .split_once(' ')
+        .ok_or_else(|| Error::Parse(format!("Invalid CAA value: {}", value)))?;
+    let flags: u8 = flags_str
+        .parse()
+        .map_err(|e| Error::Parse(format!("Invalid CAA flags {}: {}", flags_str, e)))?;
+    let issuer_critical = flags & 0x80 != 0;
+    let (tag, raw_value) = rest
+        .trim_start()
+        .split_once(' ')
+        .ok_or_else(|| Error::Parse(format!("Invalid CAA tag/value: {}", value)))?;
+    let raw_value = raw_value.trim();
+    let stripped = raw_value
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(raw_value);
+    match tag {
+        "issue" => {
+            let (name, options) = split_caa_options(stripped);
+            Ok(CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "issuewild" => {
+            let (name, options) = split_caa_options(stripped);
+            Ok(CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "iodef" => Ok(CAARecord::Iodef {
+            issuer_critical,
+            url: stripped.to_string(),
+        }),
+        other => Err(Error::Parse(format!("Unknown CAA tag: {}", other))),
+    }
+}
+
+fn split_caa_options(value: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name_part = parts.next().unwrap_or("").trim().to_string();
+    let name = if name_part.is_empty() {
+        None
+    } else {
+        Some(name_part)
     };
-    Ok(entry)
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
 }
 
 fn record_type_str(record_type: DnsRecordType) -> crate::Result<&'static str> {
@@ -468,18 +610,6 @@ fn record_type_str(record_type: DnsRecordType) -> crate::Result<&'static str> {
     })
 }
 
-fn subdomain_for(name: &str, zone_name: &str) -> String {
-    let name = name.trim_end_matches('.');
-    let zone = zone_name.trim_end_matches('.');
-    if name == zone {
-        "@".to_string()
-    } else if let Some(stripped) = name.strip_suffix(&format!(".{}", zone)) {
-        stripped.to_string()
-    } else {
-        name.to_string()
-    }
-}
-
 fn canonical_query_string(query: &str) -> String {
     let mut pairs: Vec<(String, String)> = query
         .split('&')
@@ -488,10 +618,7 @@ fn canonical_query_string(query: &str) -> String {
             let mut iter = p.splitn(2, '=');
             let k = iter.next().unwrap_or("");
             let v = iter.next().unwrap_or("");
-            (
-                volc_uri_encode(k, true),
-                volc_uri_encode(v, true),
-            )
+            (volc_uri_encode(k, true), volc_uri_encode(v, true))
         })
         .collect();
     pairs.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));

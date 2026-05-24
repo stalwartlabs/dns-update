@@ -106,7 +106,12 @@ mod tests {
         let record = DnsRecord::CNAME("alias.example.com".to_string());
         let ovh_record: OvhRecordFormat = (&record).into();
         assert_eq!(ovh_record.field_type, "CNAME");
-        assert_eq!(ovh_record.target, "alias.example.com");
+        assert_eq!(ovh_record.target, "alias.example.com.");
+
+        let record = DnsRecord::CNAME("alias.example.com.".to_string());
+        let ovh_record: OvhRecordFormat = (&record).into();
+        assert_eq!(ovh_record.field_type, "CNAME");
+        assert_eq!(ovh_record.target, "alias.example.com.");
 
         let record = DnsRecord::MX(MXRecord {
             exchange: "mail.example.com".to_string(),
@@ -134,357 +139,782 @@ mod tests {
         let record = DnsRecord::NS("ns1.example.com".to_string());
         let ovh_record: OvhRecordFormat = (&record).into();
         assert_eq!(ovh_record.field_type, "NS");
-        assert_eq!(ovh_record.target, "ns1.example.com");
+        assert_eq!(ovh_record.target, "ns1.example.com.");
+
+        let record = DnsRecord::NS("ns1.example.com.".to_string());
+        let ovh_record: OvhRecordFormat = (&record).into();
+        assert_eq!(ovh_record.field_type, "NS");
+        assert_eq!(ovh_record.target, "ns1.example.com.");
     }
 
-    #[tokio::test]
-    async fn test_create_record_success() {
-        let mut server = mockito::Server::new_async().await;
-
-        let zone_mock = server
+    fn mock_zone(server: &mut mockito::ServerGuard) -> mockito::Mock {
+        server
             .mock("GET", "/domain/zone/example.com")
             .with_status(200)
-            .match_header("x-ovh-application", "test_app_key")
-            .match_header("x-ovh-consumer", "test_consumer_key")
             .with_body(r#"{"name": "example.com"}"#)
-            .create();
+            .create()
+    }
 
-        let create_mock = server
+    fn mock_list(
+        server: &mut mockito::ServerGuard,
+        field_type: &str,
+        sub_domain: &str,
+        body: serde_json::Value,
+    ) -> mockito::Mock {
+        let path = format!(
+            "/domain/zone/example.com/record?fieldType={}&subDomain={}",
+            field_type, sub_domain
+        );
+        server
+            .mock("GET", path.as_str())
+            .with_status(200)
+            .with_body(serde_json::to_string(&body).unwrap())
+            .create()
+    }
+
+    fn mock_get_record(
+        server: &mut mockito::ServerGuard,
+        id: u64,
+        body: serde_json::Value,
+    ) -> mockito::Mock {
+        let path = format!("/domain/zone/example.com/record/{}", id);
+        server
+            .mock("GET", path.as_str())
+            .with_status(200)
+            .with_body(serde_json::to_string(&body).unwrap())
+            .create()
+    }
+
+    fn mock_delete_record(server: &mut mockito::ServerGuard, id: u64) -> mockito::Mock {
+        let path = format!("/domain/zone/example.com/record/{}", id);
+        server
+            .mock("DELETE", path.as_str())
+            .with_status(200)
+            .with_body("")
+            .create()
+    }
+
+    fn mock_refresh(server: &mut mockito::ServerGuard) -> mockito::Mock {
+        server
+            .mock("POST", "/domain/zone/example.com/refresh")
+            .with_status(200)
+            .with_body("")
+            .create()
+    }
+
+    fn mock_post_record(
+        server: &mut mockito::ServerGuard,
+        body_match: serde_json::Value,
+    ) -> mockito::Mock {
+        server
             .mock("POST", "/domain/zone/example.com/record")
+            .match_body(mockito::Matcher::Json(body_match))
             .with_status(200)
-            .match_header("x-ovh-application", "test_app_key")
-            .match_header("x-ovh-consumer", "test_consumer_key")
-            .match_header("content-type", "application/json")
-            .match_body(mockito::Matcher::Json(json!({
+            .with_body(r#"{"id": 999999}"#)
+            .create()
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_creates_when_owner_is_empty() {
+        let mut server = mockito::Server::new_async().await;
+        let zone = mock_zone(&mut server);
+        let list = mock_list(&mut server, "A", "www", json!([]));
+        let create_a = mock_post_record(
+            &mut server,
+            json!({
                 "fieldType": "A",
-                "subDomain": "test",
+                "subDomain": "www",
                 "target": "1.1.1.1",
+                "ttl": 300
+            }),
+        );
+        let refresh = mock_refresh(&mut server);
+
+        let mut provider = setup_provider();
+        provider.endpoint = server.url();
+
+        let result = provider
+            .set_rrset(
+                "www.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        zone.assert();
+        list.assert();
+        create_a.assert();
+        refresh.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_is_noop_when_already_matches() {
+        let mut server = mockito::Server::new_async().await;
+        let zone = mock_zone(&mut server);
+        let list = mock_list(&mut server, "A", "www", json!([111]));
+        let fetch = mock_get_record(
+            &mut server,
+            111,
+            json!({
+                "id": 111,
+                "zone": "example.com",
+                "subDomain": "www",
+                "fieldType": "A",
+                "target": "1.1.1.1",
+                "ttl": 300
+            }),
+        );
+
+        let mut provider = setup_provider();
+        provider.endpoint = server.url();
+
+        let result = provider
+            .set_rrset(
+                "www.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        zone.assert();
+        list.assert();
+        fetch.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_deletes_extras_and_keeps_matching() {
+        let mut server = mockito::Server::new_async().await;
+        let zone = mock_zone(&mut server);
+        let list = mock_list(&mut server, "A", "host", json!([200, 201]));
+        let fetch_keep = mock_get_record(
+            &mut server,
+            200,
+            json!({
+                "id": 200,
+                "zone": "example.com",
+                "subDomain": "host",
+                "fieldType": "A",
+                "target": "1.1.1.1",
+                "ttl": 300
+            }),
+        );
+        let fetch_stale = mock_get_record(
+            &mut server,
+            201,
+            json!({
+                "id": 201,
+                "zone": "example.com",
+                "subDomain": "host",
+                "fieldType": "A",
+                "target": "9.9.9.9",
+                "ttl": 300
+            }),
+        );
+        let delete_stale = mock_delete_record(&mut server, 201);
+        let create_new = mock_post_record(
+            &mut server,
+            json!({
+                "fieldType": "A",
+                "subDomain": "host",
+                "target": "8.8.8.8",
+                "ttl": 300
+            }),
+        );
+        let refresh = mock_refresh(&mut server);
+
+        let mut provider = setup_provider();
+        provider.endpoint = server.url();
+
+        let result = provider
+            .set_rrset(
+                "host.example.com",
+                DnsRecordType::A,
+                300,
+                vec![
+                    DnsRecord::A("1.1.1.1".parse().unwrap()),
+                    DnsRecord::A("8.8.8.8".parse().unwrap()),
+                ],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        zone.assert();
+        list.assert();
+        fetch_keep.assert();
+        fetch_stale.assert();
+        delete_stale.assert();
+        create_new.assert();
+        refresh.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_empty_records_deletes_all() {
+        let mut server = mockito::Server::new_async().await;
+        let zone = mock_zone(&mut server);
+        let list = mock_list(&mut server, "A", "gone", json!([300, 301]));
+        let fetch_x = mock_get_record(
+            &mut server,
+            300,
+            json!({
+                "id": 300,
+                "zone": "example.com",
+                "subDomain": "gone",
+                "fieldType": "A",
+                "target": "1.2.3.4",
+                "ttl": 300
+            }),
+        );
+        let fetch_y = mock_get_record(
+            &mut server,
+            301,
+            json!({
+                "id": 301,
+                "zone": "example.com",
+                "subDomain": "gone",
+                "fieldType": "A",
+                "target": "5.6.7.8",
+                "ttl": 300
+            }),
+        );
+        let delete_x = mock_delete_record(&mut server, 300);
+        let delete_y = mock_delete_record(&mut server, 301);
+        let refresh = mock_refresh(&mut server);
+
+        let mut provider = setup_provider();
+        provider.endpoint = server.url();
+
+        let result = provider
+            .set_rrset(
+                "gone.example.com",
+                DnsRecordType::A,
+                300,
+                vec![],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        zone.assert();
+        list.assert();
+        fetch_x.assert();
+        fetch_y.assert();
+        delete_x.assert();
+        delete_y.assert();
+        refresh.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_records_must_match_declared_type() {
+        let provider = setup_provider();
+        let result = provider
+            .set_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::TXT("not-an-A".to_string())],
+                "example.com",
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Api(_))), "got {result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_add_to_rrset_empty_is_noop() {
+        let provider = setup_provider();
+        let result = provider
+            .add_to_rrset(
+                "x.example.com",
+                DnsRecordType::A,
+                300,
+                vec![],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_add_to_rrset_skips_existing_values() {
+        let mut server = mockito::Server::new_async().await;
+        let zone = mock_zone(&mut server);
+        let list = mock_list(&mut server, "TXT", "_acme", json!([400]));
+        let fetch_existing = mock_get_record(
+            &mut server,
+            400,
+            json!({
+                "id": 400,
+                "zone": "example.com",
+                "subDomain": "_acme",
+                "fieldType": "TXT",
+                "target": "existing",
+                "ttl": 60
+            }),
+        );
+        let create_new = mock_post_record(
+            &mut server,
+            json!({
+                "fieldType": "TXT",
+                "subDomain": "_acme",
+                "target": "new-token",
+                "ttl": 60
+            }),
+        );
+        let refresh = mock_refresh(&mut server);
+
+        let mut provider = setup_provider();
+        provider.endpoint = server.url();
+
+        let result = provider
+            .add_to_rrset(
+                "_acme.example.com",
+                DnsRecordType::TXT,
+                60,
+                vec![
+                    DnsRecord::TXT("existing".to_string()),
+                    DnsRecord::TXT("new-token".to_string()),
+                ],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "add_to_rrset returned: {result:?}");
+        zone.assert();
+        list.assert();
+        fetch_existing.assert();
+        create_new.assert();
+        refresh.assert();
+    }
+
+    #[tokio::test]
+    async fn test_add_to_rrset_all_present_is_full_noop() {
+        let mut server = mockito::Server::new_async().await;
+        let zone = mock_zone(&mut server);
+        let list = mock_list(&mut server, "TXT", "_acme", json!([500]));
+        let fetch = mock_get_record(
+            &mut server,
+            500,
+            json!({
+                "id": 500,
+                "zone": "example.com",
+                "subDomain": "_acme",
+                "fieldType": "TXT",
+                "target": "already-here",
+                "ttl": 60
+            }),
+        );
+
+        let mut provider = setup_provider();
+        provider.endpoint = server.url();
+
+        let result = provider
+            .add_to_rrset(
+                "_acme.example.com",
+                DnsRecordType::TXT,
+                60,
+                vec![DnsRecord::TXT("already-here".to_string())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "add_to_rrset returned: {result:?}");
+        zone.assert();
+        list.assert();
+        fetch.assert();
+    }
+
+    #[tokio::test]
+    async fn test_remove_from_rrset_empty_is_noop() {
+        let provider = setup_provider();
+        let result = provider
+            .remove_from_rrset("x.example.com", DnsRecordType::A, vec![], "example.com")
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_remove_from_rrset_deletes_only_matching_values() {
+        let mut server = mockito::Server::new_async().await;
+        let zone = mock_zone(&mut server);
+        let list = mock_list(&mut server, "TXT", "_acme", json!([600, 601]));
+        let fetch_keep = mock_get_record(
+            &mut server,
+            600,
+            json!({
+                "id": 600,
+                "zone": "example.com",
+                "subDomain": "_acme",
+                "fieldType": "TXT",
+                "target": "keep-me",
+                "ttl": 60
+            }),
+        );
+        let fetch_drop = mock_get_record(
+            &mut server,
+            601,
+            json!({
+                "id": 601,
+                "zone": "example.com",
+                "subDomain": "_acme",
+                "fieldType": "TXT",
+                "target": "drop-me",
+                "ttl": 60
+            }),
+        );
+        let delete = mock_delete_record(&mut server, 601);
+        let refresh = mock_refresh(&mut server);
+
+        let mut provider = setup_provider();
+        provider.endpoint = server.url();
+
+        let result = provider
+            .remove_from_rrset(
+                "_acme.example.com",
+                DnsRecordType::TXT,
+                vec![DnsRecord::TXT("drop-me".to_string())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "remove_from_rrset returned: {result:?}");
+        zone.assert();
+        list.assert();
+        fetch_keep.assert();
+        fetch_drop.assert();
+        delete.assert();
+        refresh.assert();
+    }
+
+    #[tokio::test]
+    async fn test_remove_from_rrset_absent_value_is_noop_no_mutation() {
+        let mut server = mockito::Server::new_async().await;
+        let zone = mock_zone(&mut server);
+        let list = mock_list(&mut server, "TXT", "_acme", json!([700]));
+        let fetch = mock_get_record(
+            &mut server,
+            700,
+            json!({
+                "id": 700,
+                "zone": "example.com",
+                "subDomain": "_acme",
+                "fieldType": "TXT",
+                "target": "present",
+                "ttl": 60
+            }),
+        );
+
+        let mut provider = setup_provider();
+        provider.endpoint = server.url();
+
+        let result = provider
+            .remove_from_rrset(
+                "_acme.example.com",
+                DnsRecordType::TXT,
+                vec![DnsRecord::TXT("not-there".to_string())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "remove_from_rrset returned: {result:?}");
+        zone.assert();
+        list.assert();
+        fetch.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_rrset_returns_parsed_records() {
+        let mut server = mockito::Server::new_async().await;
+        let zone = mock_zone(&mut server);
+        let list = mock_list(&mut server, "MX", "", json!([800, 801]));
+        let fetch_a = mock_get_record(
+            &mut server,
+            800,
+            json!({
+                "id": 800,
+                "zone": "example.com",
+                "subDomain": "",
+                "fieldType": "MX",
+                "target": "10 mail1.example.com.",
                 "ttl": 3600
-            })))
-            .with_body(r#"{"id": 123456789}"#)
-            .create();
-
-        let refresh_mock = server
-            .mock("POST", "/domain/zone/example.com/refresh")
-            .with_status(200)
-            .match_header("x-ovh-application", "test_app_key")
-            .match_header("x-ovh-consumer", "test_consumer_key")
-            .with_body("")
-            .create();
-
-        let mut provider = setup_provider();
-        provider.endpoint = server.url();
-
-        let result = provider
-            .create(
-                "test.example.com",
-                DnsRecord::A("1.1.1.1".parse().unwrap()),
-                3600,
-                "example.com",
-            )
-            .await;
-
-        assert!(result.is_ok());
-        zone_mock.assert();
-        create_mock.assert();
-        refresh_mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_update_record_success() {
-        let mut server = mockito::Server::new_async().await;
-
-        let zone_mock = server
-            .mock("GET", "/domain/zone/example.com")
-            .with_status(200)
-            .match_header("x-ovh-application", "test_app_key")
-            .match_header("x-ovh-consumer", "test_consumer_key")
-            .with_body(r#"{"name": "example.com"}"#)
-            .create();
-
-        let lookup_mock = server
-            .mock(
-                "GET",
-                "/domain/zone/example.com/record?fieldType=A&subDomain=test",
-            )
-            .with_status(200)
-            .match_header("x-ovh-application", "test_app_key")
-            .match_header("x-ovh-consumer", "test_consumer_key")
-            .with_body(r#"[123456789]"#)
-            .create();
-
-        let update_mock = server
-            .mock("PUT", "/domain/zone/example.com/record/123456789")
-            .with_status(200)
-            .match_header("x-ovh-application", "test_app_key")
-            .match_header("x-ovh-consumer", "test_consumer_key")
-            .match_header("content-type", "application/json")
-            .match_body(mockito::Matcher::Json(json!({
-                "target": "2.2.2.2",
+            }),
+        );
+        let fetch_b = mock_get_record(
+            &mut server,
+            801,
+            json!({
+                "id": 801,
+                "zone": "example.com",
+                "subDomain": "",
+                "fieldType": "MX",
+                "target": "20 mail2.example.com.",
                 "ttl": 3600
-            })))
-            .with_body("")
-            .create();
-
-        let refresh_mock = server
-            .mock("POST", "/domain/zone/example.com/refresh")
-            .with_status(200)
-            .match_header("x-ovh-application", "test_app_key")
-            .match_header("x-ovh-consumer", "test_consumer_key")
-            .with_body("")
-            .create();
+            }),
+        );
 
         let mut provider = setup_provider();
         provider.endpoint = server.url();
 
         let result = provider
-            .update(
-                "test.example.com",
-                DnsRecord::A("2.2.2.2".parse().unwrap()),
-                3600,
+            .list_rrset("example.com", DnsRecordType::MX, "example.com")
+            .await;
+
+        let records = result.expect("list_rrset returned err");
+        assert_eq!(records.len(), 2);
+        assert!(records.contains(&DnsRecord::MX(MXRecord {
+            priority: 10,
+            exchange: "mail1.example.com.".to_string()
+        })));
+        assert!(records.contains(&DnsRecord::MX(MXRecord {
+            priority: 20,
+            exchange: "mail2.example.com.".to_string()
+        })));
+        zone.assert();
+        list.assert();
+        fetch_a.assert();
+        fetch_b.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_replaces_two_tlsa_at_same_owner() {
+        let mut server = mockito::Server::new_async().await;
+        let zone = mock_zone(&mut server);
+        let list = mock_list(&mut server, "TLSA", "_25._tcp.mail", json!([900, 901]));
+        let fetch_old_ee = mock_get_record(
+            &mut server,
+            900,
+            json!({
+                "id": 900,
+                "zone": "example.com",
+                "subDomain": "_25._tcp.mail",
+                "fieldType": "TLSA",
+                "target": "3 1 1 aa",
+                "ttl": 300
+            }),
+        );
+        let fetch_old_ta = mock_get_record(
+            &mut server,
+            901,
+            json!({
+                "id": 901,
+                "zone": "example.com",
+                "subDomain": "_25._tcp.mail",
+                "fieldType": "TLSA",
+                "target": "2 1 1 bb",
+                "ttl": 300
+            }),
+        );
+        let delete_ee = mock_delete_record(&mut server, 900);
+        let delete_ta = mock_delete_record(&mut server, 901);
+        let create_ee = mock_post_record(
+            &mut server,
+            json!({
+                "fieldType": "TLSA",
+                "subDomain": "_25._tcp.mail",
+                "target": "3 1 1 cc",
+                "ttl": 300
+            }),
+        );
+        let create_ta = mock_post_record(
+            &mut server,
+            json!({
+                "fieldType": "TLSA",
+                "subDomain": "_25._tcp.mail",
+                "target": "2 1 1 dd",
+                "ttl": 300
+            }),
+        );
+        let refresh = mock_refresh(&mut server);
+
+        let mut provider = setup_provider();
+        provider.endpoint = server.url();
+
+        let result = provider
+            .set_rrset(
+                "_25._tcp.mail.example.com",
+                DnsRecordType::TLSA,
+                300,
+                vec![
+                    DnsRecord::TLSA(TLSARecord {
+                        cert_usage: TlsaCertUsage::DaneEe,
+                        selector: TlsaSelector::Spki,
+                        matching: TlsaMatching::Sha256,
+                        cert_data: vec![0xcc],
+                    }),
+                    DnsRecord::TLSA(TLSARecord {
+                        cert_usage: TlsaCertUsage::DaneTa,
+                        selector: TlsaSelector::Spki,
+                        matching: TlsaMatching::Sha256,
+                        cert_data: vec![0xdd],
+                    }),
+                ],
                 "example.com",
             )
             .await;
 
-        assert!(result.is_ok());
-        zone_mock.assert();
-        lookup_mock.assert();
-        update_mock.assert();
-        refresh_mock.assert();
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        zone.assert();
+        list.assert();
+        fetch_old_ee.assert();
+        fetch_old_ta.assert();
+        delete_ee.assert();
+        delete_ta.assert();
+        create_ee.assert();
+        create_ta.assert();
+        refresh.assert();
     }
 
     #[tokio::test]
-    async fn test_delete_record_success() {
+    async fn test_set_rrset_caa_round_trips_via_display_form() {
         let mut server = mockito::Server::new_async().await;
-
-        let zone_mock = server
-            .mock("GET", "/domain/zone/example.com")
-            .with_status(200)
-            .match_header("x-ovh-application", "test_app_key")
-            .match_header("x-ovh-consumer", "test_consumer_key")
-            .with_body(r#"{"name": "example.com"}"#)
-            .create();
-
-        let lookup_mock = server
-            .mock(
-                "GET",
-                "/domain/zone/example.com/record?fieldType=TXT&subDomain=test",
-            )
-            .with_status(200)
-            .match_header("x-ovh-application", "test_app_key")
-            .match_header("x-ovh-consumer", "test_consumer_key")
-            .with_body(r#"[123456789]"#)
-            .create();
-
-        let delete_mock = server
-            .mock("DELETE", "/domain/zone/example.com/record/123456789")
-            .with_status(200)
-            .match_header("x-ovh-application", "test_app_key")
-            .match_header("x-ovh-consumer", "test_consumer_key")
-            .with_body("")
-            .create();
-
-        let refresh_mock = server
-            .mock("POST", "/domain/zone/example.com/refresh")
-            .with_status(200)
-            .match_header("x-ovh-application", "test_app_key")
-            .match_header("x-ovh-consumer", "test_consumer_key")
-            .with_body("")
-            .create();
+        let zone = mock_zone(&mut server);
+        let list = mock_list(&mut server, "CAA", "", json!([1100]));
+        let fetch = mock_get_record(
+            &mut server,
+            1100,
+            json!({
+                "id": 1100,
+                "zone": "example.com",
+                "subDomain": "",
+                "fieldType": "CAA",
+                "target": "0 issue \"letsencrypt.org\"",
+                "ttl": 3600
+            }),
+        );
 
         let mut provider = setup_provider();
         provider.endpoint = server.url();
 
         let result = provider
-            .delete("test.example.com", "example.com", DnsRecordType::TXT)
-            .await;
-
-        assert!(result.is_ok());
-        zone_mock.assert();
-        lookup_mock.assert();
-        delete_mock.assert();
-        refresh_mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_create_record_unauthorized() {
-        let mut server = mockito::Server::new_async().await;
-
-        let zone_mock = server
-            .mock("GET", "/domain/zone/example.com")
-            .with_status(401)
-            .match_header("x-ovh-application", "test_app_key")
-            .match_header("x-ovh-consumer", "test_consumer_key")
-            .with_body(r#"{"message": "Invalid credentials"}"#)
-            .create();
-
-        let mut provider = setup_provider();
-        provider.endpoint = server.url();
-
-        let result = provider
-            .create(
-                "test.example.com",
-                DnsRecord::A("1.1.1.1".parse().unwrap()),
-                3600,
+            .set_rrset(
                 "example.com",
-            )
-            .await;
-
-        assert!(matches!(result, Err(Error::Api(_))));
-        zone_mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_record_not_found() {
-        let mut server = mockito::Server::new_async().await;
-
-        let zone_mock = server
-            .mock("GET", "/domain/zone/example.com")
-            .with_status(200)
-            .match_header("x-ovh-application", "test_app_key")
-            .match_header("x-ovh-consumer", "test_consumer_key")
-            .with_body(r#"{"name": "example.com"}"#)
-            .create();
-
-        let lookup_mock = server
-            .mock(
-                "GET",
-                "/domain/zone/example.com/record?fieldType=A&subDomain=nonexistent",
-            )
-            .with_status(200)
-            .match_header("x-ovh-application", "test_app_key")
-            .match_header("x-ovh-consumer", "test_consumer_key")
-            .with_body(r#"[]"#)
-            .create();
-
-        let mut provider = setup_provider();
-        provider.endpoint = server.url();
-
-        let result = provider
-            .update(
-                "nonexistent.example.com",
-                DnsRecord::A("1.1.1.1".parse().unwrap()),
+                DnsRecordType::CAA,
                 3600,
-                "example.com",
-            )
-            .await;
-
-        assert!(matches!(result, Err(Error::NotFound)));
-        zone_mock.assert();
-        lookup_mock.assert();
-    }
-
-    #[tokio::test]
-    #[ignore = "Requires OVH API credentials and domain configuration"]
-    async fn integration_test() {
-        let app_key = std::env::var("OVH_APP_KEY").unwrap_or_default();
-        let app_secret = std::env::var("OVH_APP_SECRET").unwrap_or_default();
-        let consumer_key = std::env::var("OVH_CONSUMER_KEY").unwrap_or_default();
-        let endpoint = std::env::var("OVH_ENDPOINT").unwrap_or_default();
-        let origin = std::env::var("OVH_ORIGIN").unwrap_or_default();
-        let domain = std::env::var("OVH_DOMAIN").unwrap_or_default();
-
-        assert!(
-            !app_key.is_empty(),
-            "Please configure your OVH application key in the integration test"
-        );
-        assert!(
-            !app_secret.is_empty(),
-            "Please configure your OVH application secret in the integration test"
-        );
-        assert!(
-            !consumer_key.is_empty(),
-            "Please configure your OVH consumer key in the integration test"
-        );
-        assert!(
-            !endpoint.is_empty(),
-            "Please configure your endpoint in the integration test"
-        );
-        assert!(
-            !origin.is_empty(),
-            "Please configure your domain in the integration test"
-        );
-        assert!(
-            !domain.is_empty(),
-            "Please configure your test subdomain in the integration test"
-        );
-
-        let updater = DnsUpdater::new_ovh(
-            app_key,
-            app_secret,
-            consumer_key,
-            endpoint.parse().unwrap(),
-            Some(Duration::from_secs(30)),
-        )
-        .unwrap();
-
-        let creation_result = updater
-            .create(
-                &domain,
-                DnsRecord::A("1.1.1.1".parse().unwrap()),
-                3600,
-                &origin,
-            )
-            .await;
-
-        assert!(creation_result.is_ok());
-
-        let update_result = updater
-            .update(
-                &domain,
-                DnsRecord::A("2.2.2.2".parse().unwrap()),
-                3600,
-                &origin,
-            )
-            .await;
-
-        assert!(update_result.is_ok());
-
-        let deletion_result = updater.delete(&domain, &origin, DnsRecordType::A).await;
-
-        assert!(deletion_result.is_ok());
-
-        let tlsa_result = updater
-            .create(
-                &domain,
-                DnsRecord::TLSA(TLSARecord {
-                    cert_usage: TlsaCertUsage::DaneEe,
-                    selector: TlsaSelector::Spki,
-                    matching: TlsaMatching::Sha256,
-                    cert_data: vec![
-                        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4, 0xc8,
-                        0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c,
-                        0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
-                    ],
-                }),
-                3600,
-                &origin,
-            )
-            .await;
-
-        assert!(tlsa_result.is_ok());
-
-        let tlsa_deletion_result = updater.delete(&domain, &origin, DnsRecordType::TLSA).await;
-
-        assert!(tlsa_deletion_result.is_ok());
-
-        let caa_result = updater
-            .create(
-                &domain,
-                DnsRecord::CAA(CAARecord::Issue {
+                vec![DnsRecord::CAA(CAARecord::Issue {
                     issuer_critical: false,
                     name: Some("letsencrypt.org".to_string()),
                     options: vec![],
-                }),
-                3600,
-                &origin,
+                })],
+                "example.com",
             )
             .await;
 
-        assert!(caa_result.is_ok());
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        zone.assert();
+        list.assert();
+        fetch.assert();
+    }
 
-        let caa_deletion_result = updater.delete(&domain, &origin, DnsRecordType::CAA).await;
+    #[tokio::test]
+    async fn test_set_rrset_srv_round_trips() {
+        let mut server = mockito::Server::new_async().await;
+        let zone = mock_zone(&mut server);
+        let list = mock_list(&mut server, "SRV", "_sip._tcp", json!([1200]));
+        let fetch = mock_get_record(
+            &mut server,
+            1200,
+            json!({
+                "id": 1200,
+                "zone": "example.com",
+                "subDomain": "_sip._tcp",
+                "fieldType": "SRV",
+                "target": "10 20 443 sip.example.com.",
+                "ttl": 300
+            }),
+        );
 
-        assert!(caa_deletion_result.is_ok());
+        let mut provider = setup_provider();
+        provider.endpoint = server.url();
+
+        let result = provider
+            .set_rrset(
+                "_sip._tcp.example.com",
+                DnsRecordType::SRV,
+                300,
+                vec![DnsRecord::SRV(SRVRecord {
+                    priority: 10,
+                    weight: 20,
+                    port: 443,
+                    target: "sip.example.com".to_string(),
+                })],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        zone.assert();
+        list.assert();
+        fetch.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_does_not_touch_other_types_at_same_name() {
+        let mut server = mockito::Server::new_async().await;
+        let zone = mock_zone(&mut server);
+        let list = mock_list(&mut server, "A", "host", json!([1300]));
+        let fetch = mock_get_record(
+            &mut server,
+            1300,
+            json!({
+                "id": 1300,
+                "zone": "example.com",
+                "subDomain": "host",
+                "fieldType": "A",
+                "target": "1.1.1.1",
+                "ttl": 300
+            }),
+        );
+
+        let mut provider = setup_provider();
+        provider.endpoint = server.url();
+
+        let result = provider
+            .set_rrset(
+                "host.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        zone.assert();
+        list.assert();
+        fetch.assert();
+    }
+
+    #[tokio::test]
+    async fn test_add_to_rrset_records_must_match_declared_type() {
+        let provider = setup_provider();
+        let result = provider
+            .add_to_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::TXT("nope".to_string())],
+                "example.com",
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Api(_))), "got {result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_remove_from_rrset_records_must_match_declared_type() {
+        let provider = setup_provider();
+        let result = provider
+            .remove_from_rrset(
+                "test.example.com",
+                DnsRecordType::A,
+                vec![DnsRecord::TXT("nope".to_string())],
+                "example.com",
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Api(_))), "got {result:?}");
     }
 }

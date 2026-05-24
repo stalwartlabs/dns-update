@@ -11,9 +11,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        DnsRecord, DnsRecordType, DnsUpdater, Error, providers::duckdns::DuckDnsProvider,
-    };
+    use crate::{DnsRecord, DnsRecordType, Error, providers::duckdns::DuckDnsProvider};
     use mockito::Matcher;
     use std::time::Duration;
 
@@ -24,7 +22,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_txt_record_success() {
+    async fn test_set_rrset_single_txt_overwrites() {
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/")
@@ -32,7 +30,7 @@ mod tests {
                 Matcher::UrlEncoded("domains".into(), "host.duckdns.org".into()),
                 Matcher::UrlEncoded("token".into(), "test_token".into()),
                 Matcher::UrlEncoded("clear".into(), "false".into()),
-                Matcher::UrlEncoded("txt".into(), "challenge-value".into()),
+                Matcher::UrlEncoded("txt".into(), "single-value".into()),
             ]))
             .with_status(200)
             .with_body("OK")
@@ -40,49 +38,21 @@ mod tests {
 
         let provider = setup_provider(server.url());
         let result = provider
-            .create(
+            .set_rrset(
                 "_acme-challenge.host.duckdns.org",
-                DnsRecord::TXT("challenge-value".to_string()),
+                DnsRecordType::TXT,
                 300,
+                vec![DnsRecord::TXT("single-value".to_string())],
                 "host.duckdns.org",
             )
             .await;
 
-        assert!(result.is_ok(), "create returned: {result:?}");
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
         mock.assert();
     }
 
     #[tokio::test]
-    async fn test_update_txt_record_sends_same_request() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("GET", "/")
-            .match_query(Matcher::AllOf(vec![
-                Matcher::UrlEncoded("domains".into(), "host.duckdns.org".into()),
-                Matcher::UrlEncoded("token".into(), "test_token".into()),
-                Matcher::UrlEncoded("clear".into(), "false".into()),
-                Matcher::UrlEncoded("txt".into(), "new-value".into()),
-            ]))
-            .with_status(200)
-            .with_body("OK")
-            .create();
-
-        let provider = setup_provider(server.url());
-        let result = provider
-            .update(
-                "_acme-challenge.host.duckdns.org",
-                DnsRecord::TXT("new-value".to_string()),
-                300,
-                "host.duckdns.org",
-            )
-            .await;
-
-        assert!(result.is_ok(), "update returned: {result:?}");
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_delete_clears_txt_record() {
+    async fn test_set_rrset_empty_clears() {
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/")
@@ -97,87 +67,102 @@ mod tests {
 
         let provider = setup_provider(server.url());
         let result = provider
-            .delete(
+            .set_rrset(
                 "_acme-challenge.host.duckdns.org",
+                DnsRecordType::TXT,
+                300,
+                Vec::new(),
+                "host.duckdns.org",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_multiple_records_rejected() {
+        let provider = DuckDnsProvider::new("test_token", Some(Duration::from_secs(1))).unwrap();
+        let result = provider
+            .set_rrset(
                 "host.duckdns.org",
                 DnsRecordType::TXT,
-            )
-            .await;
-
-        assert!(result.is_ok(), "delete returned: {result:?}");
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn test_non_ok_response_is_api_error() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("GET", "/")
-            .match_query(Matcher::Any)
-            .with_status(200)
-            .with_body("KO")
-            .create();
-
-        let provider = setup_provider(server.url());
-        let result = provider
-            .create(
-                "host.duckdns.org",
-                DnsRecord::TXT("v".to_string()),
                 300,
+                vec![
+                    DnsRecord::TXT("first".to_string()),
+                    DnsRecord::TXT("second".to_string()),
+                ],
                 "host.duckdns.org",
             )
             .await;
-
         assert!(
-            matches!(result, Err(Error::Api(_))),
-            "expected Error::Api, got {result:?}"
+            matches!(result, Err(Error::Api(ref msg)) if msg.contains("only supports one TXT record")),
+            "expected Error::Api about single TXT, got {result:?}"
         );
-        mock.assert();
     }
 
     #[tokio::test]
-    async fn test_non_txt_record_rejected() {
-        let provider =
-            DuckDnsProvider::new("test_token", Some(Duration::from_secs(1))).unwrap();
+    async fn test_set_rrset_non_txt_type_rejected() {
+        let provider = DuckDnsProvider::new("test_token", Some(Duration::from_secs(1))).unwrap();
         let result = provider
-            .create(
+            .set_rrset(
                 "host.duckdns.org",
-                DnsRecord::A("1.2.3.4".parse().unwrap()),
+                DnsRecordType::A,
                 300,
+                vec![DnsRecord::A("1.2.3.4".parse().unwrap())],
                 "host.duckdns.org",
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(_))),
-            "expected Error::Api, got {result:?}"
+            matches!(result, Err(Error::Api(ref msg)) if msg.contains("Only TXT records are supported")),
+            "expected Error::Api about TXT only, got {result:?}"
         );
     }
 
     #[tokio::test]
-    #[ignore = "Requires DUCKDNS_TOKEN and DUCKDNS_DOMAIN env vars"]
-    async fn integration_test() {
-        let token = std::env::var("DUCKDNS_TOKEN").unwrap_or_default();
-        let domain = std::env::var("DUCKDNS_DOMAIN").unwrap_or_default();
-
-        assert!(!token.is_empty(), "Set DUCKDNS_TOKEN to run this test");
+    async fn test_add_to_rrset_rejected() {
+        let provider = DuckDnsProvider::new("test_token", Some(Duration::from_secs(1))).unwrap();
+        let result = provider
+            .add_to_rrset(
+                "host.duckdns.org",
+                DnsRecordType::TXT,
+                300,
+                vec![DnsRecord::TXT("value".to_string())],
+                "host.duckdns.org",
+            )
+            .await;
         assert!(
-            !domain.is_empty(),
-            "Set DUCKDNS_DOMAIN to run this test (e.g. host.duckdns.org)"
+            matches!(result, Err(Error::Api(ref msg)) if msg.contains("add_to_rrset")),
+            "expected Error::Api about add_to_rrset, got {result:?}"
         );
+    }
 
-        let updater = DnsUpdater::new_duckdns(token, Some(Duration::from_secs(30))).unwrap();
-
-        let create_result = updater
-            .create(&domain, DnsRecord::TXT("test-value".into()), 300, &domain)
+    #[tokio::test]
+    async fn test_remove_from_rrset_rejected() {
+        let provider = DuckDnsProvider::new("test_token", Some(Duration::from_secs(1))).unwrap();
+        let result = provider
+            .remove_from_rrset(
+                "host.duckdns.org",
+                DnsRecordType::TXT,
+                vec![DnsRecord::TXT("value".to_string())],
+                "host.duckdns.org",
+            )
             .await;
-        assert!(create_result.is_ok(), "create failed: {create_result:?}");
+        assert!(
+            matches!(result, Err(Error::Api(ref msg)) if msg.contains("remove_from_rrset")),
+            "expected Error::Api about remove_from_rrset, got {result:?}"
+        );
+    }
 
-        let update_result = updater
-            .update(&domain, DnsRecord::TXT("test-value-2".into()), 300, &domain)
+    #[tokio::test]
+    async fn test_list_rrset_rejected() {
+        let provider = DuckDnsProvider::new("test_token", Some(Duration::from_secs(1))).unwrap();
+        let result = provider
+            .list_rrset("host.duckdns.org", DnsRecordType::TXT, "host.duckdns.org")
             .await;
-        assert!(update_result.is_ok(), "update failed: {update_result:?}");
-
-        let delete_result = updater.delete(&domain, &domain, DnsRecordType::TXT).await;
-        assert!(delete_result.is_ok(), "delete failed: {delete_result:?}");
+        assert!(
+            matches!(result, Err(Error::Api(ref msg)) if msg.contains("listing")),
+            "expected Error::Api about listing, got {result:?}"
+        );
     }
 }

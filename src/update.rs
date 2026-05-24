@@ -799,313 +799,7 @@ impl DnsUpdater {
         DnsUpdater::InMemory(InMemoryProvider::new(records))
     }
 
-    /// Create a new DNS record.
-    pub async fn create(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        match self {
-            DnsUpdater::Alidns(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::AzureDns(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Bunny(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Cloudflare(_) => Err(crate::Error::Api(
-                "Cloudflare uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
-                    .to_string(),
-            )),
-            DnsUpdater::Ddnss(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Desec(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::DigitalOcean(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::DNSimple(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::GandiV5(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Gcore(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Godaddy(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Hetzner(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Linode(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::NameDotCom(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::NameSilo(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::DuckDns(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Dynu(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::FreeMyIp(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Ipv64(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Constellix(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::DnsMadeEasy(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Exoscale(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Nifcloud(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::IbmCloud(provider) => provider.create(name, record, ttl, origin).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::Ovh(provider) => provider.create(name, record, ttl, origin).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::OracleCloud(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Porkbun(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Rfc2136(_) => Err(crate::Error::Api(
-                "RFC 2136 uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
-                    .to_string(),
-            )),
-            DnsUpdater::Route53(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Scaleway(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Spaceship(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Vercel(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Vultr(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::WebSupport(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::TencentCloud(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Plesk(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Cpanel(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::GoogleCloudDns(provider) => {
-                provider.create(name, record, ttl, origin).await
-            }
-            DnsUpdater::Ionos(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::HostingDe(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Infomaniak(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Netcup(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Netlify(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::EasyDns(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Joker(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::MythicBeasts(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Namecheap(provider) => provider.create(name, record, ttl, origin).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::Transip(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::HuaweiCloud(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::BaiduCloud(provider) => provider.create(name, record, ttl, origin).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::Volcengine(provider) => provider.create(name, record, ttl, origin).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::YandexCloud(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Hurricane(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Hostinger(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Autodns(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Lightsail(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::EdgeDns(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Inwx(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::UltraDns(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Infoblox(provider) => provider.create(name, record, ttl, origin).await,
-            #[cfg(feature = "test_provider")]
-            DnsUpdater::Pebble(_) => Err(crate::Error::Api(
-                "Pebble uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)".to_string(),
-            )),
-            #[cfg(feature = "test_provider")]
-            DnsUpdater::InMemory(_) => Err(crate::Error::Api(
-                "InMemory uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
-                    .to_string(),
-            )),
-            DnsUpdater::BluecatV2(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Ns1(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::LuaDns(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::ClouDns(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Glesys(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Dreamhost(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Domeneshop(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::Safedns(provider) => provider.create(name, record, ttl, origin).await,
-            DnsUpdater::ArvanCloud(provider) => provider.create(name, record, ttl, origin).await,
-        }
-    }
-
-    /// Update an existing DNS record.
-    pub async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        match self {
-            DnsUpdater::Alidns(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::AzureDns(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Bunny(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Cloudflare(_) => Err(crate::Error::Api(
-                "Cloudflare uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
-                    .to_string(),
-            )),
-            DnsUpdater::Ddnss(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Desec(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::DigitalOcean(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::DNSimple(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::GandiV5(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Gcore(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Godaddy(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Hetzner(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Linode(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::NameDotCom(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::NameSilo(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::DuckDns(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Dynu(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::FreeMyIp(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Ipv64(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Constellix(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::DnsMadeEasy(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Exoscale(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Nifcloud(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::IbmCloud(provider) => provider.update(name, record, ttl, origin).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::Ovh(provider) => provider.update(name, record, ttl, origin).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::OracleCloud(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Porkbun(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Rfc2136(_) => Err(crate::Error::Api(
-                "RFC 2136 uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
-                    .to_string(),
-            )),
-            DnsUpdater::Route53(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Scaleway(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Spaceship(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Vercel(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Vultr(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::WebSupport(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::TencentCloud(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Plesk(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Cpanel(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::GoogleCloudDns(provider) => {
-                provider.update(name, record, ttl, origin).await
-            }
-            DnsUpdater::Ionos(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::HostingDe(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Infomaniak(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Netcup(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Netlify(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::EasyDns(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Joker(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::MythicBeasts(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Namecheap(provider) => provider.update(name, record, ttl, origin).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::Transip(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::HuaweiCloud(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::BaiduCloud(provider) => provider.update(name, record, ttl, origin).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::Volcengine(provider) => provider.update(name, record, ttl, origin).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::YandexCloud(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Hurricane(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Hostinger(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Autodns(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Lightsail(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::EdgeDns(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Inwx(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::UltraDns(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Infoblox(provider) => provider.update(name, record, ttl, origin).await,
-            #[cfg(feature = "test_provider")]
-            DnsUpdater::Pebble(_) => Err(crate::Error::Api(
-                "Pebble uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)".to_string(),
-            )),
-            #[cfg(feature = "test_provider")]
-            DnsUpdater::InMemory(_) => Err(crate::Error::Api(
-                "InMemory uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
-                    .to_string(),
-            )),
-            DnsUpdater::BluecatV2(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Ns1(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::LuaDns(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::ClouDns(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Glesys(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Dreamhost(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Domeneshop(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::Safedns(provider) => provider.update(name, record, ttl, origin).await,
-            DnsUpdater::ArvanCloud(provider) => provider.update(name, record, ttl, origin).await,
-        }
-    }
-
-    /// Delete an existing DNS record.
-    pub async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        origin: impl IntoFqdn<'_>,
-        record: DnsRecordType,
-    ) -> crate::Result<()> {
-        match self {
-            DnsUpdater::Alidns(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::AzureDns(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Bunny(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Cloudflare(_) => Err(crate::Error::Api(
-                "Cloudflare uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
-                    .to_string(),
-            )),
-            DnsUpdater::Ddnss(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Desec(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::DigitalOcean(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::DNSimple(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::GandiV5(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Gcore(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Godaddy(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Hetzner(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Linode(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::NameDotCom(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::NameSilo(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::DuckDns(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Dynu(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::FreeMyIp(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Ipv64(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Constellix(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::DnsMadeEasy(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Exoscale(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Nifcloud(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::IbmCloud(provider) => provider.delete(name, origin, record).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::Ovh(provider) => provider.delete(name, origin, record).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::OracleCloud(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Porkbun(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Rfc2136(_) => Err(crate::Error::Api(
-                "RFC 2136 uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
-                    .to_string(),
-            )),
-            DnsUpdater::Route53(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Scaleway(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Spaceship(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Vercel(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Vultr(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::WebSupport(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::TencentCloud(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Plesk(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Cpanel(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::GoogleCloudDns(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Ionos(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::HostingDe(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Infomaniak(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Netcup(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Netlify(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::EasyDns(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Joker(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::MythicBeasts(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Namecheap(provider) => provider.delete(name, origin, record).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::Transip(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::HuaweiCloud(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::BaiduCloud(provider) => provider.delete(name, origin, record).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::Volcengine(provider) => provider.delete(name, origin, record).await,
-            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
-            DnsUpdater::YandexCloud(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Hurricane(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Hostinger(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Autodns(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Lightsail(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::EdgeDns(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Inwx(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::UltraDns(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Infoblox(provider) => provider.delete(name, origin, record).await,
-            #[cfg(feature = "test_provider")]
-            DnsUpdater::Pebble(_) => Err(crate::Error::Api(
-                "Pebble uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)".to_string(),
-            )),
-            #[cfg(feature = "test_provider")]
-            DnsUpdater::InMemory(_) => Err(crate::Error::Api(
-                "InMemory uses the RRSet API (set_rrset/add_to_rrset/remove_from_rrset)"
-                    .to_string(),
-            )),
-            DnsUpdater::BluecatV2(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Ns1(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::LuaDns(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::ClouDns(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Glesys(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Dreamhost(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Domeneshop(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::Safedns(provider) => provider.delete(name, origin, record).await,
-            DnsUpdater::ArvanCloud(provider) => provider.delete(name, origin, record).await,
-        }
-    }
-
-    /// Atomically replace the RRSet
+    /// Atomically replace the RRSet at (name, type). An empty `records` Vec deletes the RRSet.
     pub async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
@@ -1125,6 +819,346 @@ impl DnsUpdater {
                     .set_rrset(name, record_type, ttl, records, origin)
                     .await
             }
+            DnsUpdater::DigitalOcean(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Desec(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Constellix(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::DnsMadeEasy(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Ovh(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::OracleCloud(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Bunny(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Linode(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Porkbun(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Exoscale(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Nifcloud(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::WebSupport(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Spaceship(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::DNSimple(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::GandiV5(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Godaddy(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Hetzner(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::NameDotCom(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::NameSilo(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::DuckDns(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::FreeMyIp(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Ipv64(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Ddnss(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Dynu(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::GoogleCloudDns(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Route53(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Vultr(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Scaleway(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Gcore(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Vercel(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Ionos(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::HostingDe(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Domeneshop(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Safedns(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::ArvanCloud(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Infomaniak(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Ns1(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::LuaDns(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Netcup(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Netlify(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Inwx(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Alidns(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::HuaweiCloud(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::ClouDns(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::TencentCloud(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::BaiduCloud(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::EasyDns(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Joker(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::MythicBeasts(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Namecheap(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Transip(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::BluecatV2(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Glesys(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Dreamhost(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Volcengine(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::YandexCloud(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::AzureDns(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::IbmCloud(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Hurricane(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Hostinger(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Autodns(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Plesk(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Cpanel(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Lightsail(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::EdgeDns(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::UltraDns(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Infoblox(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => {
                 provider
@@ -1137,11 +1171,10 @@ impl DnsUpdater {
                     .set_rrset(name, record_type, ttl, records, origin)
                     .await
             }
-            _ => unreachable!("set_rrset not yet implemented for this provider"),
         }
     }
 
-    /// Add records to the RRSet
+    /// Add records to the RRSet at (name, type). Idempotent: values already present are skipped.
     pub async fn add_to_rrset(
         &self,
         name: impl IntoFqdn<'_>,
@@ -1161,6 +1194,346 @@ impl DnsUpdater {
                     .add_to_rrset(name, record_type, ttl, records, origin)
                     .await
             }
+            DnsUpdater::DigitalOcean(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Desec(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Constellix(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::DnsMadeEasy(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Ovh(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::OracleCloud(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Bunny(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Linode(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Porkbun(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Exoscale(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Nifcloud(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::WebSupport(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Spaceship(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::DNSimple(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::GandiV5(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Godaddy(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Hetzner(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::NameDotCom(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::NameSilo(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::DuckDns(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::FreeMyIp(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Ipv64(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Ddnss(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Dynu(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::GoogleCloudDns(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Route53(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Vultr(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Scaleway(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Gcore(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Vercel(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Ionos(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::HostingDe(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Domeneshop(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Safedns(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::ArvanCloud(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Infomaniak(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Ns1(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::LuaDns(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Netcup(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Netlify(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Inwx(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Alidns(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::HuaweiCloud(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::ClouDns(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::TencentCloud(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::BaiduCloud(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::EasyDns(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Joker(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::MythicBeasts(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Namecheap(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Transip(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::BluecatV2(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Glesys(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Dreamhost(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Volcengine(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::YandexCloud(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::AzureDns(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::IbmCloud(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Hurricane(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Hostinger(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Autodns(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Plesk(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Cpanel(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Lightsail(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::EdgeDns(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::UltraDns(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Infoblox(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => {
                 provider
@@ -1173,11 +1546,10 @@ impl DnsUpdater {
                     .add_to_rrset(name, record_type, ttl, records, origin)
                     .await
             }
-            _ => unreachable!("add_to_rrset not yet implemented for this provider"),
         }
     }
 
-    /// Remove the listed records from the RRSet
+    /// Remove the listed records from the RRSet at (name, type). Idempotent: values not present are skipped.
     pub async fn remove_from_rrset(
         &self,
         name: impl IntoFqdn<'_>,
@@ -1196,6 +1568,346 @@ impl DnsUpdater {
                     .remove_from_rrset(name, record_type, records, origin)
                     .await
             }
+            DnsUpdater::DigitalOcean(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Desec(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Constellix(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::DnsMadeEasy(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Ovh(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::OracleCloud(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Bunny(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Linode(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Porkbun(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Exoscale(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Nifcloud(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::WebSupport(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Spaceship(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::DNSimple(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::GandiV5(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Godaddy(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Hetzner(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::NameDotCom(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::NameSilo(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::DuckDns(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::FreeMyIp(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Ipv64(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Ddnss(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Dynu(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::GoogleCloudDns(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Route53(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Vultr(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Scaleway(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Gcore(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Vercel(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Ionos(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::HostingDe(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Domeneshop(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Safedns(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::ArvanCloud(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Infomaniak(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Ns1(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::LuaDns(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Netcup(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Netlify(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Inwx(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Alidns(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::HuaweiCloud(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::ClouDns(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::TencentCloud(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::BaiduCloud(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::EasyDns(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Joker(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::MythicBeasts(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Namecheap(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Transip(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::BluecatV2(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Glesys(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Dreamhost(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Volcengine(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::YandexCloud(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::AzureDns(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::IbmCloud(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Hurricane(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Hostinger(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Autodns(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Plesk(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Cpanel(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Lightsail(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::EdgeDns(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::UltraDns(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
+            DnsUpdater::Infoblox(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => {
                 provider
@@ -1208,7 +1920,129 @@ impl DnsUpdater {
                     .remove_from_rrset(name, record_type, records, origin)
                     .await
             }
-            _ => unreachable!("remove_from_rrset not yet implemented for this provider"),
+        }
+    }
+
+    /// List the records of the RRSet at (name, type). Returns an empty Vec when the RRSet does not exist.
+    pub async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        match self {
+            DnsUpdater::Rfc2136(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Cloudflare(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::DigitalOcean(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::Desec(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Constellix(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::DnsMadeEasy(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Ovh(provider) => provider.list_rrset(name, record_type, origin).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::OracleCloud(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::Bunny(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Linode(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Porkbun(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Exoscale(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Nifcloud(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::WebSupport(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::Spaceship(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::DNSimple(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::GandiV5(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Godaddy(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Hetzner(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::NameDotCom(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::NameSilo(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::DuckDns(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::FreeMyIp(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Ipv64(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Ddnss(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Dynu(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::GoogleCloudDns(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::Route53(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Vultr(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Scaleway(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Gcore(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Vercel(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Ionos(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::HostingDe(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Domeneshop(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::Safedns(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::ArvanCloud(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::Infomaniak(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::Ns1(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::LuaDns(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Netcup(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Netlify(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Inwx(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Alidns(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::HuaweiCloud(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::ClouDns(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::TencentCloud(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::BaiduCloud(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::EasyDns(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Joker(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::MythicBeasts(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::Namecheap(provider) => provider.list_rrset(name, record_type, origin).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Transip(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::BluecatV2(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Glesys(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Dreamhost(provider) => provider.list_rrset(name, record_type, origin).await,
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::Volcengine(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+            DnsUpdater::YandexCloud(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
+            DnsUpdater::AzureDns(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::IbmCloud(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Hurricane(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Hostinger(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Autodns(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Plesk(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Cpanel(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Lightsail(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::EdgeDns(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::UltraDns(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Infoblox(provider) => provider.list_rrset(name, record_type, origin).await,
+            #[cfg(feature = "test_provider")]
+            DnsUpdater::Pebble(provider) => provider.list_rrset(name, record_type, origin).await,
+            #[cfg(feature = "test_provider")]
+            DnsUpdater::InMemory(provider) => provider.list_rrset(name, record_type, origin).await,
         }
     }
 }

@@ -193,6 +193,17 @@ impl PebbleProvider {
         self.clear_record(&host, record_type).await
     }
 
+    pub(crate) async fn list_rrset(
+        &self,
+        _name: impl IntoFqdn<'_>,
+        _record_type: DnsRecordType,
+        _origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        Err(Error::Api(
+            "Pebble does not support listing records".to_string(),
+        ))
+    }
+
     async fn add_addresses(
         &self,
         host: &str,

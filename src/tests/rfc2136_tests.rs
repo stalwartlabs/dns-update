@@ -31,9 +31,9 @@ use hickory_net::client::{Client, ClientHandle};
 use hickory_net::runtime::TokioRuntimeProvider;
 use hickory_net::tcp::TcpClientStream;
 use hickory_net::udp::UdpClientStream;
+use hickory_net::xfer::DnsMultiplexer;
 use hickory_proto::rr::rdata::tsig::TsigAlgorithm as HickoryTsigAlgorithm;
 use hickory_proto::rr::{DNSClass, Name, RData, RecordType, TSigner};
-use hickory_net::xfer::DnsMultiplexer;
 
 use crate::providers::rfc2136::{DnsAddress, Rfc2136Provider};
 use crate::{
@@ -222,7 +222,11 @@ async fn udp_create_a_record() {
         .expect("set A");
 
     let answers = wait_for_record(&name, RecordType::A, 20).await;
-    assert!(answers.iter().any(|d| matches!(d, RData::A(a) if a.0 == Ipv4Addr::new(10, 0, 0, 1))));
+    assert!(
+        answers
+            .iter()
+            .any(|d| matches!(d, RData::A(a) if a.0 == Ipv4Addr::new(10, 0, 0, 1)))
+    );
     cleanup_name(&name, DnsRecordType::A).await;
 }
 
@@ -276,7 +280,11 @@ async fn udp_create_aaaa_record() {
         .expect("set AAAA");
 
     let answers = wait_for_record(&name, RecordType::AAAA, 20).await;
-    assert!(answers.iter().any(|d| matches!(d, RData::AAAA(a) if a.0 == addr)));
+    assert!(
+        answers
+            .iter()
+            .any(|d| matches!(d, RData::AAAA(a) if a.0 == addr))
+    );
     cleanup_name(&name, DnsRecordType::AAAA).await;
 }
 
@@ -301,7 +309,11 @@ async fn udp_create_cname_record() {
         .expect("set CNAME");
 
     let answers = wait_for_record(&name, RecordType::CNAME, 20).await;
-    assert!(answers.iter().any(|d| matches!(d, RData::CNAME(c) if c.0.to_ascii() == target)));
+    assert!(
+        answers
+            .iter()
+            .any(|d| matches!(d, RData::CNAME(c) if c.0.to_ascii() == target))
+    );
     cleanup_name(&name, DnsRecordType::CNAME).await;
 }
 
@@ -364,10 +376,7 @@ async fn udp_create_srv_record() {
     let answers = wait_for_record(&name, RecordType::SRV, 20).await;
     assert!(answers.iter().any(|d| match d {
         RData::SRV(s) =>
-            s.priority == 0
-                && s.weight == 5
-                && s.port == 143
-                && s.target.to_ascii() == target,
+            s.priority == 0 && s.weight == 5 && s.port == 143 && s.target.to_ascii() == target,
         _ => false,
     }));
     cleanup_name(&name, DnsRecordType::SRV).await;
@@ -689,7 +698,10 @@ async fn set_rrset_publishes_two_tlsa_in_one_call() {
             _ => None,
         })
         .collect();
-    assert!(datas.iter().any(|d| **d == leaf), "leaf TLSA missing: {datas:?}");
+    assert!(
+        datas.iter().any(|d| **d == leaf),
+        "leaf TLSA missing: {datas:?}"
+    );
     assert!(
         datas.iter().any(|d| **d == intermediate),
         "intermediate TLSA missing: {datas:?}"
@@ -745,8 +757,7 @@ async fn set_rrset_replaces_existing_with_new_values() {
         })
         .collect();
     assert!(
-        addrs.contains(&Ipv4Addr::new(10, 0, 0, 3))
-            && addrs.contains(&Ipv4Addr::new(10, 0, 0, 4)),
+        addrs.contains(&Ipv4Addr::new(10, 0, 0, 3)) && addrs.contains(&Ipv4Addr::new(10, 0, 0, 4)),
         "new addresses missing: {addrs:?}"
     );
     assert!(
@@ -841,7 +852,10 @@ async fn add_to_rrset_appends_without_replacing() {
         Ipv4Addr::new(10, 1, 0, 2),
         Ipv4Addr::new(10, 1, 0, 3),
     ] {
-        assert!(addrs.contains(&expected), "expected {expected} in {addrs:?}");
+        assert!(
+            addrs.contains(&expected),
+            "expected {expected} in {addrs:?}"
+        );
     }
     cleanup_name(&name, DnsRecordType::A).await;
 }
@@ -940,30 +954,6 @@ async fn set_rrset_is_idempotent_on_rerun() {
     second_addrs.sort();
     assert_eq!(first_addrs, second_addrs, "set_rrset is not idempotent");
     cleanup_name(&name, DnsRecordType::A).await;
-}
-
-#[tokio::test]
-async fn legacy_create_via_dns_updater_dispatch_returns_error() {
-    // The DnsUpdater dispatch refuses the legacy single-record API for RFC 2136.
-    if !enabled() {
-        return;
-    }
-    ensure_crypto_provider();
-    let updater = crate::DnsUpdater::new_rfc2136_tsig(
-        format!("udp://{}", socket_addr()),
-        key_name(),
-        key_bytes(),
-        crate::TsigAlgorithm::HmacSha256,
-    )
-    .expect("build DnsUpdater");
-    let name = format!("{}.{}", unique_label("legacy"), zone());
-    let result = updater
-        .create(&name, DnsRecord::A(Ipv4Addr::new(10, 99, 0, 1)), 60, zone())
-        .await;
-    assert!(
-        matches!(result, Err(crate::Error::Api(ref msg)) if msg.contains("RRSet API")),
-        "expected Error::Api(RRSet API ...), got {result:?}"
-    );
 }
 
 #[tokio::test]

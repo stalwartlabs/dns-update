@@ -42,37 +42,13 @@ impl DdnssProvider {
         }
     }
 
-    pub(crate) async fn create(
+    pub(crate) async fn set_rrset(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        _ttl: u32,
-        _origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        let host = name.into_name().into_owned();
-        match record {
-            DnsRecord::TXT(value) => self.send_update(&host, Some(value.as_str()), "1").await,
-            _ => Err(Error::Api(
-                "Only TXT records are supported by DDNSS".to_string(),
-            )),
-        }
-    }
-
-    pub(crate) async fn update(
-        &self,
-        name: impl IntoFqdn<'_>,
-        record: DnsRecord,
-        ttl: u32,
-        origin: impl IntoFqdn<'_>,
-    ) -> crate::Result<()> {
-        self.create(name, record, ttl, origin).await
-    }
-
-    pub(crate) async fn delete(
-        &self,
-        name: impl IntoFqdn<'_>,
-        _origin: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
+        _ttl: u32,
+        records: Vec<DnsRecord>,
+        _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         if record_type != DnsRecordType::TXT {
             return Err(Error::Api(
@@ -80,20 +56,59 @@ impl DdnssProvider {
             ));
         }
         let host = name.into_name().into_owned();
-        self.send_update(&host, None, "2").await
+        match records.len() {
+            0 => self.send_update(&host, None, "2").await,
+            1 => match &records[0] {
+                DnsRecord::TXT(value) => self.send_update(&host, Some(value.as_str()), "1").await,
+                _ => Err(Error::Api(
+                    "Only TXT records are supported by DDNSS".to_string(),
+                )),
+            },
+            _ => Err(Error::Api(
+                "DDNSS only supports one TXT record per host".to_string(),
+            )),
+        }
     }
 
-    async fn send_update(
+    pub(crate) async fn add_to_rrset(
         &self,
-        host: &str,
-        txt: Option<&str>,
-        txtm: &str,
+        _name: impl IntoFqdn<'_>,
+        _record_type: DnsRecordType,
+        _ttl: u32,
+        _records: Vec<DnsRecord>,
+        _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        let mut params: Vec<(&str, &str)> = vec![
-            ("key", self.key.as_str()),
-            ("host", host),
-            ("txtm", txtm),
-        ];
+        Err(Error::Api(
+            "DDNSS does not support add_to_rrset (no list endpoint)".to_string(),
+        ))
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        _name: impl IntoFqdn<'_>,
+        _record_type: DnsRecordType,
+        _records: Vec<DnsRecord>,
+        _origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        Err(Error::Api(
+            "DDNSS does not support remove_from_rrset (no list endpoint)".to_string(),
+        ))
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        _name: impl IntoFqdn<'_>,
+        _record_type: DnsRecordType,
+        _origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        Err(Error::Api(
+            "DDNSS does not support listing records".to_string(),
+        ))
+    }
+
+    async fn send_update(&self, host: &str, txt: Option<&str>, txtm: &str) -> crate::Result<()> {
+        let mut params: Vec<(&str, &str)> =
+            vec![("key", self.key.as_str()), ("host", host), ("txtm", txtm)];
         if let Some(value) = txt {
             params.push(("txt", value));
         }
