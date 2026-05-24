@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder, utils::strip_origin_from_name,
+    http::{HttpClient, HttpClientBuilder},
+    utils::strip_origin_from_name,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
@@ -19,7 +20,7 @@ use std::time::Duration;
 
 #[derive(Clone)]
 pub struct NameDotComProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -80,7 +81,8 @@ impl NameDotComProvider {
         let credentials = BASE64.encode(format!("{username}:{token}"));
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Basic {credentials}"))
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
 
         Ok(Self {
             client,

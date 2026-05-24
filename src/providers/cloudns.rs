@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder, utils::strip_origin_from_name,
+    http::{HttpClient, HttpClientBuilder},
+    utils::strip_origin_from_name,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -21,7 +22,7 @@ const DEFAULT_API_ENDPOINT: &str = "https://api.cloudns.net/dns";
 
 #[derive(Clone)]
 pub struct ClouDnsProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
     auth_id: Option<String>,
     sub_auth_id: Option<String>,
@@ -84,7 +85,8 @@ impl ClouDnsProvider {
 
         let client = HttpClientBuilder::default()
             .with_header("Content-Type", "application/x-www-form-urlencoded")
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
 
         Ok(Self {
             client,

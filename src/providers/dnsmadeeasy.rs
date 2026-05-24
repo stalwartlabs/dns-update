@@ -11,7 +11,9 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    crypto::hmac_sha1, http::HttpClientBuilder, utils::strip_origin_from_name,
+    crypto::hmac_sha1,
+    http::{HttpClient, HttpClientBuilder},
+    utils::strip_origin_from_name,
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -21,7 +23,7 @@ const DEFAULT_PROD_ENDPOINT: &str = "https://api.dnsmadeeasy.com/V2.0";
 
 #[derive(Clone)]
 pub struct DnsMadeEasyProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     api_key: String,
     api_secret: String,
     endpoint: String,
@@ -91,7 +93,8 @@ impl DnsMadeEasyProvider {
         }
         let client = HttpClientBuilder::default()
             .with_header("Accept", "application/json")
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Ok(Self {
             client,
             api_key: api_key.to_string(),
@@ -108,7 +111,7 @@ impl DnsMadeEasyProvider {
         }
     }
 
-    fn signed_request(&self, request: crate::http::HttpClient) -> crate::http::HttpClient {
+    fn signed_request(&self, request: crate::http::HttpRequest) -> crate::http::HttpRequest {
         let timestamp = Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string();
         let signature = hex::encode(hmac_sha1(self.api_secret.as_bytes(), timestamp.as_bytes()));
         request

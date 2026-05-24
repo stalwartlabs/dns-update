@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
@@ -26,7 +27,7 @@ const SESSION_TTL_SECS: u64 = 10 * 60;
 
 #[derive(Clone)]
 pub struct NetcupProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
     customer_number: String,
     api_key: String,
@@ -141,7 +142,7 @@ impl NetcupProvider {
         api_password: impl AsRef<str>,
         timeout: Option<Duration>,
     ) -> Self {
-        let client = HttpClientBuilder::default().with_timeout(timeout);
+        let client = HttpClientBuilder::default().with_timeout(timeout).build();
         Self {
             client,
             endpoint: DEFAULT_ENDPOINT.to_string(),

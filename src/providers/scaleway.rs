@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,7 @@ const DEFAULT_API_ENDPOINT: &str = "https://api.scaleway.com/domain/v2beta1";
 
 #[derive(Clone)]
 pub struct ScalewayProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: Cow<'static, str>,
 }
 
@@ -86,7 +87,8 @@ impl ScalewayProvider {
     pub(crate) fn new(api_token: impl AsRef<str>, timeout: Option<Duration>) -> Self {
         let client = HttpClientBuilder::default()
             .with_header("X-Auth-Token", api_token.as_ref())
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             endpoint: Cow::Borrowed(DEFAULT_API_ENDPOINT),

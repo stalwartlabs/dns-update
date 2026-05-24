@@ -12,7 +12,7 @@
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
     crypto::{hmac_sha256, sha256_digest},
-    http::{HttpClient, HttpClientBuilder},
+    http::{HttpClient, HttpClientBuilder, HttpRequest},
     utils::txt_chunks_to_text,
 };
 use chrono::Utc;
@@ -25,7 +25,7 @@ const PAGE_LIMIT: u32 = 500;
 
 #[derive(Clone)]
 pub struct HuaweiCloudProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     access_key: String,
     secret_key: String,
     endpoint: String,
@@ -112,7 +112,7 @@ impl HuaweiCloudProvider {
         }
 
         let endpoint = format!("https://dns.{}.myhuaweicloud.com", region);
-        let client = HttpClientBuilder::default().with_timeout(timeout);
+        let client = HttpClientBuilder::default().with_timeout(timeout).build();
 
         Ok(Self {
             client,
@@ -487,9 +487,9 @@ impl HuaweiCloudProvider {
             HUAWEI_ALGORITHM, self.access_key, signed_headers, signature
         );
 
-        let mut http: HttpClient = self
+        let mut http: HttpRequest = self
             .client
-            .build(method, url)
+            .request(method, url)
             .with_header("Host", host)
             .with_header("X-Sdk-Date", &amz_date)
             .with_header("Authorization", &authorization);

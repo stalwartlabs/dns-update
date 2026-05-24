@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder, utils::txt_chunks_to_text,
+    http::{HttpClient, HttpClientBuilder},
+    utils::txt_chunks_to_text,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -21,7 +22,7 @@ const LIST_PAGE_SIZE: u32 = 200;
 
 #[derive(Clone)]
 pub struct SafeDnsProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -84,7 +85,8 @@ impl SafeDnsProvider {
     pub(crate) fn new(auth_token: impl AsRef<str>, timeout: Option<Duration>) -> Self {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", auth_token.as_ref())
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             endpoint: DEFAULT_API_ENDPOINT.to_string(),

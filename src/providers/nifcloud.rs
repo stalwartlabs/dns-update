@@ -10,8 +10,10 @@
  */
 
 use crate::{
-    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, crypto::hmac_sha256,
-    http::HttpClientBuilder, utils::txt_chunks_to_text,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord,
+    crypto::hmac_sha256,
+    http::{HttpClient, HttpClientBuilder},
+    utils::txt_chunks_to_text,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use chrono::Utc;
@@ -25,7 +27,7 @@ const XMLNS: &str = "https://route53.amazonaws.com/doc/2012-12-12/";
 
 #[derive(Clone)]
 pub struct NifcloudProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     access_key: String,
     secret_key: String,
     endpoint: String,
@@ -173,7 +175,8 @@ impl NifcloudProvider {
         }
         let client = HttpClientBuilder::default()
             .with_header("Accept", "application/xml")
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Ok(Self {
             client,
             access_key: access_key.to_string(),
@@ -190,7 +193,7 @@ impl NifcloudProvider {
         }
     }
 
-    fn signed(&self, request: crate::http::HttpClient) -> crate::http::HttpClient {
+    fn signed(&self, request: crate::http::HttpRequest) -> crate::http::HttpRequest {
         let date = Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string();
         let mac = hmac_sha256(self.secret_key.as_bytes(), date.as_bytes());
         let signature = BASE64_STANDARD.encode(&mac);

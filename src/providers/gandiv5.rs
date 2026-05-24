@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue as DnsKeyValue, MXRecord,
-    SRVRecord, TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    SRVRecord, TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
@@ -19,7 +20,7 @@ use std::time::Duration;
 
 #[derive(Clone)]
 pub struct GandiV5Provider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -51,7 +52,8 @@ impl GandiV5Provider {
 
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Bearer {token}"))
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
 
         Ok(Self {
             client,

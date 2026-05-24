@@ -11,14 +11,15 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder, utils::strip_origin_from_name,
+    http::{HttpClient, HttpClientBuilder},
+    utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 #[derive(Clone)]
 pub struct GodaddyProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -60,7 +61,8 @@ impl GodaddyProvider {
 
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("sso-key {api_key}:{api_secret}"))
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
 
         Ok(Self {
             client,

@@ -10,7 +10,8 @@
  */
 
 use crate::{
-    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord, http::HttpClientBuilder,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
+    http::{HttpClient, HttpClientBuilder},
 };
 use serde::Deserialize;
 use std::time::Duration;
@@ -19,7 +20,7 @@ const DEFAULT_API_ENDPOINT: &str = "https://api.dreamhost.com";
 
 #[derive(Clone)]
 pub struct DreamhostProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
     api_key: String,
 }
@@ -50,7 +51,7 @@ struct DreamhostRecord {
 
 impl DreamhostProvider {
     pub(crate) fn new(api_key: impl AsRef<str>, timeout: Option<Duration>) -> Self {
-        let client = HttpClientBuilder::default().with_timeout(timeout);
+        let client = HttpClientBuilder::default().with_timeout(timeout).build();
         Self {
             client,
             endpoint: DEFAULT_API_ENDPOINT.to_string(),

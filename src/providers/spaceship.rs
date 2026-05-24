@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
@@ -23,7 +24,7 @@ const DEFAULT_ENDPOINT: &str = "https://spaceship.dev/api/v1";
 
 #[derive(Clone)]
 pub struct SpaceshipProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -147,7 +148,8 @@ impl SpaceshipProvider {
         let client = HttpClientBuilder::default()
             .with_header("X-Api-Key", api_key.as_ref())
             .with_header("X-Api-Secret", api_secret.as_ref())
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             endpoint: DEFAULT_ENDPOINT.to_string(),

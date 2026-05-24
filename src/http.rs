@@ -25,17 +25,29 @@ pub struct HttpClientBuilder {
     headers: HeaderMap<HeaderValue>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct HttpClient {
+    headers: HeaderMap<HeaderValue>,
+    client: reqwest::Client,
+}
+
+#[derive(Debug, Clone)]
+pub struct HttpRequest {
     method: Method,
-    timeout: Duration,
     url: String,
     headers: HeaderMap<HeaderValue>,
     body: Option<String>,
+    client: reqwest::Client,
 }
 
 impl Default for HttpClientBuilder {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl HttpClientBuilder {
+    pub fn new() -> Self {
         let mut headers = HeaderMap::new();
         headers.append(CONTENT_TYPE, HeaderValue::from_static("application/json"));
 
@@ -43,38 +55,6 @@ impl Default for HttpClientBuilder {
             timeout: Duration::from_secs(30),
             headers,
         }
-    }
-}
-
-impl HttpClientBuilder {
-    pub fn build(&self, method: Method, url: impl Into<String>) -> HttpClient {
-        HttpClient {
-            method,
-            url: url.into(),
-            headers: self.headers.clone(),
-            body: None,
-            timeout: self.timeout,
-        }
-    }
-
-    pub fn get(&self, url: impl Into<String>) -> HttpClient {
-        self.build(Method::GET, url)
-    }
-
-    pub fn post(&self, url: impl Into<String>) -> HttpClient {
-        self.build(Method::POST, url)
-    }
-
-    pub fn put(&self, url: impl Into<String>) -> HttpClient {
-        self.build(Method::PUT, url)
-    }
-
-    pub fn delete(&self, url: impl Into<String>) -> HttpClient {
-        self.build(Method::DELETE, url)
-    }
-
-    pub fn patch(&self, url: impl Into<String>) -> HttpClient {
-        self.build(Method::PATCH, url)
     }
 
     pub fn with_header(mut self, name: &'static str, value: impl AsRef<str>) -> Self {
@@ -97,9 +77,52 @@ impl HttpClientBuilder {
         }
         self
     }
+
+    pub fn build(self) -> HttpClient {
+        let client = reqwest::Client::builder()
+            .timeout(self.timeout)
+            .build()
+            .unwrap_or_default();
+        HttpClient {
+            headers: self.headers,
+            client,
+        }
+    }
 }
 
 impl HttpClient {
+    pub fn request(&self, method: Method, url: impl Into<String>) -> HttpRequest {
+        HttpRequest {
+            method,
+            url: url.into(),
+            headers: self.headers.clone(),
+            body: None,
+            client: self.client.clone(),
+        }
+    }
+
+    pub fn get(&self, url: impl Into<String>) -> HttpRequest {
+        self.request(Method::GET, url)
+    }
+
+    pub fn post(&self, url: impl Into<String>) -> HttpRequest {
+        self.request(Method::POST, url)
+    }
+
+    pub fn put(&self, url: impl Into<String>) -> HttpRequest {
+        self.request(Method::PUT, url)
+    }
+
+    pub fn delete(&self, url: impl Into<String>) -> HttpRequest {
+        self.request(Method::DELETE, url)
+    }
+
+    pub fn patch(&self, url: impl Into<String>) -> HttpRequest {
+        self.request(Method::PATCH, url)
+    }
+}
+
+impl HttpRequest {
     pub fn with_header(mut self, name: &'static str, value: impl AsRef<str>) -> Self {
         if let Ok(value) = HeaderValue::from_str(value.as_ref()) {
             self.headers.append(name, value);
@@ -141,10 +164,8 @@ impl HttpClient {
     }
 
     pub async fn send_raw(self) -> crate::Result<String> {
-        let mut request = reqwest::Client::builder()
-            .timeout(self.timeout)
-            .build()
-            .unwrap_or_default()
+        let mut request = self
+            .client
             .request(self.method, &self.url)
             .headers(self.headers);
 
@@ -179,10 +200,8 @@ impl HttpClient {
         let mut attempts = 0;
         let body = self.body;
         loop {
-            let mut request = reqwest::Client::builder()
-                .timeout(self.timeout)
-                .build()
-                .unwrap_or_default()
+            let mut request = self
+                .client
                 .request(self.method.clone(), &self.url)
                 .headers(self.headers.clone());
 

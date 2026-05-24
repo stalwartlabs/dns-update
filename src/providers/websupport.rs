@@ -11,7 +11,9 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    crypto::hmac_sha1, http::HttpClientBuilder, utils::strip_origin_from_name,
+    crypto::hmac_sha1,
+    http::{HttpClient, HttpClientBuilder},
+    utils::strip_origin_from_name,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use chrono::{SecondsFormat, Utc};
@@ -24,7 +26,7 @@ const SERVICES_PAGE_SIZE: u32 = 500;
 
 #[derive(Clone)]
 pub struct WebSupportProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     api_key: String,
     secret: String,
     endpoint: String,
@@ -118,7 +120,8 @@ impl WebSupportProvider {
         let client = HttpClientBuilder::default()
             .with_header("Accept", "application/json")
             .with_header("Accept-Language", "en_us")
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Ok(Self {
             client,
             api_key: api_key.to_string(),
@@ -137,10 +140,10 @@ impl WebSupportProvider {
 
     fn signed(
         &self,
-        request: crate::http::HttpClient,
+        request: crate::http::HttpRequest,
         method: Method,
         path: &str,
-    ) -> crate::http::HttpClient {
+    ) -> crate::http::HttpRequest {
         let now = Utc::now();
         let timestamp = now.timestamp();
         let date = now.to_rfc3339_opts(SecondsFormat::Secs, true);

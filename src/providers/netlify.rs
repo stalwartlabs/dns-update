@@ -11,7 +11,7 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder,
+    http::{HttpClient, HttpClientBuilder},
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -20,7 +20,7 @@ const DEFAULT_ENDPOINT: &str = "https://api.netlify.com/api/v1";
 
 #[derive(Clone)]
 pub struct NetlifyProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -83,7 +83,8 @@ impl NetlifyProvider {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Bearer {}", access_token.as_ref()))
             .with_header("Accept", "application/json")
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             endpoint: DEFAULT_ENDPOINT.to_string(),

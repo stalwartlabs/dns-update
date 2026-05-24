@@ -12,7 +12,7 @@
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
     crypto::hmac_sha1,
-    http::HttpClientBuilder,
+    http::{HttpClient, HttpClientBuilder},
     utils::{strip_origin_from_name, txt_chunks_to_text},
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
@@ -29,7 +29,7 @@ const API_VERSION: &str = "v1";
 
 #[derive(Clone)]
 pub struct ConstellixProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     api_key: String,
     secret_key: String,
     endpoint: String,
@@ -92,7 +92,8 @@ impl ConstellixProvider {
         }
         let client = HttpClientBuilder::default()
             .with_header("Accept", "application/json")
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Ok(Self {
             client,
             api_key: api_key.to_string(),
@@ -117,7 +118,7 @@ impl ConstellixProvider {
         format!("{}:{}:{}", self.api_key, encoded, timestamp_str)
     }
 
-    fn signed(&self, request: crate::http::HttpClient) -> crate::http::HttpClient {
+    fn signed(&self, request: crate::http::HttpRequest) -> crate::http::HttpRequest {
         request.with_header("x-cns-security-token", self.security_token())
     }
 

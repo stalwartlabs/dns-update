@@ -1789,6 +1789,178 @@ mod tests {
             .await
             .expect("cleanup long TXT");
 
+        // ============================================================
+        // PHASE 8: public list_rrset round-trips and add_to_rrset
+        //          idempotency under live conditions
+        // ============================================================
+        let list_name = label("list");
+
+        eprintln!("[phase 8.1] list_rrset on a never-set owner returns empty");
+        let empty = updater
+            .list_rrset(list_name.as_str(), DnsRecordType::A, origin.as_str())
+            .await
+            .expect("list_rrset on absent owner");
+        assert!(empty.is_empty(), "expected empty, got {empty:?}");
+
+        eprintln!("[phase 8.2] set_rrset then list_rrset round-trips A records");
+        let want_addrs = vec![
+            DnsRecord::A([10, 90, 0, 1].into()),
+            DnsRecord::A([10, 90, 0, 2].into()),
+        ];
+        updater
+            .set_rrset(
+                list_name.as_str(),
+                DnsRecordType::A,
+                300,
+                want_addrs.clone(),
+                origin.as_str(),
+            )
+            .await
+            .expect("set A");
+        let mut got_addrs = updater
+            .list_rrset(list_name.as_str(), DnsRecordType::A, origin.as_str())
+            .await
+            .expect("list A");
+        got_addrs.sort_by_key(|r| match r {
+            DnsRecord::A(a) => *a,
+            _ => unreachable!(),
+        });
+        let mut want_sorted = want_addrs.clone();
+        want_sorted.sort_by_key(|r| match r {
+            DnsRecord::A(a) => *a,
+            _ => unreachable!(),
+        });
+        assert_eq!(got_addrs, want_sorted, "list_rrset A roundtrip mismatch");
+
+        eprintln!("[phase 8.3] add_to_rrset with already-present value is a no-op");
+        updater
+            .add_to_rrset(
+                list_name.as_str(),
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A([10, 90, 0, 1].into())],
+                origin.as_str(),
+            )
+            .await
+            .expect("add existing");
+        let after_dup_add = updater
+            .list_rrset(list_name.as_str(), DnsRecordType::A, origin.as_str())
+            .await
+            .expect("list after dup add");
+        assert_eq!(
+            after_dup_add.len(),
+            2,
+            "add_to_rrset re-added an existing value: {after_dup_add:?}"
+        );
+
+        eprintln!("[phase 8.4] add_to_rrset with a new value increments");
+        updater
+            .add_to_rrset(
+                list_name.as_str(),
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A([10, 90, 0, 3].into())],
+                origin.as_str(),
+            )
+            .await
+            .expect("add new");
+        let mut after_new_add = updater
+            .list_rrset(list_name.as_str(), DnsRecordType::A, origin.as_str())
+            .await
+            .expect("list after new add");
+        after_new_add.sort_by_key(|r| match r {
+            DnsRecord::A(a) => *a,
+            _ => unreachable!(),
+        });
+        assert_eq!(
+            after_new_add,
+            vec![
+                DnsRecord::A([10, 90, 0, 1].into()),
+                DnsRecord::A([10, 90, 0, 2].into()),
+                DnsRecord::A([10, 90, 0, 3].into()),
+            ]
+        );
+
+        eprintln!("[phase 8.5] remove_from_rrset then list_rrset");
+        updater
+            .remove_from_rrset(
+                list_name.as_str(),
+                DnsRecordType::A,
+                vec![DnsRecord::A([10, 90, 0, 2].into())],
+                origin.as_str(),
+            )
+            .await
+            .expect("remove A2");
+        let mut after_remove = updater
+            .list_rrset(list_name.as_str(), DnsRecordType::A, origin.as_str())
+            .await
+            .expect("list after remove");
+        after_remove.sort_by_key(|r| match r {
+            DnsRecord::A(a) => *a,
+            _ => unreachable!(),
+        });
+        assert_eq!(
+            after_remove,
+            vec![
+                DnsRecord::A([10, 90, 0, 1].into()),
+                DnsRecord::A([10, 90, 0, 3].into()),
+            ]
+        );
+
+        eprintln!("[phase 8.6] list_rrset round-trips a TLSA record by value");
+        let tlsa_list_name = srv("443", "tlsa-list");
+        let tlsa_record = DnsRecord::TLSA(TLSARecord {
+            cert_usage: TlsaCertUsage::DaneEe,
+            selector: TlsaSelector::Spki,
+            matching: TlsaMatching::Sha256,
+            cert_data: vec![0x77; 32],
+        });
+        updater
+            .set_rrset(
+                tlsa_list_name.as_str(),
+                DnsRecordType::TLSA,
+                300,
+                vec![tlsa_record.clone()],
+                origin.as_str(),
+            )
+            .await
+            .expect("set TLSA");
+        let tlsa_listed = updater
+            .list_rrset(
+                tlsa_list_name.as_str(),
+                DnsRecordType::TLSA,
+                origin.as_str(),
+            )
+            .await
+            .expect("list TLSA");
+        assert_eq!(
+            tlsa_listed,
+            vec![tlsa_record],
+            "list_rrset TLSA roundtrip mismatch"
+        );
+
+        eprintln!("[phase 8.7] cleanup");
+        updater
+            .set_rrset(
+                list_name.as_str(),
+                DnsRecordType::A,
+                300,
+                vec![],
+                origin.as_str(),
+            )
+            .await
+            .expect("cleanup list A");
+        updater
+            .set_rrset(
+                tlsa_list_name.as_str(),
+                DnsRecordType::TLSA,
+                300,
+                vec![],
+                origin.as_str(),
+            )
+            .await
+            .expect("cleanup TLSA");
+
         eprintln!("[done] all live edge-case phases passed");
     }
 }

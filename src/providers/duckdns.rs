@@ -9,7 +9,10 @@
  * except according to those terms.
  */
 
-use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder};
+use crate::{
+    DnsRecord, DnsRecordType, Error, IntoFqdn,
+    http::{HttpClient, HttpClientBuilder},
+};
 use std::{borrow::Cow, time::Duration};
 
 const DEFAULT_API_ENDPOINT: &str = "https://www.duckdns.org/update";
@@ -18,7 +21,7 @@ const DUCKDNS_SUFFIX: &str = "duckdns.org";
 
 #[derive(Clone)]
 pub struct DuckDnsProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     token: String,
     endpoint: Cow<'static, str>,
 }
@@ -30,7 +33,7 @@ impl DuckDnsProvider {
             return Err(Error::Api("DuckDNS token is empty".to_string()));
         }
         Ok(Self {
-            client: HttpClientBuilder::default().with_timeout(timeout),
+            client: HttpClientBuilder::default().with_timeout(timeout).build(),
             token: token.to_string(),
             endpoint: Cow::Borrowed(DEFAULT_API_ENDPOINT),
         })

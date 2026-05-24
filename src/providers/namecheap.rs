@@ -11,7 +11,7 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord,
-    http::HttpClientBuilder,
+    http::{HttpClient, HttpClientBuilder},
     utils::{strip_origin_from_name, txt_chunks},
 };
 use quick_xml::de::from_str;
@@ -24,7 +24,7 @@ const TTL_MAX: u32 = 60000;
 
 #[derive(Clone)]
 pub struct NamecheapProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
     api_user: String,
     api_key: String,
@@ -136,7 +136,8 @@ impl NamecheapProvider {
             .unwrap_or_else(|| api_user.clone());
         let client = HttpClientBuilder::default()
             .with_header("Accept", "application/xml")
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Ok(Self {
             client,
             endpoint: DEFAULT_API_ENDPOINT.to_string(),

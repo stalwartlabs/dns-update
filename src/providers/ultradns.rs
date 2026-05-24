@@ -12,7 +12,7 @@
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, Result, SRVRecord,
     TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
-    http::{HttpClient, HttpClientBuilder},
+    http::{HttpClient, HttpClientBuilder, HttpRequest},
 };
 use reqwest::Method;
 use serde::de::DeserializeOwned;
@@ -27,7 +27,7 @@ const TOKEN_REFRESH_RETRIES: u32 = 1;
 
 #[derive(Clone)]
 pub struct UltraDnsProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     username: String,
     password: String,
     endpoint: String,
@@ -88,7 +88,7 @@ impl UltraDnsProvider {
         endpoint: Option<String>,
         timeout: Option<Duration>,
     ) -> Result<Self> {
-        let client = HttpClientBuilder::default().with_timeout(timeout);
+        let client = HttpClientBuilder::default().with_timeout(timeout).build();
         Ok(Self {
             client,
             username: username.into(),
@@ -353,14 +353,14 @@ impl UltraDnsProvider {
         url: &str,
         token: &str,
         body: Option<&B>,
-    ) -> Result<HttpClient>
+    ) -> Result<HttpRequest>
     where
         B: Serialize,
     {
         let bearer = format!("Bearer {token}");
         let mut request = self
             .client
-            .build(method, url)
+            .request(method, url)
             .set_header("Authorization", &bearer);
         if let Some(body) = body {
             request = request.with_body(body)?;
@@ -377,10 +377,10 @@ impl UltraDnsProvider {
     async fn ensure_token(&self, force_password: bool) -> Result<String> {
         if !force_password
             && let Some(state) = self.token.lock().ok().and_then(|guard| guard.clone())
-                && Instant::now() < state.expires
-            {
-                return Ok(state.access_token);
-            }
+            && Instant::now() < state.expires
+        {
+            return Ok(state.access_token);
+        }
 
         let refresh = if force_password {
             None

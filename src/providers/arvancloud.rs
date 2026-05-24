@@ -10,7 +10,8 @@
  */
 
 use crate::{
-    DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder,
+    DnsRecord, DnsRecordType, Error, IntoFqdn,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
@@ -22,7 +23,7 @@ const PAGE_SIZE: u32 = 300;
 
 #[derive(Clone)]
 pub struct ArvanCloudProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -109,7 +110,8 @@ impl ArvanCloudProvider {
     pub(crate) fn new(api_key: impl AsRef<str>, timeout: Option<Duration>) -> Self {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", api_key.as_ref())
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             endpoint: DEFAULT_API_ENDPOINT.to_string(),

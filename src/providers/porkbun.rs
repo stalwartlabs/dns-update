@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Deserializer, Serialize};
@@ -22,7 +23,7 @@ use std::{
 
 #[derive(Clone)]
 pub struct PorkBunProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     api_key: String,
     secret_api_key: String,
     endpoint: String,
@@ -110,7 +111,7 @@ impl PorkBunProvider {
         secret_api_key: impl AsRef<str>,
         timeout: Option<Duration>,
     ) -> Self {
-        let client = HttpClientBuilder::default().with_timeout(timeout);
+        let client = HttpClientBuilder::default().with_timeout(timeout).build();
 
         Self {
             client,

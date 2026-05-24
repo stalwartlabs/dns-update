@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder, utils::strip_origin_from_name,
+    http::{HttpClient, HttpClientBuilder},
+    utils::strip_origin_from_name,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,7 @@ const DEFAULT_API_ENDPOINT: &str = "https://api.domeneshop.no/v0";
 
 #[derive(Clone)]
 pub struct DomeneshopProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -91,7 +92,8 @@ impl DomeneshopProvider {
         let encoded = BASE64.encode(credentials.as_bytes());
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Basic {encoded}"))
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             endpoint: DEFAULT_API_ENDPOINT.to_string(),

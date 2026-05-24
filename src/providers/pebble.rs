@@ -9,13 +9,16 @@
  * except according to those terms.
  */
 
-use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder};
+use crate::{
+    DnsRecord, DnsRecordType, Error, IntoFqdn,
+    http::{HttpClient, HttpClientBuilder},
+};
 use serde::Serialize;
 use std::time::Duration;
 
 #[derive(Clone)]
 pub struct PebbleProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     base_url: String,
 }
 
@@ -57,7 +60,7 @@ struct CaaPolicy {
 impl PebbleProvider {
     pub(crate) fn new(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
         let base_url = base_url.as_ref().trim_end_matches('/').to_string();
-        let client = HttpClientBuilder::default().with_timeout(timeout);
+        let client = HttpClientBuilder::default().with_timeout(timeout).build();
         Self { client, base_url }
     }
 

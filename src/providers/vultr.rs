@@ -11,7 +11,7 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder,
+    http::{HttpClient, HttpClientBuilder},
     utils::{strip_origin_from_name, txt_chunks_to_text},
 };
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ const LIST_PAGE_SIZE: u32 = 500;
 
 #[derive(Clone)]
 pub struct VultrProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: Cow<'static, str>,
 }
 
@@ -77,7 +77,8 @@ impl VultrProvider {
     pub(crate) fn new(api_key: impl AsRef<str>, timeout: Option<Duration>) -> Self {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Bearer {}", api_key.as_ref()))
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             endpoint: Cow::Borrowed(DEFAULT_API_ENDPOINT),

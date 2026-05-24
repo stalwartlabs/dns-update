@@ -13,7 +13,7 @@ use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord, TLSARecord,
     TlsaCertUsage, TlsaMatching, TlsaSelector,
     crypto::hmac_sha256,
-    http::{HttpClient, HttpClientBuilder},
+    http::{HttpClient, HttpClientBuilder, HttpRequest},
     utils::txt_chunks,
 };
 use chrono::Utc;
@@ -28,7 +28,7 @@ const BAIDU_LIST_PAGE_SIZE: u32 = 1000;
 
 #[derive(Clone)]
 pub struct BaiduCloudProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     access_key: String,
     secret_key: String,
     endpoint: String,
@@ -90,7 +90,7 @@ impl BaiduCloudProvider {
             return Err(Error::Api("baiducloud: credentials missing".to_string()));
         }
 
-        let client = HttpClientBuilder::default().with_timeout(timeout);
+        let client = HttpClientBuilder::default().with_timeout(timeout).build();
 
         Ok(Self {
             client,
@@ -367,9 +367,9 @@ impl BaiduCloudProvider {
 
         let authorization = format!("{}/{}/{}", auth_string, signed_headers, signature);
 
-        let mut http: HttpClient = self
+        let mut http: HttpRequest = self
             .client
-            .build(method, url)
+            .request(method, url)
             .with_header("Host", &host)
             .with_header("Authorization", &authorization);
 

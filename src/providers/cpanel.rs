@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder, utils::txt_chunks_to_text,
+    http::{HttpClient, HttpClientBuilder},
+    utils::txt_chunks_to_text,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,7 @@ const SERIAL_RETRY_BUDGET: u32 = 3;
 
 #[derive(Clone)]
 pub struct CpanelProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -79,7 +80,8 @@ impl CpanelProvider {
         let auth = format!("cpanel {}:{}", username.as_ref(), token.as_ref());
         let client = HttpClientBuilder::default()
             .with_header("Authorization", auth)
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             endpoint: base_url.as_ref().trim_end_matches('/').to_string(),

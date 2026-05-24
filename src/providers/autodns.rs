@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -23,7 +24,7 @@ pub const DEFAULT_CONTEXT: u32 = 4;
 
 #[derive(Clone)]
 pub struct AutodnsProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -85,7 +86,8 @@ impl AutodnsProvider {
             .with_header("Authorization", format!("Basic {encoded}"))
             .with_header("X-Domainrobot-Context", ctx.to_string())
             .with_header("Accept", "application/json")
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Ok(Self {
             client,
             endpoint: DEFAULT_ENDPOINT.to_string(),
@@ -205,9 +207,10 @@ impl AutodnsProvider {
         for record in &records {
             let candidate = build_resource_record(&fqdn, record, 0);
             if let Some(found) = existing.iter().find(|e| records_equal(&candidate, e))
-                && !rems.iter().any(|r| r == found) {
-                    rems.push(found.clone());
-                }
+                && !rems.iter().any(|r| r == found)
+            {
+                rems.push(found.clone());
+            }
         }
 
         if rems.is_empty() {

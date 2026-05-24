@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -30,7 +31,7 @@ pub struct MythicBeastsProvider {
     password: String,
     api_endpoint: String,
     auth_endpoint: String,
-    timeout: Option<Duration>,
+    client: HttpClient,
 }
 
 struct AuthState {
@@ -108,13 +109,17 @@ impl MythicBeastsProvider {
             ));
         }
 
+        let client = HttpClientBuilder::default()
+            .with_header("Accept", "application/json")
+            .with_timeout(timeout)
+            .build();
         Ok(Self {
             auth: Arc::new(Mutex::new(AuthState { token: None })),
             username,
             password,
             api_endpoint: DEFAULT_API_ENDPOINT.to_string(),
             auth_endpoint: DEFAULT_AUTH_ENDPOINT.to_string(),
-            timeout,
+            client,
         })
     }
 
@@ -126,13 +131,6 @@ impl MythicBeastsProvider {
             auth_endpoint: format!("{base}/auth/login"),
             ..self
         }
-    }
-
-    fn api_client(&self, token: &str) -> HttpClientBuilder {
-        HttpClientBuilder::default()
-            .with_header("Authorization", format!("Bearer {token}"))
-            .with_header("Accept", "application/json")
-            .with_timeout(self.timeout)
     }
 
     async fn ensure_token(&self) -> crate::Result<String> {
@@ -149,13 +147,11 @@ impl MythicBeastsProvider {
         }
 
         let credentials = STANDARD.encode(format!("{}:{}", self.username, self.password));
-        let auth_client = HttpClientBuilder::default()
-            .with_header("Authorization", format!("Basic {credentials}"))
-            .with_header("Accept", "application/json")
-            .with_timeout(self.timeout);
 
-        let body: TokenResponse = auth_client
+        let body: TokenResponse = self
+            .client
             .post(self.auth_endpoint.clone())
+            .with_header("Authorization", format!("Basic {credentials}"))
             .with_header("Content-Type", "application/x-www-form-urlencoded")
             .with_raw_body("grant_type=client_credentials".to_string())
             .send()
@@ -203,7 +199,13 @@ impl MythicBeastsProvider {
         let url = self.rrset_url(&domain, &subdomain, record_type);
 
         if payloads.is_empty() {
-            return match self.api_client(&token).delete(url).send_raw().await {
+            return match self
+                .client
+                .delete(url)
+                .with_header("Authorization", format!("Bearer {token}"))
+                .send_raw()
+                .await
+            {
                 Ok(_) => Ok(()),
                 Err(Error::NotFound) => Ok(()),
                 Err(e) => Err(e),
@@ -212,8 +214,9 @@ impl MythicBeastsProvider {
 
         let body = RecordsBody { records: payloads };
         let _: MutationResponse = self
-            .api_client(&token)
+            .client
             .put(url)
+            .with_header("Authorization", format!("Bearer {token}"))
             .with_body(body)?
             .send()
             .await?;
@@ -239,8 +242,9 @@ impl MythicBeastsProvider {
 
         let body = RecordsBody { records: payloads };
         let _: MutationResponse = self
-            .api_client(&token)
+            .client
             .post(self.rrset_url(&domain, &subdomain, record_type))
+            .with_header("Authorization", format!("Bearer {token}"))
             .with_body(body)?
             .send()
             .await?;
@@ -265,8 +269,9 @@ impl MythicBeastsProvider {
         let url = self.rrset_url(&domain, &subdomain, record_type);
 
         let current = match self
-            .api_client(&token)
+            .client
             .get(url.clone())
+            .with_header("Authorization", format!("Bearer {token}"))
             .send::<ListResponse>()
             .await
         {
@@ -285,7 +290,13 @@ impl MythicBeastsProvider {
             .collect();
 
         if remaining.is_empty() {
-            return match self.api_client(&token).delete(url).send_raw().await {
+            return match self
+                .client
+                .delete(url)
+                .with_header("Authorization", format!("Bearer {token}"))
+                .send_raw()
+                .await
+            {
                 Ok(_) => Ok(()),
                 Err(Error::NotFound) => Ok(()),
                 Err(e) => Err(e),
@@ -294,8 +305,9 @@ impl MythicBeastsProvider {
 
         let body = RecordsBody { records: remaining };
         let _: MutationResponse = self
-            .api_client(&token)
+            .client
             .put(url)
+            .with_header("Authorization", format!("Bearer {token}"))
             .with_body(body)?
             .send()
             .await?;
@@ -315,8 +327,9 @@ impl MythicBeastsProvider {
         let url = self.rrset_url(&domain, &subdomain, record_type);
 
         let response = match self
-            .api_client(&token)
+            .client
             .get(url)
+            .with_header("Authorization", format!("Bearer {token}"))
             .send::<ListResponse>()
             .await
         {

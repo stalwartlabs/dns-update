@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
@@ -26,7 +27,7 @@ const RETRY_ATTEMPTS: u32 = 3;
 
 #[derive(Clone)]
 pub struct DynuProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: Cow<'static, str>,
 }
 
@@ -156,7 +157,8 @@ impl DynuProvider {
         let client = HttpClientBuilder::default()
             .with_header("API-Key", api_key)
             .with_header("Accept", "application/json")
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Ok(Self {
             client,
             endpoint: Cow::Borrowed(DEFAULT_API_ENDPOINT),

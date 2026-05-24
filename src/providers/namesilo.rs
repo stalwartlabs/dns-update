@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder, utils::strip_origin_from_name,
+    http::{HttpClient, HttpClientBuilder},
+    utils::strip_origin_from_name,
 };
 use quick_xml::de::from_str;
 use serde::Deserialize;
@@ -19,7 +20,7 @@ use std::time::Duration;
 
 #[derive(Clone)]
 pub struct NameSiloProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
     api_key: String,
 }
@@ -61,7 +62,7 @@ impl NameSiloProvider {
             return Err(Error::Api("NameSilo API key must not be empty".to_string()));
         }
         Ok(Self {
-            client: HttpClientBuilder::default().with_timeout(timeout),
+            client: HttpClientBuilder::default().with_timeout(timeout).build(),
             endpoint: DEFAULT_API_ENDPOINT.to_string(),
             api_key: key.to_string(),
         })

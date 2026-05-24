@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue as DnsKeyValue, MXRecord,
-    SRVRecord, TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    SRVRecord, TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
@@ -24,7 +25,7 @@ pub struct DesecDnsRecordRepresentation {
 
 #[derive(Clone)]
 pub struct DesecProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -65,7 +66,8 @@ impl DesecProvider {
     pub(crate) fn new(auth_token: impl AsRef<str>, timeout: Option<Duration>) -> Self {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Token {}", auth_token.as_ref()))
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
 
         Self {
             client,

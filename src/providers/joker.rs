@@ -11,7 +11,9 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder, utils::strip_origin_from_name, utils::txt_chunks_to_text,
+    http::{HttpClient, HttpClientBuilder},
+    utils::strip_origin_from_name,
+    utils::txt_chunks_to_text,
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -69,7 +71,7 @@ pub struct JokerProvider {
     auth: Arc<Mutex<AuthState>>,
     credentials: JokerAuth,
     endpoint: String,
-    timeout: Option<Duration>,
+    client: HttpClient,
 }
 
 struct AuthState {
@@ -79,11 +81,16 @@ struct AuthState {
 impl JokerProvider {
     pub(crate) fn new(auth: JokerAuth, timeout: Option<Duration>) -> crate::Result<Self> {
         auth.validate()?;
+        let client = HttpClientBuilder::default()
+            .with_header("Content-Type", "application/x-www-form-urlencoded")
+            .with_header("Accept", "text/plain")
+            .with_timeout(timeout)
+            .build();
         Ok(Self {
             auth: Arc::new(Mutex::new(AuthState { session: None })),
             credentials: auth,
             endpoint: DEFAULT_API_ENDPOINT.to_string(),
-            timeout,
+            client,
         })
     }
 
@@ -93,13 +100,6 @@ impl JokerProvider {
             endpoint: endpoint.as_ref().trim_end_matches('/').to_string(),
             ..self
         }
-    }
-
-    fn http_client(&self) -> HttpClientBuilder {
-        HttpClientBuilder::default()
-            .with_header("Content-Type", "application/x-www-form-urlencoded")
-            .with_header("Accept", "text/plain")
-            .with_timeout(self.timeout)
     }
 
     fn clear_session(&self) {
@@ -114,7 +114,7 @@ impl JokerProvider {
             serde_urlencoded::to_string(&params).map_err(|e| Error::Serialize(e.to_string()))?;
 
         let response = self
-            .http_client()
+            .client
             .post(format!("{}/login", self.endpoint))
             .with_raw_body(body)
             .send_raw()
@@ -163,7 +163,7 @@ impl JokerProvider {
                 .map_err(|e| Error::Serialize(e.to_string()))?;
 
             let response = self
-                .http_client()
+                .client
                 .post(format!("{}/{}", self.endpoint, path))
                 .with_raw_body(body)
                 .send_raw()

@@ -13,8 +13,10 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
-    jwt::rsa_sha512_sign, utils::strip_origin_from_name,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder, HttpRequest},
+    jwt::rsa_sha512_sign,
+    utils::strip_origin_from_name,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
@@ -29,7 +31,7 @@ pub struct TransipProvider {
     login: String,
     private_key_pem: String,
     endpoint: String,
-    timeout: Option<Duration>,
+    client: HttpClient,
 }
 
 struct AuthState {
@@ -85,12 +87,16 @@ impl TransipProvider {
                 "TransIP login and private key must not be empty".to_string(),
             ));
         }
+        let client = HttpClientBuilder::default()
+            .with_header("Accept", "application/json")
+            .with_timeout(timeout)
+            .build();
         Ok(Self {
             auth: Arc::new(Mutex::new(AuthState { token: None })),
             login,
             private_key_pem,
             endpoint: DEFAULT_API_ENDPOINT.to_string(),
-            timeout,
+            client,
         })
     }
 
@@ -139,11 +145,10 @@ impl TransipProvider {
             .map_err(|e| Error::Api(format!("Failed to sign TransIP request: {e}")))?;
         let signature_b64 = STANDARD.encode(&signature);
 
-        let response: AuthResponse = HttpClientBuilder::default()
-            .with_header("Signature", signature_b64)
-            .with_header("Accept", "application/json")
-            .with_timeout(self.timeout)
+        let response: AuthResponse = self
+            .client
             .post(format!("{}/auth", self.endpoint))
+            .with_header("Signature", signature_b64)
             .with_raw_body(payload)
             .send()
             .await?;
@@ -157,11 +162,8 @@ impl TransipProvider {
         Ok(response.token)
     }
 
-    fn authed_client(&self, token: &str) -> HttpClientBuilder {
-        HttpClientBuilder::default()
-            .with_header("Authorization", format!("Bearer {token}"))
-            .with_header("Accept", "application/json")
-            .with_timeout(self.timeout)
+    fn authed(&self, request: HttpRequest, token: &str) -> HttpRequest {
+        request.with_header("Authorization", format!("Bearer {token}"))
     }
 
     pub(crate) async fn set_rrset(
@@ -324,17 +326,14 @@ impl TransipProvider {
     }
 
     async fn list_zone(&self, token: &str, domain: &str) -> crate::Result<Vec<DnsEntry>> {
-        let entries: DnsEntriesResponse = self
-            .authed_client(token)
-            .get(format!("{}/domains/{}/dns", self.endpoint, domain))
-            .send()
-            .await?;
+        let url = format!("{}/domains/{}/dns", self.endpoint, domain);
+        let entries: DnsEntriesResponse = self.authed(self.client.get(url), token).send().await?;
         Ok(entries.dns_entries)
     }
 
     async fn post_entry(&self, token: &str, domain: &str, entry: &DnsEntry) -> crate::Result<()> {
-        self.authed_client(token)
-            .post(format!("{}/domains/{}/dns", self.endpoint, domain))
+        let url = format!("{}/domains/{}/dns", self.endpoint, domain);
+        self.authed(self.client.post(url), token)
             .with_body(DnsEntryRequest { dns_entry: entry })?
             .send_raw()
             .await
@@ -342,8 +341,8 @@ impl TransipProvider {
     }
 
     async fn delete_entry(&self, token: &str, domain: &str, entry: &DnsEntry) -> crate::Result<()> {
-        self.authed_client(token)
-            .delete(format!("{}/domains/{}/dns", self.endpoint, domain))
+        let url = format!("{}/domains/{}/dns", self.endpoint, domain);
+        self.authed(self.client.delete(url), token)
             .with_body(DnsEntryRequest { dns_entry: entry })?
             .send_raw()
             .await

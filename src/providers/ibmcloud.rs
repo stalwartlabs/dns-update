@@ -9,7 +9,7 @@
  * except according to those terms.
  */
 
-use crate::http::HttpClientBuilder;
+use crate::http::{HttpClient, HttpClientBuilder};
 use crate::utils::strip_origin_from_name;
 use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, Result, SRVRecord};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -21,7 +21,7 @@ const DEFAULT_ENDPOINT: &str = "https://api.softlayer.com/rest/v3.1";
 
 #[derive(Clone)]
 pub struct IbmCloudProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -35,7 +35,8 @@ impl IbmCloudProvider {
         let encoded = BASE64.encode(credentials.as_bytes());
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Basic {encoded}"))
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Ok(Self {
             client,
             endpoint: DEFAULT_ENDPOINT.to_string(),

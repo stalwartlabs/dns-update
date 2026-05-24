@@ -12,7 +12,7 @@
 #![cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 
 use crate::crypto::{hmac_sha256, sha256_digest};
-use crate::http::HttpClientBuilder;
+use crate::http::{HttpClient, HttpClientBuilder};
 use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
 use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord};
 use chrono::Utc;
@@ -43,7 +43,7 @@ pub struct VolcengineProvider {
     region: String,
     host: String,
     scheme: String,
-    timeout: Option<Duration>,
+    client: HttpClient,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -80,13 +80,16 @@ impl VolcengineProvider {
             .unwrap_or_else(|| VOLCENGINE_DEFAULT_HOST.to_string());
         let scheme = config.scheme.unwrap_or_else(|| "https".to_string());
 
+        let client = HttpClientBuilder::default()
+            .with_timeout(config.request_timeout)
+            .build();
         Ok(Self {
             access_key: config.access_key,
             secret_key: config.secret_key,
             region,
             host,
             scheme,
-            timeout: config.request_timeout,
+            client,
         })
     }
 
@@ -344,14 +347,16 @@ impl VolcengineProvider {
         );
 
         let url = format!("{}://{}/?{}", self.scheme, self.host, query);
-        let client = HttpClientBuilder::default()
-            .with_timeout(self.timeout)
+        let text = self
+            .client
+            .post(url)
             .with_header("Host", &self.host)
             .with_header("X-Date", &amz_date)
             .with_header("X-Content-Sha256", &payload_hash)
-            .with_header("Authorization", &authorization);
-
-        let text = client.post(url).with_raw_body(body_text).send_raw().await?;
+            .with_header("Authorization", &authorization)
+            .with_raw_body(body_text)
+            .send_raw()
+            .await?;
 
         let parsed: Value = if text.is_empty() {
             Value::Null

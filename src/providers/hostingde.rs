@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
     utils::txt_chunks_to_text,
 };
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,7 @@ const DEFAULT_ENDPOINT: &str = "https://secure.hosting.de/api/dns/v1/json";
 
 #[derive(Clone)]
 pub struct HostingDeProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
     api_key: String,
 }
@@ -120,7 +121,7 @@ struct RecordsResponse {
 
 impl HostingDeProvider {
     pub(crate) fn new(api_key: impl AsRef<str>, timeout: Option<Duration>) -> Self {
-        let client = HttpClientBuilder::default().with_timeout(timeout);
+        let client = HttpClientBuilder::default().with_timeout(timeout).build();
         Self {
             client,
             endpoint: DEFAULT_ENDPOINT.to_string(),

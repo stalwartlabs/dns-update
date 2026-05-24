@@ -9,7 +9,10 @@
  * except according to those terms.
  */
 
-use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder};
+use crate::{
+    DnsRecord, DnsRecordType, Error, IntoFqdn,
+    http::{HttpClient, HttpClientBuilder},
+};
 use std::{borrow::Cow, time::Duration};
 
 const DEFAULT_API_ENDPOINT: &str = "https://freemyip.com/update";
@@ -18,7 +21,7 @@ const FREEMYIP_ROOT: &str = "freemyip.com";
 
 #[derive(Clone)]
 pub struct FreeMyIpProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     token: String,
     endpoint: Cow<'static, str>,
 }
@@ -30,7 +33,7 @@ impl FreeMyIpProvider {
             return Err(Error::Api("freemyip token is empty".to_string()));
         }
         Ok(Self {
-            client: HttpClientBuilder::default().with_timeout(timeout),
+            client: HttpClientBuilder::default().with_timeout(timeout).build(),
             token: token.to_string(),
             endpoint: Cow::Borrowed(DEFAULT_API_ENDPOINT),
         })

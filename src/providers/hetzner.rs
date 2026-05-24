@@ -11,7 +11,7 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder,
+    http::{HttpClient, HttpClientBuilder},
     utils::{strip_origin_from_name, txt_chunks_to_text},
 };
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ use std::{net::AddrParseError, time::Duration};
 
 #[derive(Clone)]
 pub struct HetznerProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -93,7 +93,8 @@ impl HetznerProvider {
 
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Bearer {token}"))
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
 
         Ok(Self {
             client,

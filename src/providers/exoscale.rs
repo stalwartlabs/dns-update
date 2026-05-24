@@ -11,7 +11,9 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    crypto::hmac_sha256, http::HttpClientBuilder, utils::strip_origin_from_name,
+    crypto::hmac_sha256,
+    http::{HttpClient, HttpClientBuilder},
+    utils::strip_origin_from_name,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use chrono::Utc;
@@ -24,7 +26,7 @@ const SIGNATURE_EXPIRES_SECONDS: i64 = 300;
 
 #[derive(Clone)]
 pub struct ExoscaleProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     api_key: String,
     api_secret: String,
     endpoint: String,
@@ -91,7 +93,7 @@ impl ExoscaleProvider {
         if api_key.is_empty() || api_secret.is_empty() {
             return Err(Error::Api("Exoscale credentials missing".into()));
         }
-        let client = HttpClientBuilder::default().with_timeout(timeout);
+        let client = HttpClientBuilder::default().with_timeout(timeout).build();
         Ok(Self {
             client,
             api_key: api_key.to_string(),
@@ -121,11 +123,11 @@ impl ExoscaleProvider {
 
     fn signed(
         &self,
-        request: crate::http::HttpClient,
+        request: crate::http::HttpRequest,
         method: Method,
         path: &str,
         body: &str,
-    ) -> crate::http::HttpClient {
+    ) -> crate::http::HttpRequest {
         let auth = self.build_authorization(&method, path, body);
         request.with_header("Authorization", auth)
     }

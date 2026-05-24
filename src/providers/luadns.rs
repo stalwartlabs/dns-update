@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
     utils::txt_chunks_to_text,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
@@ -23,7 +24,7 @@ const PAGE_SIZE: u32 = 500;
 
 #[derive(Clone)]
 pub struct LuaDnsProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -57,7 +58,8 @@ impl LuaDnsProvider {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Basic {encoded}"))
             .with_header("Accept", "application/json")
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             endpoint: DEFAULT_API_ENDPOINT.to_string(),

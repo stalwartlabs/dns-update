@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder, utils::strip_origin_from_name,
+    http::{HttpClient, HttpClientBuilder},
+    utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -31,7 +32,7 @@ pub struct BluecatV2Config {
 
 #[derive(Clone)]
 pub struct BluecatV2Provider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     config: BluecatV2Config,
     endpoint: String,
     token: Arc<Mutex<Option<(String, Instant)>>>,
@@ -169,7 +170,8 @@ impl BluecatV2Provider {
         let endpoint = config.server_url.trim_end_matches('/').to_string();
         let client = HttpClientBuilder::default()
             .with_header("Accept", "application/json")
-            .with_timeout(config.request_timeout);
+            .with_timeout(config.request_timeout)
+            .build();
 
         Ok(Self {
             client,
@@ -219,19 +221,19 @@ impl BluecatV2Provider {
         Ok(session.basic_authentication_credentials)
     }
 
-    fn authed_get(&self, url: String, token: &str) -> crate::http::HttpClient {
+    fn authed_get(&self, url: String, token: &str) -> crate::http::HttpRequest {
         self.client
             .get(url)
             .with_header("Authorization", format!("Basic {token}"))
     }
 
-    fn authed_post(&self, url: String, token: &str) -> crate::http::HttpClient {
+    fn authed_post(&self, url: String, token: &str) -> crate::http::HttpRequest {
         self.client
             .post(url)
             .with_header("Authorization", format!("Basic {token}"))
     }
 
-    fn authed_delete(&self, url: String, token: &str) -> crate::http::HttpClient {
+    fn authed_delete(&self, url: String, token: &str) -> crate::http::HttpRequest {
         self.client
             .delete(url)
             .with_header("Authorization", format!("Basic {token}"))

@@ -11,7 +11,7 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder,
+    http::{HttpClient, HttpClientBuilder},
     utils::{strip_origin_from_name, txt_chunks},
 };
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ use std::time::Duration;
 
 #[derive(Clone)]
 pub struct PleskProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -79,7 +79,8 @@ impl PleskProvider {
     ) -> Self {
         let client = HttpClientBuilder::default()
             .with_header("X-API-Key", api_key.as_ref())
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             endpoint: base_url.as_ref().trim_end_matches('/').to_string(),

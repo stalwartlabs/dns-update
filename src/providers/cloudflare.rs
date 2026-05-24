@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -23,7 +24,7 @@ use std::{
 
 #[derive(Clone)]
 pub struct CloudflareProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: Cow<'static, str>,
 }
 
@@ -119,7 +120,8 @@ impl CloudflareProvider {
     pub(crate) fn new(secret: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Bearer {}", secret.as_ref()))
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
 
         Ok(Self {
             client,

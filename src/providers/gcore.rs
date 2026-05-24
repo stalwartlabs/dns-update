@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue as DnsKeyValue, MXRecord,
-    SRVRecord, TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    SRVRecord, TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -21,7 +22,7 @@ const DEFAULT_API_ENDPOINT: &str = "https://api.gcore.com/dns";
 
 #[derive(Clone)]
 pub struct GcoreProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: Cow<'static, str>,
 }
 
@@ -58,7 +59,8 @@ impl GcoreProvider {
     pub(crate) fn new(api_token: impl AsRef<str>, timeout: Option<Duration>) -> Self {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("APIKey {}", api_token.as_ref()))
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             endpoint: Cow::Borrowed(DEFAULT_API_ENDPOINT),

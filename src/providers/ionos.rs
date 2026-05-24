@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder, utils::txt_chunks_to_text,
+    http::{HttpClient, HttpClientBuilder},
+    utils::txt_chunks_to_text,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -22,7 +23,7 @@ const RETRY_ATTEMPTS: u32 = 3;
 
 #[derive(Clone)]
 pub struct IonosProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -73,7 +74,8 @@ impl IonosProvider {
         let client = HttpClientBuilder::default()
             .with_header("X-Api-Key", api_key.as_ref())
             .with_header("Accept", "application/json")
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             endpoint: DEFAULT_ENDPOINT.to_string(),

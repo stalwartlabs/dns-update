@@ -146,6 +146,31 @@ fn unique_label(prefix: &str) -> String {
     format!("{prefix}-{pid}-{nanos}-{n}")
 }
 
+/// Poll provider.list_rrset until the returned count matches `expected_len`,
+/// or until `attempts` polls have elapsed. PowerDNS commits UPDATEs
+/// synchronously but the answer cache can serve stale data for a moment,
+/// so list_rrset queries that follow a write benefit from a brief retry.
+async fn list_rrset_with_retry(
+    provider: &Rfc2136Provider,
+    name: &str,
+    rtype: DnsRecordType,
+    expected_len: usize,
+    attempts: u32,
+) -> Vec<DnsRecord> {
+    let mut latest = Vec::new();
+    for _ in 0..attempts {
+        latest = provider
+            .list_rrset(name, rtype, zone())
+            .await
+            .unwrap_or_default();
+        if latest.len() == expected_len {
+            return latest;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    latest
+}
+
 async fn wait_for_record(name: &str, rtype: RecordType, attempts: u32) -> Vec<RData> {
     for _ in 0..attempts {
         let answers = query_records(name, rtype).await;
@@ -957,9 +982,343 @@ async fn set_rrset_is_idempotent_on_rerun() {
 }
 
 #[tokio::test]
+async fn add_to_rrset_is_idempotent_for_duplicate_values() {
+    // Per RFC 2136 §2.5.1 a server should silently discard duplicates of
+    // already-present values. Calling add_to_rrset twice with the same A
+    // record must leave exactly one value in the RRSet (verified via the
+    // round-trip through list_rrset).
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let name = format!("{}.{}", unique_label("add-idem"), zone());
+    let value = DnsRecord::A(Ipv4Addr::new(10, 80, 0, 1));
+
+    provider
+        .add_to_rrset(&name, DnsRecordType::A, 60, vec![value.clone()], zone())
+        .await
+        .expect("first add");
+    provider
+        .add_to_rrset(&name, DnsRecordType::A, 60, vec![value.clone()], zone())
+        .await
+        .expect("second add with same value");
+    provider
+        .add_to_rrset(
+            &name,
+            DnsRecordType::A,
+            60,
+            vec![value.clone(), value.clone()],
+            zone(),
+        )
+        .await
+        .expect("third add with duplicates in one call");
+
+    let listed = list_rrset_with_retry(&provider, &name, DnsRecordType::A, 1, 20).await;
+    assert_eq!(
+        listed,
+        vec![value],
+        "add_to_rrset must be idempotent across duplicate values"
+    );
+    cleanup_name(&name, DnsRecordType::A).await;
+}
+
+#[tokio::test]
+async fn list_rrset_returns_empty_for_nonexistent_owner() {
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let name = format!("{}.{}", unique_label("list-empty"), zone());
+
+    let result = provider
+        .list_rrset(&name, DnsRecordType::A, zone())
+        .await
+        .expect("list_rrset on absent owner must not error");
+    assert!(result.is_empty(), "expected empty Vec, got {result:?}");
+}
+
+#[tokio::test]
+async fn list_rrset_reflects_set_add_remove_lifecycle() {
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let name = format!("{}.{}", unique_label("list-lifecycle"), zone());
+
+    provider
+        .set_rrset(
+            &name,
+            DnsRecordType::A,
+            60,
+            vec![
+                DnsRecord::A(Ipv4Addr::new(10, 50, 0, 1)),
+                DnsRecord::A(Ipv4Addr::new(10, 50, 0, 2)),
+            ],
+            zone(),
+        )
+        .await
+        .expect("set_rrset");
+    let mut after_set = list_rrset_with_retry(&provider, &name, DnsRecordType::A, 2, 20).await;
+    after_set.sort_by_key(|r| match r {
+        DnsRecord::A(a) => *a,
+        _ => unreachable!(),
+    });
+    assert_eq!(
+        after_set,
+        vec![
+            DnsRecord::A(Ipv4Addr::new(10, 50, 0, 1)),
+            DnsRecord::A(Ipv4Addr::new(10, 50, 0, 2)),
+        ]
+    );
+
+    provider
+        .add_to_rrset(
+            &name,
+            DnsRecordType::A,
+            60,
+            vec![DnsRecord::A(Ipv4Addr::new(10, 50, 0, 3))],
+            zone(),
+        )
+        .await
+        .expect("add_to_rrset");
+    let mut after_add = list_rrset_with_retry(&provider, &name, DnsRecordType::A, 3, 20).await;
+    after_add.sort_by_key(|r| match r {
+        DnsRecord::A(a) => *a,
+        _ => unreachable!(),
+    });
+    assert_eq!(
+        after_add,
+        vec![
+            DnsRecord::A(Ipv4Addr::new(10, 50, 0, 1)),
+            DnsRecord::A(Ipv4Addr::new(10, 50, 0, 2)),
+            DnsRecord::A(Ipv4Addr::new(10, 50, 0, 3)),
+        ]
+    );
+
+    provider
+        .remove_from_rrset(
+            &name,
+            DnsRecordType::A,
+            vec![DnsRecord::A(Ipv4Addr::new(10, 50, 0, 2))],
+            zone(),
+        )
+        .await
+        .expect("remove_from_rrset");
+    let mut after_remove = list_rrset_with_retry(&provider, &name, DnsRecordType::A, 2, 20).await;
+    after_remove.sort_by_key(|r| match r {
+        DnsRecord::A(a) => *a,
+        _ => unreachable!(),
+    });
+    assert_eq!(
+        after_remove,
+        vec![
+            DnsRecord::A(Ipv4Addr::new(10, 50, 0, 1)),
+            DnsRecord::A(Ipv4Addr::new(10, 50, 0, 3)),
+        ]
+    );
+
+    provider
+        .set_rrset(&name, DnsRecordType::A, 60, vec![], zone())
+        .await
+        .expect("set_rrset empty");
+    let after_clear = list_rrset_with_retry(&provider, &name, DnsRecordType::A, 0, 20).await;
+    assert!(
+        after_clear.is_empty(),
+        "expected empty after set_rrset(empty), got {after_clear:?}"
+    );
+}
+
+#[tokio::test]
+async fn list_rrset_is_type_isolated() {
+    // list_rrset(name, A) must NOT return TXT records at the same name.
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let name = format!("{}.{}", unique_label("list-isolate"), zone());
+
+    provider
+        .set_rrset(
+            &name,
+            DnsRecordType::A,
+            60,
+            vec![DnsRecord::A(Ipv4Addr::new(10, 60, 0, 1))],
+            zone(),
+        )
+        .await
+        .expect("set A");
+    provider
+        .set_rrset(
+            &name,
+            DnsRecordType::TXT,
+            60,
+            vec![DnsRecord::TXT("isolation-marker".to_string())],
+            zone(),
+        )
+        .await
+        .expect("set TXT");
+
+    let a_records = list_rrset_with_retry(&provider, &name, DnsRecordType::A, 1, 20).await;
+    assert_eq!(a_records, vec![DnsRecord::A(Ipv4Addr::new(10, 60, 0, 1))]);
+
+    let txt_records = list_rrset_with_retry(&provider, &name, DnsRecordType::TXT, 1, 20).await;
+    assert_eq!(
+        txt_records,
+        vec![DnsRecord::TXT("isolation-marker".to_string())]
+    );
+
+    cleanup_name(&name, DnsRecordType::A).await;
+    cleanup_name(&name, DnsRecordType::TXT).await;
+}
+
+#[tokio::test]
+async fn list_rrset_roundtrips_each_record_type() {
+    // Publish one record of each supported type and verify list_rrset
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let label = unique_label("list-types");
+
+    let cases: Vec<(String, DnsRecordType, DnsRecord)> = vec![
+        (
+            format!("{label}-a.{}", zone()),
+            DnsRecordType::A,
+            DnsRecord::A(Ipv4Addr::new(10, 70, 0, 1)),
+        ),
+        (
+            format!("{label}-aaaa.{}", zone()),
+            DnsRecordType::AAAA,
+            DnsRecord::AAAA("2001:db8::70".parse().unwrap()),
+        ),
+        (
+            format!("{label}-cname.{}", zone()),
+            DnsRecordType::CNAME,
+            DnsRecord::CNAME(format!("ns1.{}", zone())),
+        ),
+        (
+            format!("{label}-mx.{}", zone()),
+            DnsRecordType::MX,
+            DnsRecord::MX(MXRecord {
+                priority: 20,
+                exchange: format!("mail.{}", zone()),
+            }),
+        ),
+        (
+            format!("_imap._tcp.{label}-srv.{}", zone()),
+            DnsRecordType::SRV,
+            DnsRecord::SRV(SRVRecord {
+                priority: 0,
+                weight: 5,
+                port: 143,
+                target: format!("mail.{}", zone()),
+            }),
+        ),
+        (
+            format!("{label}-txt.{}", zone()),
+            DnsRecordType::TXT,
+            DnsRecord::TXT("v=test1; short".to_string()),
+        ),
+        (
+            format!("_25._tcp.{label}-tlsa.{}", zone()),
+            DnsRecordType::TLSA,
+            DnsRecord::TLSA(TLSARecord {
+                cert_usage: TlsaCertUsage::DaneEe,
+                selector: TlsaSelector::Spki,
+                matching: TlsaMatching::Sha256,
+                cert_data: (0..32).collect(),
+            }),
+        ),
+        (
+            format!("{label}-caa.{}", zone()),
+            DnsRecordType::CAA,
+            DnsRecord::CAA(CAARecord::Issue {
+                issuer_critical: false,
+                name: Some("letsencrypt.org".to_string()),
+                options: vec![],
+            }),
+        ),
+    ];
+
+    for (name, rtype, record) in &cases {
+        provider
+            .set_rrset(name.as_str(), *rtype, 60, vec![record.clone()], zone())
+            .await
+            .unwrap_or_else(|err| panic!("set {rtype} at {name} failed: {err}"));
+    }
+
+    for (name, rtype, expected) in &cases {
+        let got = list_rrset_with_retry(&provider, name.as_str(), *rtype, 1, 20).await;
+        assert_eq!(
+            got,
+            vec![expected.clone()],
+            "{rtype} at {name} did not round-trip"
+        );
+    }
+
+    for (name, rtype, _) in &cases {
+        cleanup_name(name.as_str(), *rtype).await;
+    }
+}
+
+#[tokio::test]
+async fn list_rrset_returns_all_records_in_multi_value_rrset() {
+    // The original motivator: two TLSA records at the same owner.
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let name = format!("_25._tcp.{}.{}", unique_label("list-multi"), zone());
+    let leaf: Vec<u8> = (100..132).collect();
+    let intermediate: Vec<u8> = (200..232).collect();
+
+    provider
+        .set_rrset(
+            &name,
+            DnsRecordType::TLSA,
+            60,
+            vec![
+                DnsRecord::TLSA(TLSARecord {
+                    cert_usage: TlsaCertUsage::DaneEe,
+                    selector: TlsaSelector::Spki,
+                    matching: TlsaMatching::Sha256,
+                    cert_data: leaf.clone(),
+                }),
+                DnsRecord::TLSA(TLSARecord {
+                    cert_usage: TlsaCertUsage::DaneTa,
+                    selector: TlsaSelector::Spki,
+                    matching: TlsaMatching::Sha256,
+                    cert_data: intermediate.clone(),
+                }),
+            ],
+            zone(),
+        )
+        .await
+        .expect("set two TLSA");
+
+    let listed = list_rrset_with_retry(&provider, &name, DnsRecordType::TLSA, 2, 20).await;
+    assert_eq!(listed.len(), 2, "expected 2 TLSA records, got {listed:?}");
+    let cert_datas: std::collections::BTreeSet<Vec<u8>> = listed
+        .iter()
+        .map(|r| match r {
+            DnsRecord::TLSA(t) => t.cert_data.clone(),
+            _ => panic!("non-TLSA in TLSA list"),
+        })
+        .collect();
+    assert!(cert_datas.contains(&leaf));
+    assert!(cert_datas.contains(&intermediate));
+    cleanup_name(&name, DnsRecordType::TLSA).await;
+}
+
+#[tokio::test]
 async fn tcp_unsigned_update_is_rejected() {
-    // Send an update via TCP without any TSIG signer. PowerDNS is configured to
-    // require TSIG, so the response must be a non-NoError code (REFUSED in practice).
+    // Send an update via TCP without any TSIG signer.
     if !enabled() {
         return;
     }

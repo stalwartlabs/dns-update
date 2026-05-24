@@ -11,7 +11,7 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder,
+    http::{HttpClient, HttpClientBuilder},
     utils::{strip_origin_from_name, txt_chunks_to_text},
 };
 use serde::{Deserialize, Serialize};
@@ -21,7 +21,7 @@ const DEFAULT_ENDPOINT: &str = "https://api.infomaniak.com";
 
 #[derive(Clone)]
 pub struct InfomaniakProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: String,
 }
 
@@ -94,7 +94,8 @@ impl InfomaniakProvider {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Bearer {}", access_token.as_ref()))
             .with_header("Accept", "application/json")
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             endpoint: DEFAULT_ENDPOINT.to_string(),
@@ -413,7 +414,7 @@ impl InfomaniakProvider {
             .collect())
     }
 
-    async fn send_expect_success<T>(&self, request: crate::http::HttpClient) -> crate::Result<T>
+    async fn send_expect_success<T>(&self, request: crate::http::HttpRequest) -> crate::Result<T>
     where
         T: serde::de::DeserializeOwned + Default,
     {

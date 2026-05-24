@@ -9,14 +9,17 @@
  * except according to those terms.
  */
 
-use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder};
+use crate::{
+    DnsRecord, DnsRecordType, Error, IntoFqdn,
+    http::{HttpClient, HttpClientBuilder},
+};
 use std::{collections::HashMap, time::Duration};
 
 const DEFAULT_ENDPOINT: &str = "https://dyn.dns.he.net/nic/update";
 
 #[derive(Clone)]
 pub struct HurricaneProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     credentials: HashMap<String, String>,
     endpoint: String,
 }
@@ -33,7 +36,8 @@ impl HurricaneProvider {
         }
         let client = HttpClientBuilder::default()
             .set_header("Content-Type", "application/x-www-form-urlencoded")
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Ok(Self {
             client,
             credentials,

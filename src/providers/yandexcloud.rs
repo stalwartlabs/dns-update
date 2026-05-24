@@ -11,7 +11,7 @@
 
 #![cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 
-use crate::http::HttpClientBuilder;
+use crate::http::{HttpClient, HttpClientBuilder};
 use crate::jwt::{JwtSignAlgorithm, sign_jwt};
 use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
 use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord};
@@ -36,7 +36,7 @@ pub struct YandexCloudConfig {
 #[derive(Clone)]
 pub struct YandexCloudProvider {
     iam_client: Client,
-    http: HttpClientBuilder,
+    http: HttpClient,
     config: YandexCloudConfig,
     token: Arc<Mutex<Option<(String, Instant)>>>,
     endpoints: YandexCloudEndpoints,
@@ -102,7 +102,9 @@ impl YandexCloudProvider {
             .build()
             .map_err(|e| Error::Client(format!("Failed to build reqwest client: {}", e)))?;
 
-        let http = HttpClientBuilder::default().with_timeout(config.request_timeout);
+        let http = HttpClientBuilder::default()
+            .with_timeout(config.request_timeout)
+            .build();
 
         Ok(Self {
             iam_client,

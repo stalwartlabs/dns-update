@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,7 @@ const DEFAULT_ENDPOINT: &str = "https://api.dnsimple.com/v2";
 
 #[derive(Clone)]
 pub struct DNSimpleProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     account_id: String,
     endpoint: String,
 }
@@ -81,7 +82,8 @@ impl DNSimpleProvider {
     ) -> Self {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Bearer {}", auth_token.as_ref()))
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             account_id: account_id.as_ref().to_string(),

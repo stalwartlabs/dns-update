@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, Result, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use serde::Deserialize;
@@ -35,7 +36,7 @@ pub struct InfobloxConfig {
 
 #[derive(Clone)]
 pub struct InfobloxProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     base_url: String,
     dns_view: String,
 }
@@ -80,7 +81,8 @@ impl InfobloxProvider {
 
         let client = HttpClientBuilder::default()
             .with_header("Authorization", auth_header)
-            .with_timeout(config.request_timeout);
+            .with_timeout(config.request_timeout)
+            .build();
 
         Ok(Self {
             client,

@@ -10,7 +10,8 @@
  */
 
 use crate::{
-    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord, http::HttpClientBuilder,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 use serde::Deserialize;
@@ -22,7 +23,7 @@ const FORM_CONTENT_TYPE: &str = "application/x-www-form-urlencoded";
 
 #[derive(Clone)]
 pub struct Ipv64Provider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: Cow<'static, str>,
 }
 
@@ -55,7 +56,8 @@ impl Ipv64Provider {
         }
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Bearer {api_key}"))
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Ok(Self {
             client,
             endpoint: Cow::Borrowed(DEFAULT_API_ENDPOINT),

@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    http::HttpClientBuilder, utils::strip_origin_from_name,
+    http::{HttpClient, HttpClientBuilder},
+    utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, time::Duration};
@@ -21,7 +22,7 @@ const LIST_PAGE_LIMIT: u32 = 100;
 
 #[derive(Clone)]
 pub struct VercelProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: Cow<'static, str>,
     team_id: Option<String>,
 }
@@ -90,7 +91,8 @@ impl VercelProvider {
     ) -> Self {
         let client = HttpClientBuilder::default()
             .with_header("Authorization", format!("Bearer {}", auth_token.as_ref()))
-            .with_timeout(timeout);
+            .with_timeout(timeout)
+            .build();
         Self {
             client,
             endpoint: Cow::Borrowed(DEFAULT_API_ENDPOINT),

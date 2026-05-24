@@ -9,14 +9,17 @@
  * except according to those terms.
  */
 
-use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, http::HttpClientBuilder};
+use crate::{
+    DnsRecord, DnsRecordType, Error, IntoFqdn,
+    http::{HttpClient, HttpClientBuilder},
+};
 use std::{borrow::Cow, time::Duration};
 
 const DEFAULT_API_ENDPOINT: &str = "https://ddnss.de/upd.php";
 
 #[derive(Clone)]
 pub struct DdnssProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     key: String,
     endpoint: Cow<'static, str>,
 }
@@ -28,7 +31,7 @@ impl DdnssProvider {
             return Err(Error::Api("DDNSS key is empty".to_string()));
         }
         Ok(Self {
-            client: HttpClientBuilder::default().with_timeout(timeout),
+            client: HttpClientBuilder::default().with_timeout(timeout).build(),
             key: key.to_string(),
             endpoint: Cow::Borrowed(DEFAULT_API_ENDPOINT),
         })

@@ -17,7 +17,7 @@ use serde::Deserialize;
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
     crypto::{hmac_sha256, sha256_digest},
-    http::HttpClientBuilder,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 
@@ -27,7 +27,7 @@ const ALGORITHM: &str = "ACS3-HMAC-SHA256";
 
 #[derive(Clone)]
 pub struct AlidnsProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     access_key: String,
     secret_key: String,
     security_token: Option<String>,
@@ -105,7 +105,7 @@ impl AlidnsProvider {
         line: Option<impl AsRef<str>>,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
-        let client = HttpClientBuilder::default().with_timeout(timeout);
+        let client = HttpClientBuilder::default().with_timeout(timeout).build();
         let host = region
             .map(|r| {
                 let region = r.as_ref();

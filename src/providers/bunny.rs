@@ -11,7 +11,8 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, http::HttpClientBuilder,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
@@ -31,7 +32,7 @@ const BUNNY_TYPE_TLSA: u8 = 15;
 
 #[derive(Clone)]
 pub struct BunnyProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     endpoint: Cow<'static, str>,
 }
 
@@ -40,7 +41,8 @@ impl BunnyProvider {
         Ok(Self {
             client: HttpClientBuilder::default()
                 .with_header("AccessKey", api_key.as_ref())
-                .with_timeout(timeout),
+                .with_timeout(timeout)
+                .build(),
             endpoint: Cow::Borrowed(DEFAULT_API_ENDPOINT),
         })
     }

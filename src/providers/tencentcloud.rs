@@ -17,7 +17,7 @@ use std::{net::AddrParseError, time::Duration};
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
     crypto::{hmac_sha256, sha256_digest},
-    http::HttpClientBuilder,
+    http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
 
@@ -29,7 +29,7 @@ const DEFAULT_RECORD_LINE_ID: &str = "0";
 
 #[derive(Clone)]
 pub struct TencentCloudProvider {
-    client: HttpClientBuilder,
+    client: HttpClient,
     secret_id: String,
     secret_key: String,
     region: String,
@@ -112,7 +112,7 @@ impl TencentCloudProvider {
         session_token: Option<impl AsRef<str>>,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
-        let client = HttpClientBuilder::default().with_timeout(timeout);
+        let client = HttpClientBuilder::default().with_timeout(timeout).build();
         Ok(Self {
             client,
             secret_id: secret_id.as_ref().to_string(),

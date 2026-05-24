@@ -63,10 +63,21 @@ impl Rfc2136Provider {
     }
 
     async fn connect(&self) -> crate::Result<Client<TokioRuntimeProvider>> {
+        self.connect_inner(self.signer.as_ref()).await
+    }
+
+    async fn connect_unsigned(&self) -> crate::Result<Client<TokioRuntimeProvider>> {
+        self.connect_inner(None).await
+    }
+
+    async fn connect_inner(
+        &self,
+        signer: Option<&TSigner>,
+    ) -> crate::Result<Client<TokioRuntimeProvider>> {
         match &self.addr {
             DnsAddress::Udp(addr) => {
                 let mut builder = UdpClientStream::builder(*addr, TokioRuntimeProvider::new());
-                if let Some(signer) = &self.signer {
+                if let Some(signer) = signer {
                     builder = builder.with_signer(Some(signer.clone()));
                 }
                 let stream = builder.build();
@@ -79,7 +90,7 @@ impl Rfc2136Provider {
                     TcpClientStream::new(*addr, None, None, TokioRuntimeProvider::new());
                 let stream = stream_future.await?;
                 let mut multiplexer = DnsMultiplexer::new(stream, sender);
-                if let Some(signer) = &self.signer {
+                if let Some(signer) = signer {
                     multiplexer = multiplexer.with_signer(signer.clone());
                 }
                 let (client, bg) = Client::from_sender(multiplexer);
@@ -174,10 +185,10 @@ impl Rfc2136Provider {
         record_type: DnsRecordType,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
-        let owner = Name::from_str_relaxed(name.into_name().as_ref())?;
+        let owner = Name::from_str_relaxed(name.into_fqdn().as_ref())?;
         let rtype: RecordType = record_type.into();
 
-        let mut client = self.connect().await?;
+        let mut client = self.connect_unsigned().await?;
         let response = client.query(owner.clone(), DNSClass::IN, rtype).await?;
         if response.response_code != ResponseCode::NoError
             && response.response_code != ResponseCode::NXDomain
