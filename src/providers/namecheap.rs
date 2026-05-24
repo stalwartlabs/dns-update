@@ -519,11 +519,11 @@ fn build_hosts_for_record(
             hosts.push(Host {
                 name: subdomain.to_string(),
                 record_type: type_str,
-                address: value,
+                address: format!("{flags} {tag} {value}"),
                 mx_pref,
                 ttl: ttl_str,
-                caa_flag: Some(flags),
-                caa_tag: Some(tag),
+                caa_flag: None,
+                caa_tag: None,
             });
         }
     }

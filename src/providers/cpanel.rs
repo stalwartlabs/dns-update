@@ -450,9 +450,13 @@ fn encode_record_data(record: &DnsRecord) -> crate::Result<Vec<String>> {
         DnsRecord::NS(value) => vec![ensure_trailing_dot(value)],
         DnsRecord::MX(mx) => vec![mx.priority.to_string(), ensure_trailing_dot(&mx.exchange)],
         DnsRecord::TXT(value) => {
-            let mut out = String::new();
-            txt_chunks_to_text(&mut out, value, " ");
-            vec![out]
+            if value.len() <= 255 && !value.contains('"') && !value.contains('\\') {
+                vec![value.clone()]
+            } else {
+                let mut out = String::new();
+                txt_chunks_to_text(&mut out, value, " ");
+                vec![out]
+            }
         }
         DnsRecord::SRV(srv) => vec![
             srv.priority.to_string(),
@@ -542,7 +546,9 @@ fn decoded_data_matches(stored_b64: &[String], desired: &[String]) -> bool {
     if stored.len() != desired.len() {
         return false;
     }
-    stored.iter().zip(desired.iter()).all(|(a, b)| a == b)
+    stored.iter().zip(desired.iter()).all(|(a, b)| {
+        a == b || unquote_txt(a) == *b
+    })
 }
 
 fn decode_to_dns_record(record_type: DnsRecordType, fields: &[String]) -> crate::Result<DnsRecord> {

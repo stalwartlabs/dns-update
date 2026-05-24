@@ -18,9 +18,10 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{
     net::AddrParseError,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
+use tokio::sync::Mutex;
 
 const DEFAULT_ENDPOINT: &str = "https://ccp.netcup.net/run/webservice/servers/endpoint.php?JSON";
 const SESSION_TTL_SECS: u64 = 10 * 60;
@@ -329,21 +330,16 @@ impl NetcupProvider {
     }
 
     async fn ensure_session(&self) -> crate::Result<String> {
-        if let Some((ref id, expiry)) = *self.session_lock()?
+        let mut guard = self.session.lock().await;
+        if let Some((ref id, expiry)) = *guard
             && Instant::now() < expiry
         {
             return Ok(id.clone());
         }
         let id = self.login().await?;
         let expiry = Instant::now() + Duration::from_secs(SESSION_TTL_SECS);
-        *self.session_lock()? = Some((id.clone(), expiry));
+        *guard = Some((id.clone(), expiry));
         Ok(id)
-    }
-
-    fn session_lock(&self) -> crate::Result<std::sync::MutexGuard<'_, Option<(String, Instant)>>> {
-        self.session
-            .lock()
-            .map_err(|_| Error::Client("Netcup session lock poisoned".into()))
     }
 
     async fn login(&self) -> crate::Result<String> {

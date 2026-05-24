@@ -525,7 +525,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_caa_uses_split_flag_tag_fields() {
+    async fn test_caa_uses_combined_address_string() {
         let mut server = mockito::Server::new_async().await;
         let body = get_hosts_xml("");
         let get = server
@@ -539,9 +539,7 @@ mod tests {
             .mock("POST", "/xml.response")
             .match_body(Matcher::AllOf(vec![
                 Matcher::UrlEncoded("RecordType1".into(), "CAA".into()),
-                Matcher::UrlEncoded("Address1".into(), "letsencrypt.org".into()),
-                Matcher::UrlEncoded("Flag1".into(), "0".into()),
-                Matcher::UrlEncoded("Tag1".into(), "issue".into()),
+                Matcher::UrlEncoded("Address1".into(), "0 issue letsencrypt.org".into()),
             ]))
             .with_status(200)
             .with_body(SET_HOSTS_OK)

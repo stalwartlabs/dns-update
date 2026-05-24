@@ -239,11 +239,32 @@ impl MythicBeastsProvider {
             return Ok(());
         }
         let token = self.ensure_token().await?;
+        let url = self.rrset_url(&domain, &subdomain, record_type);
 
-        let body = RecordsBody { records: payloads };
+        let existing = match self
+            .client
+            .get(url.clone())
+            .with_header("Authorization", format!("Bearer {token}"))
+            .send::<ListResponse>()
+            .await
+        {
+            Ok(r) => r.records,
+            Err(Error::NotFound) => Vec::new(),
+            Err(e) => return Err(e),
+        };
+
+        let to_add: Vec<RecordPayload> = payloads
+            .into_iter()
+            .filter(|payload| !existing.iter().any(|e| rdata_matches(e, payload)))
+            .collect();
+        if to_add.is_empty() {
+            return Ok(());
+        }
+
+        let body = RecordsBody { records: to_add };
         let _: MutationResponse = self
             .client
-            .post(self.rrset_url(&domain, &subdomain, record_type))
+            .post(url)
             .with_header("Authorization", format!("Bearer {token}"))
             .with_body(body)?
             .send()

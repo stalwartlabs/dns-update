@@ -59,6 +59,13 @@ struct Record {
 struct RecordContent {
     content: String,
     priority: u16,
+    ttl: u32,
+}
+
+impl RecordContent {
+    fn rdata_matches(&self, other: &Self) -> bool {
+        self.content == other.content && self.priority == other.priority
+    }
 }
 
 fn is_zero_u16(v: &u16) -> bool {
@@ -115,7 +122,7 @@ impl IonosProvider {
             return Ok(());
         }
 
-        let desired = build_contents(&records)?;
+        let desired = build_contents(&records, ttl)?;
         let mut existing_pool = existing;
         let mut to_add: Vec<Record> = Vec::new();
 
@@ -168,11 +175,14 @@ impl IonosProvider {
             .await?;
         let existing_contents: Vec<RecordContent> =
             existing.iter().map(record_to_content).collect();
-        let desired = build_contents(&records)?;
+        let desired = build_contents(&records, ttl)?;
 
         let mut to_add: Vec<Record> = Vec::new();
         for (record, content) in records.iter().zip(desired.iter()) {
-            if existing_contents.iter().any(|c| c == content) {
+            if existing_contents
+                .iter()
+                .any(|c| c.rdata_matches(content))
+            {
                 continue;
             }
             let mut payloads = build_records(record, &name, ttl)?;
@@ -207,12 +217,12 @@ impl IonosProvider {
         let existing = self
             .list_records(&zone_id, &name, record_type.as_str())
             .await?;
-        let to_remove = build_contents(&records)?;
+        let to_remove = build_contents(&records, 0)?;
 
         for content in to_remove {
             if let Some(entry) = existing
                 .iter()
-                .find(|r| record_to_content(r) == content && r.id.is_some())
+                .find(|r| record_to_content(r).rdata_matches(&content) && r.id.is_some())
                 && let Some(id) = entry.id.as_deref()
             {
                 self.delete_record(&zone_id, id).await?;
@@ -317,14 +327,15 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
     Ok(())
 }
 
-fn build_contents(records: &[DnsRecord]) -> crate::Result<Vec<RecordContent>> {
+fn build_contents(records: &[DnsRecord], ttl: u32) -> crate::Result<Vec<RecordContent>> {
     let mut out = Vec::with_capacity(records.len());
     for record in records {
-        let payloads = build_records(record, "_", 0)?;
+        let payloads = build_records(record, "_", ttl)?;
         for payload in payloads {
             out.push(RecordContent {
                 content: payload.content,
                 priority: payload.priority,
+                ttl: payload.ttl,
             });
         }
     }
@@ -335,6 +346,7 @@ fn record_to_content(record: &Record) -> RecordContent {
     RecordContent {
         content: record.content.clone(),
         priority: record.priority,
+        ttl: record.ttl,
     }
 }
 

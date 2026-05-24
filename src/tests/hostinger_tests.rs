@@ -94,51 +94,11 @@ mod tests {
     async fn set_rrset_replaces_target_keeps_other_rrsets() {
         let mut server = mockito::Server::new_async().await;
 
-        let zone_get = server
-            .mock("GET", "/api/dns/v1/zones/example.com")
-            .with_status(200)
-            .with_body(
-                json!([
-                    {
-                        "name": "www",
-                        "type": "A",
-                        "ttl": 3600,
-                        "records": [{ "content": "1.1.1.1" }]
-                    },
-                    {
-                        "name": "www",
-                        "type": "AAAA",
-                        "ttl": 3600,
-                        "records": [{ "content": "2001:db8::9" }]
-                    },
-                    {
-                        "name": "@",
-                        "type": "MX",
-                        "ttl": 3600,
-                        "records": [{ "content": "10 mx.example.com." }]
-                    }
-                ])
-                .to_string(),
-            )
-            .create();
-
         let put_mock = server
             .mock("PUT", "/api/dns/v1/zones/example.com")
             .match_body(mockito::Matcher::Json(json!({
                 "overwrite": true,
                 "zone": [
-                    {
-                        "name": "www",
-                        "type": "AAAA",
-                        "ttl": 3600,
-                        "records": [{ "content": "2001:db8::9" }]
-                    },
-                    {
-                        "name": "@",
-                        "type": "MX",
-                        "ttl": 3600,
-                        "records": [{ "content": "10 mx.example.com." }]
-                    },
                     {
                         "name": "www",
                         "type": "A",
@@ -170,7 +130,6 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        zone_get.assert();
         put_mock.assert();
     }
 
@@ -246,17 +205,11 @@ mod tests {
                     {
                         "name": "www",
                         "type": "A",
-                        "ttl": 600,
+                        "ttl": 3600,
                         "records": [
                             { "content": "1.1.1.1" },
                             { "content": "2.2.2.2" }
                         ]
-                    },
-                    {
-                        "name": "@",
-                        "type": "TXT",
-                        "ttl": 3600,
-                        "records": [{ "content": "untouched" }]
                     }
                 ]
             })))
@@ -549,12 +502,6 @@ mod tests {
     async fn set_rrset_apex_mx_with_fqdn_normalization() {
         let mut server = mockito::Server::new_async().await;
 
-        let zone_get = server
-            .mock("GET", "/api/dns/v1/zones/example.com")
-            .with_status(200)
-            .with_body("[]")
-            .create();
-
         let put_mock = server
             .mock("PUT", "/api/dns/v1/zones/example.com")
             .match_body(mockito::Matcher::Json(json!({
@@ -586,7 +533,6 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        zone_get.assert();
         put_mock.assert();
     }
 }

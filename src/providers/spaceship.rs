@@ -176,15 +176,14 @@ impl SpaceshipProvider {
         let name = name.into_name();
         let domain = origin.into_name();
         let raw_subdomain = strip_origin_from_name(&name, &domain, None);
-        let listed_name =
-            self.normalize_subdomain_for_delete(raw_subdomain.clone(), record_type)?;
+        let identity = self.rrset_identity(&raw_subdomain, record_type)?;
         let type_str = record_type.as_str();
 
         let existing: Vec<SpaceshipDnsRecord> = self
             .fetch_records(&domain)
             .await?
             .into_iter()
-            .filter(|r| r.name == listed_name && r.record_type == type_str)
+            .filter(|r| identity.matches(r, type_str))
             .collect();
 
         let desired: Vec<SpaceshipDnsRecord> = records
@@ -247,15 +246,14 @@ impl SpaceshipProvider {
         let name = name.into_name();
         let domain = origin.into_name();
         let raw_subdomain = strip_origin_from_name(&name, &domain, None);
-        let listed_name =
-            self.normalize_subdomain_for_delete(raw_subdomain.clone(), record_type)?;
+        let identity = self.rrset_identity(&raw_subdomain, record_type)?;
         let type_str = record_type.as_str();
 
         let existing: Vec<SpaceshipDnsRecord> = self
             .fetch_records(&domain)
             .await?
             .into_iter()
-            .filter(|r| r.name == listed_name && r.record_type == type_str)
+            .filter(|r| identity.matches(r, type_str))
             .collect();
 
         let desired: Vec<SpaceshipDnsRecord> = records
@@ -297,15 +295,14 @@ impl SpaceshipProvider {
         let name = name.into_name();
         let domain = origin.into_name();
         let raw_subdomain = strip_origin_from_name(&name, &domain, None);
-        let listed_name =
-            self.normalize_subdomain_for_delete(raw_subdomain.clone(), record_type)?;
+        let identity = self.rrset_identity(&raw_subdomain, record_type)?;
         let type_str = record_type.as_str();
 
         let existing: Vec<SpaceshipDnsRecord> = self
             .fetch_records(&domain)
             .await?
             .into_iter()
-            .filter(|r| r.name == listed_name && r.record_type == type_str)
+            .filter(|r| identity.matches(r, type_str))
             .collect();
 
         let targets: Vec<SpaceshipDnsRecord> = records
@@ -344,13 +341,13 @@ impl SpaceshipProvider {
         let name = name.into_name();
         let domain = origin.into_name();
         let raw_subdomain = strip_origin_from_name(&name, &domain, None);
-        let listed_name = self.normalize_subdomain_for_delete(raw_subdomain, record_type)?;
+        let identity = self.rrset_identity(&raw_subdomain, record_type)?;
         let type_str = record_type.as_str();
 
         self.fetch_records(&domain)
             .await?
             .into_iter()
-            .filter(|r| r.name == listed_name && r.record_type == type_str)
+            .filter(|r| identity.matches(r, type_str))
             .map(SpaceshipDnsRecord::into_dns_record)
             .collect()
     }
@@ -383,17 +380,67 @@ impl SpaceshipProvider {
         Ok(all_items)
     }
 
-    fn normalize_subdomain_for_delete(
+    fn rrset_identity(
         &self,
-        subdomain: String,
+        subdomain: &str,
         record_type: DnsRecordType,
-    ) -> crate::Result<String> {
+    ) -> crate::Result<RrsetIdentity> {
         match record_type {
-            DnsRecordType::SRV | DnsRecordType::TLSA => {
-                let (_left, _right, normalized_name) = split_service_protocol_labels(&subdomain)?;
-                Ok(normalized_name)
+            DnsRecordType::SRV => {
+                let (service, protocol, name) = split_service_protocol_labels(subdomain)?;
+                Ok(RrsetIdentity::Srv {
+                    name,
+                    service,
+                    protocol,
+                })
             }
-            _ => Ok(subdomain),
+            DnsRecordType::TLSA => {
+                let (port_label, protocol, name) = split_service_protocol_labels(subdomain)?;
+                let port = parse_tlsa_port_label(&port_label)?;
+                Ok(RrsetIdentity::Tlsa {
+                    name,
+                    port,
+                    protocol,
+                })
+            }
+            _ => Ok(RrsetIdentity::Simple {
+                name: subdomain.to_string(),
+            }),
+        }
+    }
+}
+
+enum RrsetIdentity {
+    Simple { name: String },
+    Srv { name: String, service: String, protocol: String },
+    Tlsa { name: String, port: u16, protocol: String },
+}
+
+impl RrsetIdentity {
+    fn matches(&self, r: &SpaceshipDnsRecord, type_str: &str) -> bool {
+        if r.record_type != type_str {
+            return false;
+        }
+        match self {
+            Self::Simple { name } => r.name == *name,
+            Self::Srv {
+                name,
+                service,
+                protocol,
+            } => {
+                r.name == *name
+                    && r.service.as_deref() == Some(service.as_str())
+                    && r.protocol.as_deref() == Some(protocol.as_str())
+            }
+            Self::Tlsa {
+                name,
+                port,
+                protocol,
+            } => {
+                r.name == *name
+                    && r.port.as_ref().and_then(|v| v.as_u64()) == Some(u64::from(*port))
+                    && r.protocol.as_deref() == Some(protocol.as_str())
+            }
         }
     }
 }

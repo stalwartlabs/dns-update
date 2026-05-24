@@ -152,14 +152,23 @@ impl UltraDnsProvider {
         let zone = ensure_fqdn(origin.into_fqdn().as_ref());
         let desired = build_rdata(records)?;
 
-        let existing = self.fetch_rrset(&zone, record_type, &owner).await?;
-        let mut merged = existing.unwrap_or_default();
+        let (mut merged, effective_ttl) = match self
+            .fetch_rrset_full(&zone, record_type, &owner)
+            .await?
+        {
+            Some((existing, existing_ttl)) => (existing, existing_ttl),
+            None => (Vec::new(), ttl),
+        };
+        let before = merged.len();
         for value in desired {
             if !merged.contains(&value) {
                 merged.push(value);
             }
         }
-        self.put_rrset(&zone, record_type, &owner, ttl, merged)
+        if merged.len() == before {
+            return Ok(());
+        }
+        self.put_rrset(&zone, record_type, &owner, effective_ttl, merged)
             .await
     }
 

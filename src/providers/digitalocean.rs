@@ -137,6 +137,7 @@ impl DigitalOceanProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_unsupported(record_type)?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
         let subdomain = strip_origin_from_name(&name, &domain, None);
@@ -173,6 +174,7 @@ impl DigitalOceanProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_unsupported(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -200,6 +202,7 @@ impl DigitalOceanProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_unsupported(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -293,6 +296,15 @@ impl DigitalOceanProvider {
             .await
             .map(|_| ())
     }
+}
+
+fn reject_unsupported(record_type: DnsRecordType) -> crate::Result<()> {
+    if record_type == DnsRecordType::TLSA {
+        return Err(Error::Api(
+            "TLSA records are not supported by DigitalOcean".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn build_record_data(

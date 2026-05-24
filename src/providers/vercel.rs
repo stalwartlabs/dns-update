@@ -178,17 +178,18 @@ impl VercelProvider {
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
         let desired = build_contents(record_type, records)?;
         let existing = self.list_at(&domain, &subdomain, record_type).await?;
-        let existing_contents: Vec<VercelContent> = existing
+        let mut effective: Vec<VercelContent> = existing
             .iter()
             .filter_map(|r| listed_to_content(r, record_type))
             .collect();
 
         for content in desired {
-            if existing_contents.contains(&content) {
+            if effective.contains(&content) {
                 continue;
             }
             self.create_record(&domain, &subdomain, record_type, ttl, &content)
                 .await?;
+            effective.push(content);
         }
         Ok(())
     }

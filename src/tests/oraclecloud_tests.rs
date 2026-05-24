@@ -176,6 +176,16 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let _zones = mock_zone(&mut server, "example.com", "zone-id");
 
+        let get = server
+            .mock(
+                "GET",
+                Matcher::Regex(r"/20180115/zones/zone-id/records/api\.example\.com/A".into()),
+            )
+            .with_status(200)
+            .with_body(json!({"items": []}).to_string())
+            .create_async()
+            .await;
+
         let patch = server
             .mock(
                 "PATCH",
@@ -209,6 +219,7 @@ mod tests {
             )
             .await;
         assert!(result.is_ok(), "expected ok, got {:?}", result);
+        get.assert_async().await;
         patch.assert_async().await;
     }
 

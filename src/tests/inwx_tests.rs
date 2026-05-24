@@ -19,7 +19,7 @@ mod tests {
     use std::time::Duration;
 
     fn setup(server_url: &str) -> InwxProvider {
-        InwxProvider::new("user", "pass", None, false, Some(Duration::from_secs(2)))
+        InwxProvider::new("user", "pass", false, Some(Duration::from_secs(2)))
             .expect("provider")
             .with_endpoint(server_url)
             .with_cached_session("inwx-session=abcd")
@@ -37,7 +37,7 @@ mod tests {
     #[test]
     fn dns_updater_creation() {
         let updater =
-            DnsUpdater::new_inwx("user", "pass", None, false, Some(Duration::from_secs(1)));
+            DnsUpdater::new_inwx("user", "pass", false, Some(Duration::from_secs(1)));
         assert!(matches!(updater, Ok(DnsUpdater::Inwx(..))));
     }
 
@@ -762,14 +762,8 @@ mod tests {
         let password = "";
         let domain = "";
         assert!(!username.is_empty() && !password.is_empty() && !domain.is_empty());
-        let provider = InwxProvider::new(
-            username,
-            password,
-            None,
-            true,
-            Some(Duration::from_secs(30)),
-        )
-        .expect("provider");
+        let provider = InwxProvider::new(username, password, true, Some(Duration::from_secs(30)))
+            .expect("provider");
         provider
             .set_rrset(
                 &format!("test.{domain}"),

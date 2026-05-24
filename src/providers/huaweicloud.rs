@@ -199,7 +199,7 @@ impl HuaweiCloudProvider {
                         merged.push(v);
                     }
                 }
-                self.put_recordset(&zone_id, &rs.id, &name_fqdn, record_type, ttl, merged)
+                self.put_recordset(&zone_id, &rs.id, &name_fqdn, record_type, rs.ttl, merged)
                     .await
             }
             None => {

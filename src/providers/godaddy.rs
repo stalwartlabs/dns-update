@@ -149,6 +149,10 @@ impl GodaddyProvider {
             return Ok(());
         }
 
+        for entry in merged.iter_mut() {
+            entry.ttl = ttl;
+        }
+
         self.client
             .put(url)
             .with_body(merged)?

@@ -441,12 +441,8 @@ fn listed_to_value(record: &DomainRecord) -> RecordValue {
         },
         weight: if is_srv { Some(record.weight) } else { None },
         port: if is_srv { Some(record.port) } else { None },
-        service: if is_srv { record.service.clone() } else { None },
-        protocol: if is_srv {
-            record.protocol.clone()
-        } else {
-            None
-        },
+        service: None,
+        protocol: None,
         tag: if is_caa { record.tag.clone() } else { None },
     }
 }

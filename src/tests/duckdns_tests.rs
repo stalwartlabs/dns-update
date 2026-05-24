@@ -27,9 +27,8 @@ mod tests {
         let mock = server
             .mock("GET", "/")
             .match_query(Matcher::AllOf(vec![
-                Matcher::UrlEncoded("domains".into(), "host.duckdns.org".into()),
+                Matcher::UrlEncoded("domains".into(), "host".into()),
                 Matcher::UrlEncoded("token".into(), "test_token".into()),
-                Matcher::UrlEncoded("clear".into(), "false".into()),
                 Matcher::UrlEncoded("txt".into(), "single-value".into()),
             ]))
             .with_status(200)
@@ -52,14 +51,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_set_rrset_empty_clears() {
+    async fn test_set_rrset_empty_clears_txt_without_clear_flag() {
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/")
             .match_query(Matcher::AllOf(vec![
-                Matcher::UrlEncoded("domains".into(), "host.duckdns.org".into()),
+                Matcher::UrlEncoded("domains".into(), "host".into()),
                 Matcher::UrlEncoded("token".into(), "test_token".into()),
-                Matcher::UrlEncoded("clear".into(), "true".into()),
+                Matcher::UrlEncoded("txt".into(), "".into()),
             ]))
             .with_status(200)
             .with_body("OK")
@@ -78,6 +77,24 @@ mod tests {
 
         assert!(result.is_ok(), "set_rrset returned: {result:?}");
         mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_type_mismatch_returns_api_error() {
+        let provider = DuckDnsProvider::new("test_token", Some(Duration::from_secs(1))).unwrap();
+        let result = provider
+            .set_rrset(
+                "host.duckdns.org",
+                DnsRecordType::TXT,
+                300,
+                vec![DnsRecord::A("1.2.3.4".parse().unwrap())],
+                "host.duckdns.org",
+            )
+            .await;
+        assert!(
+            matches!(result, Err(Error::Api(ref msg)) if msg.contains("RRSet record type mismatch")),
+            "expected RRSet type mismatch, got {result:?}"
+        );
     }
 
     #[tokio::test]

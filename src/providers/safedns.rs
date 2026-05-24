@@ -109,6 +109,7 @@ impl SafeDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_unsupported(record_type)?;
         let fqdn = name.into_name().into_owned();
         let zone = origin.into_name().into_owned();
         let desired = build_contents(record_type, records)?;
@@ -145,6 +146,7 @@ impl SafeDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_unsupported(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -169,6 +171,7 @@ impl SafeDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_unsupported(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -265,6 +268,15 @@ impl SafeDnsProvider {
             .await
             .map(|_| ())
     }
+}
+
+fn reject_unsupported(record_type: DnsRecordType) -> crate::Result<()> {
+    if record_type == DnsRecordType::TLSA {
+        return Err(Error::Api(
+            "TLSA records are not supported by SafeDNS".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn build_contents(

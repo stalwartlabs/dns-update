@@ -558,7 +558,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_remove_from_rrset_skips_can_delete_false() {
+    async fn test_remove_from_rrset_errors_on_can_delete_false() {
         let mut server = mockito::Server::new_async().await;
         let list = mock_list(
             &mut server,
@@ -587,7 +587,10 @@ mod tests {
             )
             .await;
 
-        assert!(result.is_ok(), "{:?}", result);
+        assert!(
+            matches!(result, Err(Error::Api(ref msg)) if msg.contains("can_delete=false")),
+            "expected can_delete error, got {result:?}"
+        );
         list.assert();
     }
 

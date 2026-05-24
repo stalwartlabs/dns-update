@@ -397,7 +397,7 @@ impl OvhProvider {
         for wanted in &desired {
             if let Some(pos) = leftovers
                 .iter()
-                .position(|e| e.field_type == wanted.field_type && e.target == wanted.target)
+                .position(|e| target_equivalent(e, wanted))
             {
                 leftovers.swap_remove(pos);
             } else {
@@ -442,7 +442,7 @@ impl OvhProvider {
         for wire in desired {
             if existing
                 .iter()
-                .any(|e| e.field_type == wire.field_type && e.target == wire.target)
+                .any(|e| target_equivalent(e, &wire))
             {
                 continue;
             }
@@ -476,7 +476,7 @@ impl OvhProvider {
         for wire in to_remove {
             if let Some(entry) = existing
                 .iter()
-                .find(|e| e.field_type == wire.field_type && e.target == wire.target)
+                .find(|e| target_equivalent(e, &wire))
             {
                 self.delete_record_id(&zone, entry.id).await?;
                 mutated = true;
@@ -521,6 +521,41 @@ fn build_wire(
         out.push(record.into());
     }
     Ok(out)
+}
+
+fn target_equivalent(existing: &OvhRecordBody, wanted: &OvhRecordFormat) -> bool {
+    if existing.field_type != wanted.field_type {
+        return false;
+    }
+    if existing.target == wanted.target {
+        return true;
+    }
+    match wanted.field_type.as_str() {
+        "CNAME" | "NS" => {
+            existing.target.trim_end_matches('.').eq_ignore_ascii_case(
+                wanted.target.trim_end_matches('.'),
+            )
+        }
+        "MX" | "SRV" => {
+            normalize_priority_target(&existing.target)
+                == normalize_priority_target(&wanted.target)
+        }
+        "TLSA" => existing.target.to_ascii_lowercase() == wanted.target.to_ascii_lowercase(),
+        _ => false,
+    }
+}
+
+fn normalize_priority_target(value: &str) -> String {
+    let trimmed = value.trim();
+    let last_space = trimmed.rfind(char::is_whitespace);
+    match last_space {
+        Some(idx) => {
+            let (prefix, tail) = trimmed.split_at(idx);
+            let tail_trimmed = tail.trim().trim_end_matches('.').to_ascii_lowercase();
+            format!("{} {}", prefix.trim(), tail_trimmed)
+        }
+        None => trimmed.trim_end_matches('.').to_ascii_lowercase(),
+    }
 }
 
 fn parse_ovh_target(record_type: DnsRecordType, target: &str) -> crate::Result<DnsRecord> {

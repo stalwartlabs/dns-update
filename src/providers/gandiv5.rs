@@ -34,6 +34,8 @@ struct RRSetPayload {
 struct RRSetResponse {
     #[serde(default)]
     rrset_values: Vec<String>,
+    #[serde(default)]
+    rrset_ttl: Option<u32>,
 }
 
 const DEFAULT_API_ENDPOINT: &str = "https://api.gandi.net/v5/livedns";
@@ -108,9 +110,11 @@ impl GandiV5Provider {
         let subdomain = strip_origin_from_name(&name, &domain, None);
         let new_values = build_values(record_type, records)?;
 
-        let mut current = self
-            .get_rrset_values(&domain, &subdomain, record_type)
-            .await?;
+        let existing = self.fetch_rrset(&domain, &subdomain, record_type).await?;
+        let (mut current, effective_ttl) = match existing {
+            Some(rrset) => (rrset.rrset_values, rrset.rrset_ttl.unwrap_or(ttl)),
+            None => (Vec::new(), ttl),
+        };
         let mut changed = false;
         for value in new_values {
             if !current.iter().any(|existing| existing == &value) {
@@ -121,7 +125,7 @@ impl GandiV5Provider {
         if !changed {
             return Ok(());
         }
-        self.put_rrset_url(&domain, &subdomain, record_type, ttl, current)
+        self.put_rrset_url(&domain, &subdomain, record_type, effective_ttl, current)
             .await
     }
 
@@ -140,13 +144,13 @@ impl GandiV5Provider {
         let subdomain = strip_origin_from_name(&name, &domain, None);
         let to_remove = build_values(record_type, records)?;
 
-        let current = self
-            .get_rrset_values(&domain, &subdomain, record_type)
-            .await?;
-        if current.is_empty() {
+        let existing = self.fetch_rrset(&domain, &subdomain, record_type).await?;
+        let Some(rrset) = existing else {
             return Ok(());
-        }
-        let remaining: Vec<String> = current
+        };
+        let current_ttl = rrset.rrset_ttl;
+        let remaining: Vec<String> = rrset
+            .rrset_values
             .into_iter()
             .filter(|v| !to_remove.iter().any(|r| r == v))
             .collect();
@@ -156,10 +160,7 @@ impl GandiV5Provider {
                 .delete_rrset_url(&domain, &subdomain, record_type)
                 .await;
         }
-        let ttl = self
-            .get_rrset_ttl(&domain, &subdomain, record_type)
-            .await?
-            .unwrap_or(3600);
+        let ttl = current_ttl.unwrap_or(3600);
         self.put_rrset_url(&domain, &subdomain, record_type, ttl, remaining)
             .await
     }
@@ -173,9 +174,10 @@ impl GandiV5Provider {
         let name = name.into_name();
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, None);
-        let values = self
-            .get_rrset_values(&domain, &subdomain, record_type)
-            .await?;
+        let values = match self.fetch_rrset(&domain, &subdomain, record_type).await? {
+            Some(rrset) => rrset.rrset_values,
+            None => Vec::new(),
+        };
         values
             .into_iter()
             .map(|v| parse_value(record_type, &v))
@@ -226,47 +228,6 @@ impl GandiV5Provider {
             .await;
         match result {
             Ok(_) | Err(Error::NotFound) => Ok(()),
-            Err(e) => Err(e),
-        }
-    }
-
-    async fn get_rrset_values(
-        &self,
-        domain: &str,
-        subdomain: &str,
-        record_type: DnsRecordType,
-    ) -> crate::Result<Vec<String>> {
-        match self.fetch_rrset(domain, subdomain, record_type).await? {
-            Some(rrset) => Ok(rrset.rrset_values),
-            None => Ok(Vec::new()),
-        }
-    }
-
-    async fn get_rrset_ttl(
-        &self,
-        domain: &str,
-        subdomain: &str,
-        record_type: DnsRecordType,
-    ) -> crate::Result<Option<u32>> {
-        #[derive(Deserialize)]
-        struct WithTtl {
-            #[serde(default)]
-            rrset_ttl: Option<u32>,
-        }
-        let result = self
-            .client
-            .get(format!(
-                "{}/domains/{}/records/{}/{}",
-                self.endpoint,
-                domain,
-                subdomain,
-                record_type.as_str(),
-            ))
-            .send::<WithTtl>()
-            .await;
-        match result {
-            Ok(r) => Ok(r.rrset_ttl),
-            Err(Error::NotFound) => Ok(None),
             Err(e) => Err(e),
         }
     }

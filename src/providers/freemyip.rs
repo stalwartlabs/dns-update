@@ -77,27 +77,40 @@ impl FreeMyIpProvider {
 
     pub(crate) async fn add_to_rrset(
         &self,
-        _name: impl IntoFqdn<'_>,
-        _record_type: DnsRecordType,
-        _ttl: u32,
-        _records: Vec<DnsRecord>,
-        _origin: impl IntoFqdn<'_>,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        Err(Error::Api(
-            "FreeMyIP does not support add_to_rrset (no list endpoint)".to_string(),
-        ))
+        if record_type != DnsRecordType::TXT {
+            return Err(Error::Api(
+                "Only TXT records are supported by FreeMyIP".to_string(),
+            ));
+        }
+        if records.is_empty() {
+            return Ok(());
+        }
+        self.set_rrset(name, record_type, ttl, records, origin).await
     }
 
     pub(crate) async fn remove_from_rrset(
         &self,
-        _name: impl IntoFqdn<'_>,
-        _record_type: DnsRecordType,
-        _records: Vec<DnsRecord>,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        Err(Error::Api(
-            "FreeMyIP does not support remove_from_rrset (no list endpoint)".to_string(),
-        ))
+        if record_type != DnsRecordType::TXT {
+            return Err(Error::Api(
+                "Only TXT records are supported by FreeMyIP".to_string(),
+            ));
+        }
+        if records.is_empty() {
+            return Ok(());
+        }
+        let domain = full_domain(name.into_name().as_ref())?;
+        self.update_txt(&domain, "").await
     }
 
     pub(crate) async fn list_rrset(

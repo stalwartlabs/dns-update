@@ -60,14 +60,13 @@ impl DuckDnsProvider {
                 "Only TXT records are supported by DuckDNS".to_string(),
             ));
         }
+        check_record_types(record_type, &records)?;
         let domain = main_domain(name.into_name().as_ref())?;
         match records.len() {
-            0 => self.update_txt(&domain, "", true).await,
+            0 => self.update_txt(&domain, "").await,
             1 => match records.into_iter().next() {
-                Some(DnsRecord::TXT(value)) => self.update_txt(&domain, &value, false).await,
-                _ => Err(Error::Api(
-                    "Only TXT records are supported by DuckDNS".to_string(),
-                )),
+                Some(DnsRecord::TXT(value)) => self.update_txt(&domain, &value).await,
+                _ => unreachable!("check_record_types enforces TXT variant"),
             },
             _ => Err(Error::Api(
                 "DuckDNS only supports one TXT record per host".to_string(),
@@ -111,11 +110,10 @@ impl DuckDnsProvider {
         ))
     }
 
-    async fn update_txt(&self, domain: &str, value: &str, clear: bool) -> crate::Result<()> {
+    async fn update_txt(&self, domain: &str, value: &str) -> crate::Result<()> {
         let query = serde_urlencoded::to_string([
             ("domains", domain),
             ("token", self.token.as_str()),
-            ("clear", if clear { "true" } else { "false" }),
             ("txt", value),
         ])
         .map_err(|err| Error::Serialize(format!("Failed to encode query: {err}")))?;
@@ -144,8 +142,7 @@ fn main_domain(name: &str) -> crate::Result<String> {
                 "DuckDNS requires a subdomain of {DUCKDNS_SUFFIX}: {name}"
             )));
         }
-        let start = labels.len() - 3;
-        Ok(labels[start..].join("."))
+        Ok(labels[labels.len() - 3].to_string())
     } else {
         let labels: Vec<&str> = trimmed.split('.').collect();
         if labels.is_empty() {
@@ -153,4 +150,17 @@ fn main_domain(name: &str) -> crate::Result<String> {
         }
         Ok(labels[labels.len() - 1].to_string())
     }
+}
+
+fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
+    for r in records {
+        if r.as_type() != expected {
+            return Err(Error::Api(format!(
+                "RRSet record type mismatch: expected {}, got {}",
+                expected.as_str(),
+                r.as_type().as_str(),
+            )));
+        }
+    }
+    Ok(())
 }

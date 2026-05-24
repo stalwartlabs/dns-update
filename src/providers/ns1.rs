@@ -115,7 +115,14 @@ impl Ns1Provider {
 
         let existing = self.fetch_rrset(&zone, &domain, rr_type).await?;
         let exists = existing.is_some();
-        let mut merged = existing.map(|r| r.answers).unwrap_or_default();
+        let (mut merged, effective_ttl) = match existing {
+            Some(rec) => {
+                let existing_ttl = rec.ttl.unwrap_or(ttl);
+                (rec.answers, existing_ttl)
+            }
+            None => (Vec::new(), ttl),
+        };
+        let before = merged.len();
         for answer in incoming {
             if !merged.contains(&answer) {
                 merged.push(answer);
@@ -124,7 +131,10 @@ impl Ns1Provider {
         if merged.is_empty() {
             return Ok(());
         }
-        self.write_rrset(&zone, &domain, rr_type, ttl, merged, exists)
+        if exists && merged.len() == before {
+            return Ok(());
+        }
+        self.write_rrset(&zone, &domain, rr_type, effective_ttl, merged, exists)
             .await
     }
 

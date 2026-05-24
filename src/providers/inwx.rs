@@ -29,7 +29,6 @@ pub struct InwxProvider {
     client: Client,
     username: String,
     password: String,
-    shared_secret: Option<String>,
     endpoint: String,
     session: Arc<Mutex<Option<SessionState>>>,
 }
@@ -84,7 +83,6 @@ impl InwxProvider {
     pub(crate) fn new(
         username: impl Into<String>,
         password: impl Into<String>,
-        shared_secret: Option<String>,
         sandbox: bool,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
@@ -104,7 +102,6 @@ impl InwxProvider {
             client,
             username: username.into(),
             password: password.into(),
-            shared_secret,
             endpoint,
             session: Arc::new(Mutex::new(None)),
         })
@@ -365,11 +362,6 @@ impl InwxProvider {
             && !tfa.is_empty()
             && tfa != "0"
         {
-            if self.shared_secret.is_some() {
-                return Err(Error::Api(
-                    "INWX 2FA TOTP is not supported by this port".into(),
-                ));
-            }
             return Err(Error::Api(format!(
                 "INWX account requires 2FA ({tfa}); not supported by this port"
             )));

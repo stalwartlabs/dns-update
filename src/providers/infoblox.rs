@@ -292,7 +292,12 @@ fn wapi_object_for_type(record_type: DnsRecordType) -> Result<&'static str> {
         DnsRecordType::A => "record:a",
         DnsRecordType::AAAA => "record:aaaa",
         DnsRecordType::CNAME => "record:cname",
-        DnsRecordType::NS => "record:ns",
+        DnsRecordType::NS => {
+            return Err(Error::Api(
+                "NS records are not supported by Infoblox (requires non-empty glue addresses)"
+                    .to_string(),
+            ));
+        }
         DnsRecordType::MX => "record:mx",
         DnsRecordType::TXT => "record:txt",
         DnsRecordType::SRV => "record:srv",
@@ -315,10 +320,12 @@ fn build_update_body(record: &DnsRecord, ttl: u32) -> Result<Value> {
         DnsRecord::A(ip) => json!({ "ipv4addr": ip.to_string() }),
         DnsRecord::AAAA(ip) => json!({ "ipv6addr": ip.to_string() }),
         DnsRecord::CNAME(target) => json!({ "canonical": target }),
-        DnsRecord::NS(target) => json!({
-            "nameserver": target,
-            "addresses": Value::Array(Vec::new()),
-        }),
+        DnsRecord::NS(_) => {
+            return Err(Error::Api(
+                "NS records are not supported by Infoblox (requires non-empty glue addresses)"
+                    .to_string(),
+            ));
+        }
         DnsRecord::MX(mx) => json!({
             "mail_exchanger": mx.exchange,
             "preference": mx.priority,

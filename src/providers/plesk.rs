@@ -25,7 +25,7 @@ pub struct PleskProvider {
 
 #[derive(Serialize, Debug)]
 struct CreateRecordRequest<'a> {
-    #[serde(rename = "siteId")]
+    #[serde(rename = "site_id")]
     site_id: i64,
     #[serde(rename = "type")]
     record_type: &'a str,
@@ -47,7 +47,7 @@ struct CreateRecordResponse {
 #[allow(dead_code)]
 struct PleskRecord {
     id: i64,
-    #[serde(rename = "siteId")]
+    #[serde(rename = "site_id")]
     site_id: Option<i64>,
     #[serde(rename = "type")]
     record_type: String,
@@ -255,7 +255,7 @@ impl PleskProvider {
         domain: &str,
         record_type: DnsRecordType,
     ) -> crate::Result<Vec<PleskRecord>> {
-        let query = serde_urlencoded::to_string([("siteId", site_id.to_string())])
+        let query = serde_urlencoded::to_string([("site_id", site_id.to_string())])
             .map_err(|err| Error::Serialize(err.to_string()))?;
         let records = self
             .client

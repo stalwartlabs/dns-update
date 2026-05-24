@@ -179,6 +179,8 @@ impl ClouDnsProvider {
                     ("domain-name", zone.to_string()),
                     ("host", host.to_string()),
                     ("type", rr_type.to_string()),
+                    ("rows-per-page", "250".to_string()),
+                    ("page", "1".to_string()),
                 ],
             )
             .await?;
@@ -285,10 +287,10 @@ impl ClouDnsProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
+        reject_tlsa(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
-        reject_tlsa(record_type)?;
         let name = name.into_name().into_owned();
         let zone = origin.into_name().to_string();
         let host = strip_origin_from_name(&name, &zone, Some(""));
@@ -314,10 +316,10 @@ impl ClouDnsProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
+        reject_tlsa(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
-        reject_tlsa(record_type)?;
         let name = name.into_name().into_owned();
         let zone = origin.into_name().to_string();
         let host = strip_origin_from_name(&name, &zone, Some(""));
@@ -347,7 +349,15 @@ impl ClouDnsProvider {
         let host = strip_origin_from_name(&name, &zone, Some(""));
         let rr_type = record_type.as_str();
         let listed = self.list_at(&zone, &host, rr_type).await?;
-        listed.into_iter().map(record_to_dns_record).collect()
+        let mut out = Vec::with_capacity(listed.len());
+        for r in listed {
+            match record_to_dns_record(r) {
+                Ok(record) => out.push(record),
+                Err(Error::Parse(_)) if record_type == DnsRecordType::CAA => continue,
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(out)
     }
 }
 

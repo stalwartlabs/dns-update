@@ -129,7 +129,7 @@ impl VolcengineProvider {
         for value in desired {
             if let Some(idx) = pool.iter().position(|r| r.value == value) {
                 pool.swap_remove(idx);
-            } else {
+            } else if !to_add.contains(&value) {
                 to_add.push(value);
             }
         }
@@ -163,12 +163,17 @@ impl VolcengineProvider {
         let host = strip_origin_from_name(&name, &zone.name, None);
         let existing = self.list_records(zone.id, &host, type_str).await?;
 
+        let mut queued: Vec<String> = Vec::new();
         for value in desired {
             if existing.iter().any(|r| r.value == value) {
                 continue;
             }
+            if queued.contains(&value) {
+                continue;
+            }
             self.create_record(zone.id, &host, type_str, &value, ttl)
                 .await?;
+            queued.push(value);
         }
         Ok(())
     }

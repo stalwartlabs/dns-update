@@ -100,7 +100,7 @@ impl NameSiloProvider {
                 .position(|r| matches_rendered(r, &rendered))
             {
                 existing_pool.swap_remove(idx);
-            } else {
+            } else if !to_add.iter().any(|q| rendered_equal(q, &rendered)) {
                 to_add.push(rendered);
             }
         }
@@ -140,8 +140,12 @@ impl NameSiloProvider {
         let desired = build_rendered(record_type, records)?;
         let existing = self.list_at(&domain, &name, record_type).await?;
 
+        let mut queued: Vec<RenderedRecord> = Vec::new();
         for rendered in desired {
             if existing.iter().any(|r| matches_rendered(r, &rendered)) {
+                continue;
+            }
+            if queued.iter().any(|q| rendered_equal(q, &rendered)) {
                 continue;
             }
             self.add_record(
@@ -153,6 +157,7 @@ impl NameSiloProvider {
                 rendered.distance,
             )
             .await?;
+            queued.push(rendered);
         }
         Ok(())
     }
@@ -318,6 +323,10 @@ fn matches_rendered(existing: &ResourceRecord, rendered: &RenderedRecord) -> boo
     }
     let existing_distance: u16 = existing.distance.parse().unwrap_or(0);
     existing_distance == rendered.distance
+}
+
+fn rendered_equal(a: &RenderedRecord, b: &RenderedRecord) -> bool {
+    a.value == b.value && a.distance == b.distance
 }
 
 fn render_value(record: DnsRecord) -> crate::Result<String> {

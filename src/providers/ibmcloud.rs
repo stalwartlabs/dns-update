@@ -408,15 +408,15 @@ fn record_to_dns_record(record: SoftLayerResourceRecord) -> Result<DnsRecord> {
             data.parse()
                 .map_err(|e| Error::Parse(format!("invalid AAAA data: {e}")))?,
         ),
-        "cname" => DnsRecord::CNAME(data),
-        "ns" => DnsRecord::NS(data),
+        "cname" => DnsRecord::CNAME(data.trim_end_matches('.').to_string()),
+        "ns" => DnsRecord::NS(data.trim_end_matches('.').to_string()),
         "txt" => DnsRecord::TXT(data),
         "mx" => DnsRecord::MX(MXRecord {
-            exchange: data,
+            exchange: data.trim_end_matches('.').to_string(),
             priority: record.mx_priority.unwrap_or(10) as u16,
         }),
         "srv" => DnsRecord::SRV(SRVRecord {
-            target: data,
+            target: data.trim_end_matches('.').to_string(),
             priority: record.priority.unwrap_or(0) as u16,
             weight: record.weight.unwrap_or(0) as u16,
             port: record.port.unwrap_or(0) as u16,

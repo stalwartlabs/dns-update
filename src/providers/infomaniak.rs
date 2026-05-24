@@ -553,8 +553,8 @@ fn encode_record(record: &DnsRecord) -> crate::Result<(&'static str, String, Opt
     Ok(match record {
         DnsRecord::A(addr) => ("A", addr.to_string(), None),
         DnsRecord::AAAA(addr) => ("AAAA", addr.to_string(), None),
-        DnsRecord::CNAME(value) => ("CNAME", value.clone(), None),
-        DnsRecord::NS(value) => ("NS", value.clone(), None),
+        DnsRecord::CNAME(value) => ("CNAME", ensure_trailing_dot(value), None),
+        DnsRecord::NS(value) => ("NS", ensure_trailing_dot(value), None),
         DnsRecord::MX(mx) => ("MX", ensure_trailing_dot(&mx.exchange), Some(mx.priority)),
         DnsRecord::TXT(value) => ("TXT", encode_txt_value(value), None),
         DnsRecord::SRV(srv) => (

@@ -132,7 +132,7 @@ impl HostingerProvider {
 
         let contents = build_contents(record_type, records);
         let new_rrset = RecordSet {
-            name: subdomain.clone(),
+            name: subdomain,
             record_type: record_type.as_str().to_string(),
             ttl,
             records: contents
@@ -144,16 +144,9 @@ impl HostingerProvider {
                 .collect(),
         };
 
-        let zone = self.fetch_zone(&domain).await?;
-        let mut next: Vec<RecordSet> = zone
-            .into_iter()
-            .filter(|r| !(r.name == subdomain && r.record_type == record_type.as_str()))
-            .collect();
-        next.push(new_rrset);
-
         let request = ZoneRequest {
             overwrite: true,
-            zone: next,
+            zone: vec![new_rrset],
         };
 
         self.client
@@ -180,15 +173,15 @@ impl HostingerProvider {
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, Some("@"));
         let to_add = build_contents(record_type, records);
-
         let zone = self.fetch_zone(&domain).await?;
-        let mut next: Vec<RecordSet> = Vec::with_capacity(zone.len() + 1);
-        let mut merged = false;
-        let mut changed = false;
 
-        for mut rrset in zone {
-            if rrset.name == subdomain && rrset.record_type == record_type.as_str() {
-                merged = true;
+        let mut existing = zone
+            .into_iter()
+            .find(|r| r.name == subdomain && r.record_type == record_type.as_str());
+
+        let mut changed = false;
+        let merged = match existing.as_mut() {
+            Some(rrset) => {
                 let before = rrset.records.len();
                 for content in &to_add {
                     if !rrset.records.iter().any(|r| &r.content == content) {
@@ -201,26 +194,24 @@ impl HostingerProvider {
                 if rrset.records.len() != before {
                     changed = true;
                 }
-                rrset.ttl = ttl;
+                existing.unwrap()
             }
-            next.push(rrset);
-        }
-
-        if !merged {
-            next.push(RecordSet {
-                name: subdomain,
-                record_type: record_type.as_str().to_string(),
-                ttl,
-                records: to_add
-                    .into_iter()
-                    .map(|content| RecordValue {
-                        content,
-                        is_disabled: false,
-                    })
-                    .collect(),
-            });
-            changed = true;
-        }
+            None => {
+                changed = true;
+                RecordSet {
+                    name: subdomain,
+                    record_type: record_type.as_str().to_string(),
+                    ttl,
+                    records: to_add
+                        .into_iter()
+                        .map(|content| RecordValue {
+                            content,
+                            is_disabled: false,
+                        })
+                        .collect(),
+                }
+            }
+        };
 
         if !changed {
             return Ok(());
@@ -228,7 +219,7 @@ impl HostingerProvider {
 
         let request = ZoneRequest {
             overwrite: true,
-            zone: next,
+            zone: vec![merged],
         };
 
         self.client
@@ -254,43 +245,27 @@ impl HostingerProvider {
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, Some("@"));
         let to_remove = build_contents(record_type, records);
-
         let zone = self.fetch_zone(&domain).await?;
-        let mut next: Vec<RecordSet> = Vec::with_capacity(zone.len());
-        let mut changed = false;
-        let mut became_empty = false;
 
-        for rrset in zone {
-            if rrset.name == subdomain && rrset.record_type == record_type.as_str() {
-                let before = rrset.records.len();
-                let filtered: Vec<RecordValue> = rrset
-                    .records
-                    .into_iter()
-                    .filter(|r| !to_remove.iter().any(|c| c == &r.content))
-                    .collect();
-                if filtered.len() != before {
-                    changed = true;
-                }
-                if filtered.is_empty() {
-                    became_empty = true;
-                    continue;
-                }
-                next.push(RecordSet {
-                    name: rrset.name,
-                    record_type: rrset.record_type,
-                    ttl: rrset.ttl,
-                    records: filtered,
-                });
-            } else {
-                next.push(rrset);
-            }
-        }
+        let Some(rrset) = zone
+            .into_iter()
+            .find(|r| r.name == subdomain && r.record_type == record_type.as_str())
+        else {
+            return Ok(());
+        };
 
-        if !changed {
+        let before = rrset.records.len();
+        let filtered: Vec<RecordValue> = rrset
+            .records
+            .into_iter()
+            .filter(|r| !to_remove.iter().any(|c| c == &r.content))
+            .collect();
+
+        if filtered.len() == before {
             return Ok(());
         }
 
-        if became_empty {
+        if filtered.is_empty() {
             let request = Filters {
                 filters: vec![Filter {
                     name: subdomain,
@@ -310,9 +285,15 @@ impl HostingerProvider {
                 });
         }
 
+        let updated = RecordSet {
+            name: rrset.name,
+            record_type: rrset.record_type,
+            ttl: rrset.ttl,
+            records: filtered,
+        };
         let request = ZoneRequest {
             overwrite: true,
-            zone: next,
+            zone: vec![updated],
         };
 
         self.client

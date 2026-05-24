@@ -178,7 +178,7 @@ mod tests {
         let put = server
             .mock("PUT", "/domains/example.com/records/host/A")
             .match_body(Matcher::Json(json!({
-                "rrset_ttl": 600,
+                "rrset_ttl": 300,
                 "rrset_values": ["1.1.1.1", "8.8.8.8"],
             })))
             .with_status(201)

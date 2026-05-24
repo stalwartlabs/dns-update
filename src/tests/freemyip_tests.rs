@@ -130,44 +130,85 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_add_to_rrset_rejected() {
+    async fn test_add_to_rrset_empty_is_noop() {
         let provider = FreeMyIpProvider::new("test_token", Some(Duration::from_secs(1))).unwrap();
         let result = provider
             .add_to_rrset(
                 "host.freemyip.com",
                 DnsRecordType::TXT,
                 300,
-                vec![DnsRecord::TXT("v".into())],
+                vec![],
                 "host.freemyip.com",
             )
             .await;
-        match result {
-            Err(Error::Api(msg)) => assert!(
-                msg.contains("add_to_rrset"),
-                "unexpected error message: {msg}"
-            ),
-            other => panic!("expected Error::Api, got {other:?}"),
-        }
+        assert!(result.is_ok(), "expected Ok for empty add, got {result:?}");
     }
 
     #[tokio::test]
-    async fn test_remove_from_rrset_rejected() {
+    async fn test_add_to_rrset_blind_sets_txt() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/")
+            .match_query(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("token".into(), "test_token".into()),
+                Matcher::UrlEncoded("domain".into(), "host.freemyip.com".into()),
+                Matcher::UrlEncoded("txt".into(), "value-1".into()),
+            ]))
+            .with_status(200)
+            .with_body("OK")
+            .create();
+        let provider = setup_provider(server.url());
+        let result = provider
+            .add_to_rrset(
+                "host.freemyip.com",
+                DnsRecordType::TXT,
+                300,
+                vec![DnsRecord::TXT("value-1".into())],
+                "host.freemyip.com",
+            )
+            .await;
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_remove_from_rrset_empty_is_noop() {
         let provider = FreeMyIpProvider::new("test_token", Some(Duration::from_secs(1))).unwrap();
         let result = provider
             .remove_from_rrset(
                 "host.freemyip.com",
                 DnsRecordType::TXT,
-                vec![DnsRecord::TXT("v".into())],
+                vec![],
                 "host.freemyip.com",
             )
             .await;
-        match result {
-            Err(Error::Api(msg)) => assert!(
-                msg.contains("remove_from_rrset"),
-                "unexpected error message: {msg}"
-            ),
-            other => panic!("expected Error::Api, got {other:?}"),
-        }
+        assert!(result.is_ok(), "expected Ok for empty remove, got {result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_remove_from_rrset_clears_slot() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/")
+            .match_query(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("token".into(), "test_token".into()),
+                Matcher::UrlEncoded("domain".into(), "host.freemyip.com".into()),
+                Matcher::UrlEncoded("txt".into(), "".into()),
+            ]))
+            .with_status(200)
+            .with_body("OK")
+            .create();
+        let provider = setup_provider(server.url());
+        let result = provider
+            .remove_from_rrset(
+                "host.freemyip.com",
+                DnsRecordType::TXT,
+                vec![DnsRecord::TXT("any".into())],
+                "host.freemyip.com",
+            )
+            .await;
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
+        mock.assert();
     }
 
     #[tokio::test]

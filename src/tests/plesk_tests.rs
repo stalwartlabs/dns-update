@@ -40,7 +40,7 @@ mod tests {
     fn mock_list_records(server: &mut ServerGuard, body: serde_json::Value) -> Mock {
         server
             .mock("GET", "/api/v2/dns/records")
-            .match_query(Matcher::UrlEncoded("siteId".into(), SITE_ID.to_string()))
+            .match_query(Matcher::UrlEncoded("site_id".into(), SITE_ID.to_string()))
             .match_header("x-api-key", "test_api_key")
             .with_status(200)
             .with_body(serde_json::to_string(&body).unwrap())
@@ -66,7 +66,7 @@ mod tests {
         let create_a = server
             .mock("POST", "/api/v2/dns/records")
             .match_body(Matcher::Json(json!({
-                "siteId": SITE_ID,
+                "site_id": SITE_ID,
                 "type": "A",
                 "host": "www",
                 "value": "1.1.1.1",
@@ -79,7 +79,7 @@ mod tests {
         let create_b = server
             .mock("POST", "/api/v2/dns/records")
             .match_body(Matcher::Json(json!({
-                "siteId": SITE_ID,
+                "site_id": SITE_ID,
                 "type": "A",
                 "host": "www",
                 "value": "2.2.2.2",
@@ -152,7 +152,7 @@ mod tests {
         let create_new = server
             .mock("POST", "/api/v2/dns/records")
             .match_body(Matcher::Json(json!({
-                "siteId": SITE_ID,
+                "site_id": SITE_ID,
                 "type": "A",
                 "host": "host",
                 "value": "8.8.8.8",
@@ -234,7 +234,7 @@ mod tests {
         let create_mock = server
             .mock("POST", "/api/v2/dns/records")
             .match_body(Matcher::Json(json!({
-                "siteId": SITE_ID,
+                "site_id": SITE_ID,
                 "type": "TXT",
                 "host": "_acme",
                 "value": "new-token",
@@ -372,7 +372,7 @@ mod tests {
         let create_first = server
             .mock("POST", "/api/v2/dns/records")
             .match_body(Matcher::Json(json!({
-                "siteId": SITE_ID,
+                "site_id": SITE_ID,
                 "type": "TXT",
                 "host": "long",
                 "value": first_chunk,
@@ -385,7 +385,7 @@ mod tests {
         let create_second = server
             .mock("POST", "/api/v2/dns/records")
             .match_body(Matcher::Json(json!({
-                "siteId": SITE_ID,
+                "site_id": SITE_ID,
                 "type": "TXT",
                 "host": "long",
                 "value": second_chunk,
@@ -420,7 +420,7 @@ mod tests {
         let create_mock = server
             .mock("POST", "/api/v2/dns/records")
             .match_body(Matcher::Json(json!({
-                "siteId": SITE_ID,
+                "site_id": SITE_ID,
                 "type": "MX",
                 "host": "",
                 "value": "mail.example.com",

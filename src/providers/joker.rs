@@ -243,10 +243,10 @@ impl JokerProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
+        reject_tlsa(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
-        reject_tlsa(record_type)?;
 
         let name = name.into_name();
         let domain = origin.into_name();
@@ -291,10 +291,10 @@ impl JokerProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
+        reject_tlsa(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
-        reject_tlsa(record_type)?;
 
         let name = name.into_name();
         let domain = origin.into_name();

@@ -74,7 +74,7 @@ impl BunnyProvider {
 
         let mut to_add = Vec::new();
         for content in desired {
-            if let Some(idx) = existing_pool.iter().position(|r| r.content == content) {
+            if let Some(idx) = existing_pool.iter().position(|r| r.content.equivalent(&content)) {
                 existing_pool.swap_remove(idx);
             } else {
                 to_add.push(content);
@@ -111,7 +111,7 @@ impl BunnyProvider {
             .collect();
 
         for content in desired {
-            if existing.iter().any(|r| r.content == content) {
+            if existing.iter().any(|r| r.content.equivalent(&content)) {
                 continue;
             }
             self.add_record(zone_data.id, &name, ttl, &content).await?;
@@ -139,7 +139,7 @@ impl BunnyProvider {
             .collect();
 
         for content in to_remove {
-            if let Some(entry) = existing.iter().find(|r| r.content == content) {
+            if let Some(entry) = existing.iter().find(|r| r.content.equivalent(&content)) {
                 self.delete_record(zone_data.id, entry.id).await?;
             }
         }
@@ -256,6 +256,26 @@ impl BunnyRecordContent {
         bunny_type_for(record_type)
             .map(|t| t == self.record_type)
             .unwrap_or(false)
+    }
+
+    fn equivalent(&self, other: &Self) -> bool {
+        if self.record_type != other.record_type {
+            return false;
+        }
+        if self.priority != other.priority
+            || self.weight != other.weight
+            || self.port != other.port
+            || self.flags != other.flags
+            || self.tag != other.tag
+        {
+            return false;
+        }
+        match self.record_type {
+            BUNNY_TYPE_CNAME | BUNNY_TYPE_NS | BUNNY_TYPE_MX | BUNNY_TYPE_SRV => {
+                self.value.trim_end_matches('.') == other.value.trim_end_matches('.')
+            }
+            _ => self.value == other.value,
+        }
     }
 }
 

@@ -186,6 +186,12 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let token = mock_token(&mut server);
 
+        let get = server
+            .mock("GET", "/dns/v2/zones/example.com/records/www/A")
+            .with_status(200)
+            .with_body(r#"{"records": []}"#)
+            .create();
+
         let post = server
             .mock("POST", "/dns/v2/zones/example.com/records/www/A")
             .match_body(Matcher::Json(json!({
@@ -207,6 +213,7 @@ mod tests {
             .await;
         assert!(result.is_ok(), "add_to_rrset returned {result:?}");
         token.assert();
+        get.assert();
         post.assert();
     }
 

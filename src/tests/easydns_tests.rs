@@ -362,7 +362,7 @@ mod tests {
         let put_10 = server
             .mock("PUT", "/zones/records/add/example.com/MX?format=json")
             .match_body(Matcher::PartialJsonString(
-                r#"{"host":"@","type":"MX","rdata":"mail1.example.com.","prio":"10"}"#.to_string(),
+                r#"{"host":"@","type":"MX","rdata":"mail1.example.com","prio":"10"}"#.to_string(),
             ))
             .with_status(200)
             .with_body(r#"{"data":{"id":"m1"}}"#)
@@ -370,7 +370,7 @@ mod tests {
         let put_20 = server
             .mock("PUT", "/zones/records/add/example.com/MX?format=json")
             .match_body(Matcher::PartialJsonString(
-                r#"{"host":"@","type":"MX","rdata":"mail2.example.com.","prio":"20"}"#.to_string(),
+                r#"{"host":"@","type":"MX","rdata":"mail2.example.com","prio":"20"}"#.to_string(),
             ))
             .with_status(200)
             .with_body(r#"{"data":{"id":"m2"}}"#)
@@ -408,7 +408,7 @@ mod tests {
         let put = server
             .mock("PUT", "/zones/records/add/example.com/SRV?format=json")
             .match_body(Matcher::PartialJsonString(
-                r#"{"host":"_sip._tcp","type":"SRV","rdata":"5 5060 sipserver.example.com.","prio":"10"}"#
+                r#"{"host":"_sip._tcp","type":"SRV","rdata":"5 5060 sipserver.example.com","prio":"10"}"#
                     .to_string(),
             ))
             .with_status(200)

@@ -123,16 +123,17 @@ impl GcoreProvider {
 
         let to_add: Vec<Vec<Value>> = records.into_iter().map(record_to_content).collect();
 
-        let (mut current, existed) = match self.fetch_rrset(&url).await? {
+        let (mut current, existed, effective_ttl) = match self.fetch_rrset(&url).await? {
             Some(existing) => {
+                let existing_ttl = existing.ttl;
                 let contents = existing
                     .resource_records
                     .into_iter()
                     .map(|r| r.content)
                     .collect::<Vec<_>>();
-                (contents, true)
+                (contents, true, existing_ttl)
             }
-            None => (Vec::new(), false),
+            None => (Vec::new(), false, ttl),
         };
 
         let before = current.len();
@@ -147,7 +148,7 @@ impl GcoreProvider {
         }
 
         let body = RrSet {
-            ttl,
+            ttl: effective_ttl,
             resource_records: current
                 .into_iter()
                 .map(|content| ResourceRecord { content })

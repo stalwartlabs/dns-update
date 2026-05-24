@@ -497,18 +497,7 @@ mod tests {
 
         let post = server
             .mock("POST", "/zones/example.com/test.example.com/A")
-            .match_body(Matcher::Json(json!({
-                "zone": "example.com",
-                "domain": "test.example.com",
-                "type": "A",
-                "ttl": 60,
-                "answers": [
-                    {"answer": ["1.1.1.1"]},
-                    {"answer": ["8.8.8.8"]},
-                ],
-            })))
-            .with_status(200)
-            .with_body("{}")
+            .expect(0)
             .create();
 
         let provider = setup_provider(server.url().as_str());

@@ -167,7 +167,7 @@ impl WebSupportProvider {
         reject_unsupported_type(record_type)?;
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
+        let subdomain = strip_origin_from_name(&name, &domain, None);
         let service_id = self.obtain_service_id(&domain).await?;
         let desired = build_contents(record_type, records)?;
         let existing = self.list_at(service_id, &subdomain, record_type).await?;
@@ -208,7 +208,7 @@ impl WebSupportProvider {
         reject_unsupported_type(record_type)?;
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
+        let subdomain = strip_origin_from_name(&name, &domain, None);
         let service_id = self.obtain_service_id(&domain).await?;
         let desired = build_contents(record_type, records)?;
         let existing = self.list_at(service_id, &subdomain, record_type).await?;
@@ -237,7 +237,7 @@ impl WebSupportProvider {
         reject_unsupported_type(record_type)?;
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
+        let subdomain = strip_origin_from_name(&name, &domain, None);
         let service_id = self.obtain_service_id(&domain).await?;
         let to_remove = build_contents(record_type, records)?;
         let existing = self.list_at(service_id, &subdomain, record_type).await?;
@@ -259,7 +259,7 @@ impl WebSupportProvider {
         reject_unsupported_type(record_type)?;
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
+        let subdomain = strip_origin_from_name(&name, &domain, None);
         let service_id = self.obtain_service_id(&domain).await?;
         let existing = self.list_at(service_id, &subdomain, record_type).await?;
         existing
@@ -269,15 +269,15 @@ impl WebSupportProvider {
     }
 
     async fn obtain_service_id(&self, domain: &str) -> crate::Result<i64> {
+        const SERVICES_PATH: &str = "/v1/user/self/service";
         let mut page: u32 = 1;
         loop {
-            let path = format!(
-                "/v1/user/self/service?page={}&pagesize={}",
-                page, SERVICES_PAGE_SIZE
+            let url = format!(
+                "{}{}?page={}&pagesize={}",
+                self.endpoint, SERVICES_PATH, page, SERVICES_PAGE_SIZE
             );
-            let url = format!("{}{}", self.endpoint, path);
             let response: ServicesResponse = self
-                .signed(self.client.get(url), Method::GET, &path)
+                .signed(self.client.get(url), Method::GET, SERVICES_PATH)
                 .send()
                 .await?;
             let returned = response.items.len() as u32;

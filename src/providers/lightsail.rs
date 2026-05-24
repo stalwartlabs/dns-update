@@ -422,7 +422,7 @@ impl LightsailProvider {
         for target in desired {
             if let Some(idx) = remaining.iter().position(|e| e.target == target) {
                 remaining.swap_remove(idx);
-            } else {
+            } else if !to_add.contains(&target) {
                 to_add.push(target);
             }
         }

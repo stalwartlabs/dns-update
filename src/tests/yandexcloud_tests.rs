@@ -313,6 +313,7 @@ mod tests {
     async fn add_to_rrset_uses_merges() {
         let mut server = mockito::Server::new_async().await;
         let zones = mock_zone_lookup(&mut server, "example.com", "zone-1");
+        let get = mock_get_record_set(&mut server, "zone-1", "test", "A", None);
         let upsert = mock_upsert(
             &mut server,
             "zone-1",
@@ -339,6 +340,7 @@ mod tests {
             .await;
         assert!(result.is_ok(), "add_to_rrset failed: {result:?}");
         zones.assert();
+        get.assert();
         upsert.assert();
     }
 

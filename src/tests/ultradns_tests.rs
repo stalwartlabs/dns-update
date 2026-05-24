@@ -144,7 +144,7 @@ mod tests {
         let put = server
             .mock("PUT", "/v3/zones/example.com./rrsets/A/www.example.com.")
             .match_body(Matcher::Json(json!({
-                "ttl": 600,
+                "ttl": 3600,
                 "rdata": ["1.1.1.1", "2.2.2.2"],
             })))
             .with_status(200)

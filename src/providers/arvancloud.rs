@@ -223,8 +223,14 @@ impl ArvanCloudProvider {
         for desired_record in to_remove {
             if let Some(entry) = existing
                 .iter()
-                .find(|r| r.can_delete && desired_record == normalize_listed(r))
+                .find(|r| desired_record == normalize_listed(r))
             {
+                if !entry.can_delete {
+                    return Err(Error::Api(format!(
+                        "ArvanCloud record {} cannot be removed (can_delete=false)",
+                        entry.id
+                    )));
+                }
                 self.delete_record(&domain, &entry.id).await?;
             }
         }

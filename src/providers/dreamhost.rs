@@ -197,10 +197,10 @@ impl DreamhostProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        ensure_supported_type(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
-        ensure_supported_type(record_type)?;
         let desired = build_values(record_type, records)?;
         let fqdn = name.into_name().to_string();
         let rr_type = record_type.as_str();
@@ -222,10 +222,10 @@ impl DreamhostProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        ensure_supported_type(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
-        ensure_supported_type(record_type)?;
         let to_remove = build_values(record_type, records)?;
         let fqdn = name.into_name().to_string();
         let rr_type = record_type.as_str();

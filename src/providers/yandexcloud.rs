@@ -250,15 +250,32 @@ impl YandexCloudProvider {
         let zone = self.resolve_zone(&origin).await?;
         let subdomain = strip_origin_from_name(&name, &zone.zone, None);
 
-        let data = records
+        let existing = self
+            .get_record_set(&zone.id, &subdomain, type_str)
+            .await?;
+        let existing_data = existing
+            .as_ref()
+            .map(|rs| rs.data.clone())
+            .unwrap_or_default();
+        let effective_ttl = existing.as_ref().map(|rs| rs.ttl).unwrap_or(ttl);
+
+        let to_add: Vec<String> = records
             .iter()
             .map(|r| record_to_entry(r).map(|e| e.value))
-            .collect::<crate::Result<Vec<_>>>()?;
+            .collect::<crate::Result<Vec<_>>>()?
+            .into_iter()
+            .filter(|v| !existing_data.iter().any(|e| txt_equivalent(e, v, type_str)))
+            .collect();
+
+        if to_add.is_empty() {
+            return Ok(());
+        }
+
         let merge = RecordSet {
             name: subdomain,
             record_type: type_str,
-            ttl,
-            data,
+            ttl: effective_ttl,
+            data: to_add,
         };
         self.upsert(&zone.id, &[], &[], &[merge]).await
     }

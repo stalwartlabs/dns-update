@@ -496,16 +496,11 @@ impl DnsUpdater {
     pub fn new_inwx(
         username: impl Into<String>,
         password: impl Into<String>,
-        shared_secret: Option<String>,
         sandbox: bool,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::Inwx(InwxProvider::new(
-            username,
-            password,
-            shared_secret,
-            sandbox,
-            timeout,
+            username, password, sandbox, timeout,
         )?))
     }
 

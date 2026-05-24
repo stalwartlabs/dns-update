@@ -194,14 +194,19 @@ impl DnsMadeEasyProvider {
             .map(|r| build_create_request(&subdomain, r, ttl))
             .collect::<crate::Result<Vec<_>>>()?;
 
-        let to_add: Vec<&CreateRecordRequest<'_>> = desired_bodies
-            .iter()
-            .filter(|body| {
-                !existing
-                    .iter()
-                    .any(|listed| listed_matches_body(listed, body))
-            })
-            .collect();
+        let mut to_add: Vec<&CreateRecordRequest<'_>> = Vec::new();
+        for body in &desired_bodies {
+            if existing
+                .iter()
+                .any(|listed| listed_matches_body(listed, body))
+            {
+                continue;
+            }
+            if to_add.iter().any(|queued| bodies_match(queued, body)) {
+                continue;
+            }
+            to_add.push(body);
+        }
 
         self.bulk_create(domain_id, &to_add).await?;
         Ok(())
@@ -357,6 +362,21 @@ fn ensure_supported_type(record_type: DnsRecordType) -> crate::Result<()> {
         ));
     }
     Ok(())
+}
+
+fn bodies_match(a: &CreateRecordRequest<'_>, b: &CreateRecordRequest<'_>) -> bool {
+    if a.record_type != b.record_type || a.name != b.name {
+        return false;
+    }
+    if !values_equal(a.record_type, &a.value, &b.value) {
+        return false;
+    }
+    match a.record_type {
+        "MX" => a.mx_level == b.mx_level,
+        "SRV" => a.priority == b.priority && a.weight == b.weight && a.port == b.port,
+        "CAA" => a.issuer_critical == b.issuer_critical && a.caa_type == b.caa_type,
+        _ => true,
+    }
 }
 
 fn listed_matches_body(listed: &ListedRecord, body: &CreateRecordRequest<'_>) -> bool {
@@ -536,7 +556,7 @@ fn build_create_request<'a>(
         DnsRecord::CAA(caa) => {
             let (flags, tag, value) = caa.clone().decompose();
             request.value = value;
-            request.issuer_critical = Some(flags);
+            request.issuer_critical = Some(if flags & 0x80 != 0 { 1 } else { 0 });
             request.caa_type = Some(tag);
         }
     }

@@ -344,7 +344,7 @@ impl OracleCloudProvider {
             .into_iter()
             .find(|z| z.name.trim_end_matches('.') == trimmed)
             .map(|z| z.id)
-            .ok_or_else(|| Error::Api(format!("Zone not found for {}", origin)))
+            .ok_or(Error::NotFound)
     }
 
     fn records_url(&self, zone_id: &str, domain: &str, rtype: &str) -> String {
@@ -509,14 +509,24 @@ impl OracleCloudProvider {
         let zone_id = self.resolve_zone(&origin).await?;
         let rtype = record_type.as_str();
 
+        let existing = self.get_records(&zone_id, &name, rtype).await?;
         let mut items = Vec::with_capacity(records.len());
         for record in records {
             let (_, rdata) = Self::record_to_rdata(&record)?;
+            if existing
+                .iter()
+                .any(|e| e.rtype.eq_ignore_ascii_case(rtype) && e.rdata == rdata)
+            {
+                continue;
+            }
             items.push(PatchOperation {
                 operation: "ADD",
                 rdata,
                 ttl: Some(ttl),
             });
+        }
+        if items.is_empty() {
+            return Ok(());
         }
         self.patch_records(&zone_id, &name, rtype, items).await
     }

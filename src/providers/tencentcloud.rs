@@ -165,7 +165,7 @@ impl TencentCloudProvider {
         for want in desired {
             if let Some(idx) = existing_pool.iter().position(|e| record_matches(e, &want)) {
                 existing_pool.swap_remove(idx);
-            } else {
+            } else if !to_add.iter().any(|q| tencent_records_equal(q, &want)) {
                 to_add.push(want);
             }
         }
@@ -202,11 +202,16 @@ impl TencentCloudProvider {
         let desired = build_rrset(records)?;
         let existing = self.list_at(&zone, &subdomain, type_str).await?;
 
+        let mut queued: Vec<TencentRecord> = Vec::new();
         for want in desired {
             if existing.iter().any(|e| record_matches(e, &want)) {
                 continue;
             }
+            if queued.iter().any(|q| tencent_records_equal(q, &want)) {
+                continue;
+            }
             self.create_record(&zone, &subdomain, ttl, &want).await?;
+            queued.push(want);
         }
         Ok(())
     }
@@ -480,6 +485,10 @@ pub(crate) struct TencentRecord {
     pub record_type: String,
     pub value: String,
     pub priority: Option<u16>,
+}
+
+fn tencent_records_equal(a: &TencentRecord, b: &TencentRecord) -> bool {
+    a.record_type == b.record_type && a.value == b.value && a.priority == b.priority
 }
 
 impl TryFrom<DnsRecord> for TencentRecord {

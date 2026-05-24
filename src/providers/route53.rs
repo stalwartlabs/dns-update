@@ -147,11 +147,13 @@ impl Route53Provider {
             .find_existing_rrset(&hosted_zone_id, &name, record_type)
             .await?;
 
-        let mut union: Vec<ResourceRecord> = if let Some(existing) = existing_rrset {
-            existing.resource_records.resource_records
-        } else {
-            Vec::new()
-        };
+        let (mut union, effective_ttl): (Vec<ResourceRecord>, i64) =
+            if let Some(existing) = existing_rrset {
+                let existing_ttl = existing.ttl;
+                (existing.resource_records.resource_records, existing_ttl)
+            } else {
+                (Vec::new(), ttl as i64)
+            };
 
         for record in desired.drain(..) {
             if !union.iter().any(|r| r.value == record.value) {
@@ -162,7 +164,7 @@ impl Route53Provider {
         let rrset = ResourceRecordSet::new(
             name.to_string(),
             record_type.as_str().to_string(),
-            ttl as i64,
+            effective_ttl,
             ResourceRecords {
                 resource_records: union,
             },

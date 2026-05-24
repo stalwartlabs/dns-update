@@ -119,6 +119,7 @@ impl EasyDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_unsupported(record_type)?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
         let subdomain = strip_origin_from_name(&name, &domain, Some("@"));
@@ -154,6 +155,7 @@ impl EasyDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_unsupported(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -180,6 +182,7 @@ impl EasyDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_unsupported(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -300,10 +303,24 @@ fn check_error(error: Option<ApiError>) -> crate::Result<()> {
 
 fn record_wire_of(record: &ZoneRecord) -> RecordWire {
     let prio = record.prio.parse::<u16>().unwrap_or(0);
-    RecordWire {
-        rdata: record.rdata.clone(),
-        prio,
+    let rdata = if matches!(
+        record.record_type.as_str(),
+        "CNAME" | "NS" | "MX" | "SRV"
+    ) {
+        record.rdata.trim_end_matches('.').to_string()
+    } else {
+        record.rdata.clone()
+    };
+    RecordWire { rdata, prio }
+}
+
+fn reject_unsupported(record_type: DnsRecordType) -> crate::Result<()> {
+    if record_type == DnsRecordType::TLSA {
+        return Err(Error::Api(
+            "TLSA records are not supported by EasyDNS".to_string(),
+        ));
     }
+    Ok(())
 }
 
 fn build_wire(
@@ -329,11 +346,16 @@ fn render_wire(record: DnsRecord) -> crate::Result<RecordWire> {
     let rdata = match record {
         DnsRecord::A(addr) => addr.to_string(),
         DnsRecord::AAAA(addr) => addr.to_string(),
-        DnsRecord::CNAME(content) => content,
-        DnsRecord::NS(content) => content,
-        DnsRecord::MX(mx) => mx.exchange,
+        DnsRecord::CNAME(content) => content.trim_end_matches('.').to_string(),
+        DnsRecord::NS(content) => content.trim_end_matches('.').to_string(),
+        DnsRecord::MX(mx) => mx.exchange.trim_end_matches('.').to_string(),
         DnsRecord::TXT(content) => content,
-        DnsRecord::SRV(srv) => format!("{} {} {}", srv.weight, srv.port, srv.target),
+        DnsRecord::SRV(srv) => format!(
+            "{} {} {}",
+            srv.weight,
+            srv.port,
+            srv.target.trim_end_matches('.'),
+        ),
         DnsRecord::CAA(caa) => caa.to_string(),
         DnsRecord::TLSA(_) => {
             return Err(Error::Api(

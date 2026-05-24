@@ -503,7 +503,7 @@ mod tests {
             .mock("POST", "/v2/service/111/dns/record")
             .match_body(Matcher::Json(json!({
                 "type": "MX",
-                "name": "",
+                "name": "@",
                 "content": "mx1.example.com",
                 "ttl": 3600,
                 "priority": 10
@@ -515,7 +515,7 @@ mod tests {
             .mock("POST", "/v2/service/111/dns/record")
             .match_body(Matcher::Json(json!({
                 "type": "MX",
-                "name": "",
+                "name": "@",
                 "content": "mx2.example.com",
                 "ttl": 3600,
                 "priority": 20
@@ -600,7 +600,7 @@ mod tests {
             .mock("POST", "/v2/service/111/dns/record")
             .match_body(Matcher::Json(json!({
                 "type": "CAA",
-                "name": "",
+                "name": "@",
                 "content": "0 issue \"letsencrypt.org\"",
                 "ttl": 3600
             })))
