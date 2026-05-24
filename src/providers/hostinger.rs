@@ -121,7 +121,7 @@ impl HostingerProvider {
                 .client
                 .delete(self.zone_url(&domain))
                 .with_body(request)?
-                .send_raw()
+                .send_with_retry::<serde_json::Value>(3)
                 .await
                 .map(|_| ())
                 .or_else(|err| match err {
@@ -152,7 +152,7 @@ impl HostingerProvider {
         self.client
             .put(self.zone_url(&domain))
             .with_body(request)?
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
@@ -225,7 +225,7 @@ impl HostingerProvider {
         self.client
             .put(self.zone_url(&domain))
             .with_body(request)?
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
@@ -276,7 +276,7 @@ impl HostingerProvider {
                 .client
                 .delete(self.zone_url(&domain))
                 .with_body(request)?
-                .send_raw()
+                .send_with_retry::<serde_json::Value>(3)
                 .await
                 .map(|_| ())
                 .or_else(|err| match err {
@@ -299,7 +299,7 @@ impl HostingerProvider {
         self.client
             .put(self.zone_url(&domain))
             .with_body(request)?
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }

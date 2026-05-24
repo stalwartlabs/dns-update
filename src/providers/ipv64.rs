@@ -221,7 +221,7 @@ impl Ipv64Provider {
             .post(self.endpoint.to_string())
             .set_header("Content-Type", FORM_CONTENT_TYPE)
             .with_raw_body(body)
-            .send_raw()
+            .send_with_retry::<Value>(3)
             .await
             .map(|_| ())
     }
@@ -235,7 +235,7 @@ impl Ipv64Provider {
             .delete(self.endpoint.to_string())
             .set_header("Content-Type", FORM_CONTENT_TYPE)
             .with_raw_body(body)
-            .send_raw()
+            .send_with_retry::<Value>(3)
             .await
             .map(|_| ())
     }

@@ -813,27 +813,28 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires ArvanCloud API key"]
     async fn integration_test() {
-        let api_key = "";
-        let origin = "";
-        let name = "";
+        let api_key = std::env::var("ARVANCLOUD_API_KEY").unwrap_or_default();
+        let origin = std::env::var("ARVANCLOUD_ORIGIN").unwrap_or_default();
+        let name = std::env::var("ARVANCLOUD_NAME").unwrap_or_default();
 
-        assert!(!api_key.is_empty(), "Set ARVANCLOUD_API_KEY");
-        assert!(!origin.is_empty(), "Set origin");
-        assert!(!name.is_empty(), "Set name");
+        assert!(
+            !api_key.is_empty() && !origin.is_empty() && !name.is_empty(),
+            "Set ARVANCLOUD_API_KEY, ARVANCLOUD_ORIGIN and ARVANCLOUD_NAME env vars"
+        );
 
-        let provider = ArvanCloudProvider::new(api_key, Some(Duration::from_secs(30)));
+        let provider = ArvanCloudProvider::new(&api_key, Some(Duration::from_secs(30)));
         provider
             .set_rrset(
-                name,
+                &name,
                 DnsRecordType::TXT,
                 600,
                 vec![DnsRecord::TXT("integration-test".to_string())],
-                origin,
+                &origin,
             )
             .await
             .unwrap();
         provider
-            .set_rrset(name, DnsRecordType::TXT, 600, vec![], origin)
+            .set_rrset(&name, DnsRecordType::TXT, 600, vec![], &origin)
             .await
             .unwrap();
     }

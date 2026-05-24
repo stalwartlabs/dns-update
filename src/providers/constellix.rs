@@ -168,7 +168,7 @@ impl ConstellixProvider {
                 ))
                 .with_body(ops)?,
         )
-        .send_raw()
+        .send_with_retry::<Value>(3)
         .await
         .map(|_| ())
     }
@@ -223,7 +223,7 @@ impl ConstellixProvider {
                         ))
                         .with_body(body)?,
                 )
-                .send_raw()
+                .send_with_retry::<Value>(3)
                 .await
                 .map(|_| ())
             }
@@ -241,7 +241,7 @@ impl ConstellixProvider {
                         ))
                         .with_body(body)?,
                 )
-                .send_raw()
+                .send_with_retry::<Value>(3)
                 .await
                 .map(|_| ())
             }
@@ -294,7 +294,7 @@ impl ConstellixProvider {
                 "{}/{}/domains/{}/records/{}/{}",
                 self.endpoint, API_VERSION, domain_id, type_segment, existing.id
             )))
-            .send_raw()
+            .send_with_retry::<Value>(3)
             .await
             .map(|_| ())
         } else {
@@ -312,7 +312,7 @@ impl ConstellixProvider {
                     ))
                     .with_body(body)?,
             )
-            .send_raw()
+            .send_with_retry::<Value>(3)
             .await
             .map(|_| ())
         }

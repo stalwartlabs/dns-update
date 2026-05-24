@@ -206,18 +206,21 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires Hurricane Electric account with TXT record password"]
     async fn integration_test() {
-        let zone = "";
-        let hostname = "";
-        let password = "";
+        let zone = std::env::var("HURRICANE_ZONE").unwrap_or_default();
+        let hostname = std::env::var("HURRICANE_HOSTNAME").unwrap_or_default();
+        let password = std::env::var("HURRICANE_PASSWORD").unwrap_or_default();
 
-        assert!(!zone.is_empty(), "Configure zone in the integration test");
+        assert!(
+            !zone.is_empty(),
+            "Set HURRICANE_ZONE env var"
+        );
         assert!(
             !hostname.is_empty(),
-            "Configure hostname in the integration test"
+            "Set HURRICANE_HOSTNAME env var"
         );
         assert!(
             !password.is_empty(),
-            "Configure password in the integration test"
+            "Set HURRICANE_PASSWORD env var"
         );
 
         let mut creds = HashMap::new();
@@ -227,11 +230,11 @@ mod tests {
         assert!(
             provider
                 .set_rrset(
-                    hostname,
+                    &hostname,
                     DnsRecordType::TXT,
                     300,
                     vec![DnsRecord::TXT("integration-test-value".to_string())],
-                    zone,
+                    &zone,
                 )
                 .await
                 .is_ok()
@@ -239,7 +242,7 @@ mod tests {
 
         assert!(
             provider
-                .set_rrset(hostname, DnsRecordType::TXT, 300, Vec::new(), zone)
+                .set_rrset(&hostname, DnsRecordType::TXT, 300, Vec::new(), &zone)
                 .await
                 .is_ok()
         );

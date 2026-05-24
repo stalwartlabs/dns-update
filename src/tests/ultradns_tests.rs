@@ -360,12 +360,15 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires UltraDNS account credentials and a managed zone"]
     async fn integration_test() {
-        let username = "";
-        let password = "";
-        let zone = "";
-        assert!(!username.is_empty() && !password.is_empty() && !zone.is_empty());
+        let username = std::env::var("ULTRADNS_USERNAME").unwrap_or_default();
+        let password = std::env::var("ULTRADNS_PASSWORD").unwrap_or_default();
+        let zone = std::env::var("ULTRADNS_ZONE").unwrap_or_default();
+        assert!(
+            !username.is_empty() && !password.is_empty() && !zone.is_empty(),
+            "Set ULTRADNS_USERNAME, ULTRADNS_PASSWORD and ULTRADNS_ZONE env vars"
+        );
         let provider =
-            UltraDnsProvider::new(username, password, None, Some(Duration::from_secs(30)))
+            UltraDnsProvider::new(&username, &password, None, Some(Duration::from_secs(30)))
                 .expect("provider");
         let owner = format!("test.{zone}");
         provider
@@ -374,12 +377,12 @@ mod tests {
                 DnsRecordType::A,
                 3600,
                 vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
-                zone,
+                &zone,
             )
             .await
             .expect("set");
         provider
-            .set_rrset(owner.as_str(), DnsRecordType::A, 3600, vec![], zone)
+            .set_rrset(owner.as_str(), DnsRecordType::A, 3600, vec![], &zone)
             .await
             .expect("delete");
     }

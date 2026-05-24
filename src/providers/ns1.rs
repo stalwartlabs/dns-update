@@ -252,7 +252,7 @@ impl Ns1Provider {
         match self
             .client
             .delete(self.rrset_url(zone, domain, rr_type))
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(RETRIES)
             .await
         {
             Ok(_) => Ok(()),

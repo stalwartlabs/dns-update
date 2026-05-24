@@ -213,7 +213,7 @@ impl SpaceshipProvider {
             self.client
                 .delete(format!("{}/dns/records/{}", self.endpoint, domain))
                 .with_body(to_delete)?
-                .send_raw()
+                .send_with_retry::<serde_json::Value>(3)
                 .await?;
         }
 
@@ -224,7 +224,7 @@ impl SpaceshipProvider {
                     force: None,
                     items: to_add,
                 })?
-                .send_raw()
+                .send_with_retry::<serde_json::Value>(3)
                 .await?;
         }
 
@@ -276,7 +276,7 @@ impl SpaceshipProvider {
                 force: None,
                 items: to_add,
             })?
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await?;
         Ok(())
     }
@@ -327,7 +327,7 @@ impl SpaceshipProvider {
         self.client
             .delete(format!("{}/dns/records/{}", self.endpoint, domain))
             .with_body(to_delete)?
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await?;
         Ok(())
     }

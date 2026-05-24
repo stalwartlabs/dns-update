@@ -16,7 +16,6 @@ use crate::jwt::{JwtSignAlgorithm, sign_jwt};
 use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
 use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STD};
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -35,7 +34,6 @@ pub struct YandexCloudConfig {
 
 #[derive(Clone)]
 pub struct YandexCloudProvider {
-    iam_client: Client,
     http: HttpClient,
     config: YandexCloudConfig,
     token: Arc<Mutex<Option<(String, Instant)>>>,
@@ -94,20 +92,11 @@ impl YandexCloudProvider {
             return Err(Error::Api("Yandex Cloud requires a folder_id".into()));
         }
 
-        let mut builder = Client::builder();
-        if let Some(timeout) = config.request_timeout {
-            builder = builder.timeout(timeout);
-        }
-        let iam_client = builder
-            .build()
-            .map_err(|e| Error::Client(format!("Failed to build reqwest client: {}", e)))?;
-
         let http = HttpClientBuilder::default()
             .with_timeout(config.request_timeout)
             .build();
 
         Ok(Self {
-            iam_client,
             http,
             config,
             token: Arc::new(Mutex::new(None)),
@@ -164,28 +153,12 @@ impl YandexCloudProvider {
             .map_err(|e| Error::Api(format!("Failed to sign Yandex JWT: {}", e)))?;
 
         let url = format!("{}/iam/v1/tokens", self.endpoints.iam_base_url);
-        let resp = self
-            .iam_client
+        let value: Value = self
+            .http
             .post(&url)
-            .json(&serde_json::json!({ "jwt": jwt }))
-            .send()
-            .await
-            .map_err(|e| Error::Api(format!("Yandex IAM token request failed: {}", e)))?;
-        let status = resp.status();
-        let text = resp
-            .text()
-            .await
-            .map_err(|e| Error::Api(format!("Failed to read IAM token response: {}", e)))?;
-        if !status.is_success() {
-            return Err(match status.as_u16() {
-                400 => Error::Api(format!("BadRequest {}", text)),
-                401 | 403 => Error::Unauthorized,
-                404 => Error::NotFound,
-                _ => Error::Api(format!("Yandex IAM token error {}: {}", status, text)),
-            });
-        }
-        let value: Value = serde_json::from_str(&text)
-            .map_err(|e| Error::Api(format!("Failed to parse IAM token response: {}", e)))?;
+            .with_body(serde_json::json!({ "jwt": jwt }))?
+            .send_with_retry(3)
+            .await?;
         let access_token = value
             .get("iamToken")
             .and_then(Value::as_str)

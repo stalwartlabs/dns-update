@@ -293,7 +293,7 @@ impl VercelProvider {
         self.client
             .post(url)
             .with_body(body)?
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
@@ -303,7 +303,11 @@ impl VercelProvider {
             "{}/v2/domains/{domain}/records/{record_id}",
             self.endpoint
         ));
-        self.client.delete(url).send_raw().await.map(|_| ())
+        self.client
+            .delete(url)
+            .send_with_retry::<serde_json::Value>(3)
+            .await
+            .map(|_| ())
     }
 }
 

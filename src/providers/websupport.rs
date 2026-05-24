@@ -344,7 +344,7 @@ impl WebSupportProvider {
         let path = format!("/v2/service/{}/dns/record", service_id);
         let url = format!("{}{}", self.endpoint, path);
         self.signed(self.client.post(url).with_body(body)?, Method::POST, &path)
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
@@ -353,7 +353,7 @@ impl WebSupportProvider {
         let path = format!("/v2/service/{}/dns/record/{}", service_id, record_id);
         let url = format!("{}{}", self.endpoint, path);
         self.signed(self.client.delete(url), Method::DELETE, &path)
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }

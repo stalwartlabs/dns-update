@@ -302,7 +302,7 @@ impl ExoscaleProvider {
             &path,
             &body_str,
         )
-        .send_raw()
+        .send_with_retry::<serde_json::Value>(3)
         .await
         .map(|_| ())
     }
@@ -311,7 +311,7 @@ impl ExoscaleProvider {
         let path = format!("/dns-domain/{}/record/{}", zone_id, record_id);
         let url = format!("{}{}", self.endpoint, path);
         self.signed(self.client.delete(url), Method::DELETE, &path, "")
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }

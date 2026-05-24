@@ -266,7 +266,7 @@ impl NameDotComProvider {
                 ttl,
                 priority: record.priority,
             })?
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
@@ -277,7 +277,7 @@ impl NameDotComProvider {
                 "{}/v4/domains/{}/records/{}",
                 self.endpoint, domain, record_id
             ))
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }

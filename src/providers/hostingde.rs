@@ -374,7 +374,7 @@ impl HostingDeProvider {
             .client
             .post(format!("{}/zoneUpdate", self.endpoint))
             .with_body(request)?
-            .send()
+            .send_with_retry(3)
             .await?;
 
         if response.status != "success" && response.status != "pending" {

@@ -318,7 +318,7 @@ impl DnsMadeEasyProvider {
                 ))
                 .with_body(bodies)?,
         )
-        .send_raw()
+        .send_with_retry::<serde_json::Value>(3)
         .await
         .map(|_| ())
     }
@@ -336,7 +336,7 @@ impl DnsMadeEasyProvider {
             "{}/dns/managed/{domain_id}/records?{query}",
             self.endpoint
         )))
-        .send_raw()
+        .send_with_retry::<serde_json::Value>(3)
         .await
         .map(|_| ())
     }

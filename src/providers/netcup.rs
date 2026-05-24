@@ -386,7 +386,7 @@ impl NetcupProvider {
             .client
             .post(&self.endpoint)
             .with_body(payload)?
-            .send()
+            .send_with_retry(3)
             .await?;
         check_status(&response)?;
         Ok(())

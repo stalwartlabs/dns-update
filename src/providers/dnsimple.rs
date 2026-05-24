@@ -256,7 +256,7 @@ impl DNSimpleProvider {
                 ttl,
                 priority: content.priority,
             })?
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
@@ -269,7 +269,7 @@ impl DNSimpleProvider {
                 zone,
                 record_id
             ))
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }

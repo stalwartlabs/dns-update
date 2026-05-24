@@ -240,7 +240,7 @@ impl IbmCloudProvider {
             .with_body(SoftLayerEnvelope {
                 parameters: vec![payload],
             })?
-            .send::<Value>()
+            .send_with_retry::<Value>(3)
             .await
             .map(|_| ())
     }
@@ -250,7 +250,11 @@ impl IbmCloudProvider {
             "{}/SoftLayer_Dns_Domain_ResourceRecord/{}.json",
             self.endpoint, id
         );
-        self.client.delete(url).send::<Value>().await.map(|_| ())
+        self.client
+            .delete(url)
+            .send_with_retry::<Value>(3)
+            .await
+            .map(|_| ())
     }
 }
 

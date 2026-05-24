@@ -513,16 +513,19 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires Infoblox grid manager credentials"]
     async fn integration_test() {
-        let host = ""; // <-- e.g. "grid.example.com"
-        let user = ""; // <-- WAPI user
-        let pass = ""; // <-- WAPI password
-        let zone = ""; // <-- managed zone (e.g. "example.com")
-        assert!(!host.is_empty() && !user.is_empty() && !pass.is_empty() && !zone.is_empty());
+        let host = std::env::var("INFOBLOX_HOST").unwrap_or_default();
+        let user = std::env::var("INFOBLOX_USER").unwrap_or_default();
+        let pass = std::env::var("INFOBLOX_PASS").unwrap_or_default();
+        let zone = std::env::var("INFOBLOX_ZONE").unwrap_or_default();
+        assert!(
+            !host.is_empty() && !user.is_empty() && !pass.is_empty() && !zone.is_empty(),
+            "Set INFOBLOX_HOST, INFOBLOX_USER, INFOBLOX_PASS and INFOBLOX_ZONE env vars"
+        );
         let provider = InfobloxProvider::new(InfobloxConfig {
-            host: host.into(),
+            host: host.clone(),
             port: None,
-            username: user.into(),
-            password: pass.into(),
+            username: user,
+            password: pass,
             wapi_version: None,
             dns_view: None,
             request_timeout: Some(Duration::from_secs(30)),
@@ -535,12 +538,12 @@ mod tests {
                 DnsRecordType::A,
                 300,
                 vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
-                zone,
+                &zone,
             )
             .await
             .expect("set_rrset create");
         provider
-            .set_rrset(name.as_str(), DnsRecordType::A, 300, vec![], zone)
+            .set_rrset(name.as_str(), DnsRecordType::A, 300, vec![], &zone)
             .await
             .expect("set_rrset delete");
     }

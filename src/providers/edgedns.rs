@@ -10,6 +10,7 @@
  */
 
 use crate::crypto::{hmac_sha256, sha256_digest};
+use crate::http::{HttpClient, HttpClientBuilder};
 use crate::utils::txt_chunks_to_text;
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue as DnsKeyValue, MXRecord,
@@ -18,8 +19,6 @@ use crate::{
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use chrono::Utc;
-use reqwest::Client;
-use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -38,7 +37,7 @@ pub struct EdgeDnsConfig {
 
 #[derive(Clone)]
 pub struct EdgeDnsProvider {
-    client: Client,
+    client: HttpClient,
     host: String,
     scheme: String,
     base_path: String,
@@ -71,13 +70,9 @@ impl EdgeDnsProvider {
                 "edgedns: client_token, client_secret and access_token are required".to_string(),
             ));
         }
-        let mut builder = Client::builder();
-        if let Some(timeout) = config.request_timeout {
-            builder = builder.timeout(timeout);
-        }
-        let client = builder
-            .build()
-            .map_err(|e| Error::Client(format!("edgedns client: {e}")))?;
+        let client = HttpClientBuilder::default()
+            .with_timeout(config.request_timeout)
+            .build();
         let (host, scheme) = parse_host(&config.host);
         Ok(Self {
             client,
@@ -359,48 +354,30 @@ impl EdgeDnsProvider {
             BASE64_STANDARD.encode(hmac_sha256(signing_key.as_bytes(), data_to_sign.as_bytes()));
         let authorization = format!("{}signature={}", auth_without_signature, signature);
 
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            "Authorization",
-            HeaderValue::from_str(&authorization)
-                .map_err(|e| Error::Client(format!("edgedns auth: {e}")))?,
-        );
-        headers.insert("Accept", HeaderValue::from_static("application/json"));
+        let mut request = match method {
+            "GET" => self.client.get(url),
+            "POST" => self.client.post(url),
+            "PUT" => self.client.put(url),
+            "DELETE" => self.client.delete(url),
+            other => {
+                return Err(Error::Client(format!(
+                    "edgedns unsupported method: {other}"
+                )));
+            }
+        };
+        request = request
+            .with_header("Authorization", authorization)
+            .with_header("Accept", "application/json");
         if let Some(asw) = &self.account_switch_key {
-            headers.insert(
-                "X-AccountSwitchKey",
-                HeaderValue::from_str(asw)
-                    .map_err(|e| Error::Client(format!("edgedns switch key: {e}")))?,
-            );
+            request = request.with_header("X-AccountSwitchKey", asw);
         }
-        if body.is_some() {
-            headers.insert("Content-Type", HeaderValue::from_static("application/json"));
-        }
-
-        let request_method = method
-            .parse::<reqwest::Method>()
-            .map_err(|e| Error::Client(format!("edgedns method: {e}")))?;
-        let mut request = self.client.request(request_method, url).headers(headers);
         if let Some(body) = body {
-            request = request.body(body.to_string());
+            request = request
+                .with_header("Content-Type", "application/json")
+                .with_raw_body(body.to_string());
         }
-        let response = request
-            .send()
-            .await
-            .map_err(|e| Error::Api(format!("edgedns request: {e}")))?;
-        let status = response.status();
-        let text = response
-            .text()
-            .await
-            .map_err(|e| Error::Api(format!("edgedns body: {e}")))?;
 
-        match status.as_u16() {
-            200..=299 => Ok(text),
-            400 => Err(Error::Api(format!("edgedns BadRequest: {text}"))),
-            401 | 403 => Err(Error::Unauthorized),
-            404 => Err(Error::NotFound),
-            code => Err(Error::Api(format!("edgedns HTTP {code}: {text}"))),
-        }
+        request.send_raw().await
     }
 }
 

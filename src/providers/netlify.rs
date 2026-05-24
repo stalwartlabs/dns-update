@@ -240,7 +240,7 @@ impl NetlifyProvider {
                 "{}/dns_zones/{}/dns_records/{}",
                 self.endpoint, zone_id, record_id
             ))
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
@@ -270,7 +270,7 @@ impl NetlifyProvider {
                 self.endpoint, zone_id
             ))
             .with_body(payload)?
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }

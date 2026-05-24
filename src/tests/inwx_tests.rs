@@ -758,11 +758,14 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires INWX sandbox account credentials"]
     async fn integration_test() {
-        let username = "";
-        let password = "";
-        let domain = "";
-        assert!(!username.is_empty() && !password.is_empty() && !domain.is_empty());
-        let provider = InwxProvider::new(username, password, true, Some(Duration::from_secs(30)))
+        let username = std::env::var("INWX_USERNAME").unwrap_or_default();
+        let password = std::env::var("INWX_PASSWORD").unwrap_or_default();
+        let domain = std::env::var("INWX_DOMAIN").unwrap_or_default();
+        assert!(
+            !username.is_empty() && !password.is_empty() && !domain.is_empty(),
+            "Set INWX_USERNAME, INWX_PASSWORD and INWX_DOMAIN env vars"
+        );
+        let provider = InwxProvider::new(&username, &password, true, Some(Duration::from_secs(30)))
             .expect("provider");
         provider
             .set_rrset(
@@ -770,7 +773,7 @@ mod tests {
                 DnsRecordType::A,
                 3600,
                 vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
-                domain,
+                &domain,
             )
             .await
             .expect("set_rrset");
@@ -780,7 +783,7 @@ mod tests {
                 DnsRecordType::A,
                 3600,
                 vec![],
-                domain,
+                &domain,
             )
             .await
             .expect("cleanup");

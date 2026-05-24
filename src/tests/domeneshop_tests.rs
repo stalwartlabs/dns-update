@@ -816,25 +816,28 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires Domeneshop API credentials"]
     async fn integration_test() {
-        let token = "";
-        let secret = "";
-        let origin = "";
-        let name = "";
+        let token = std::env::var("DOMENESHOP_API_TOKEN").unwrap_or_default();
+        let secret = std::env::var("DOMENESHOP_API_SECRET").unwrap_or_default();
+        let origin = std::env::var("DOMENESHOP_ORIGIN").unwrap_or_default();
+        let name = std::env::var("DOMENESHOP_NAME").unwrap_or_default();
 
-        assert!(!token.is_empty(), "Set DOMENESHOP_API_TOKEN");
-        assert!(!secret.is_empty(), "Set DOMENESHOP_API_SECRET");
-        assert!(!origin.is_empty(), "Set origin");
-        assert!(!name.is_empty(), "Set name");
+        assert!(
+            !token.is_empty()
+                && !secret.is_empty()
+                && !origin.is_empty()
+                && !name.is_empty(),
+            "Set DOMENESHOP_API_TOKEN, DOMENESHOP_API_SECRET, DOMENESHOP_ORIGIN and DOMENESHOP_NAME env vars"
+        );
 
-        let provider = DomeneshopProvider::new(token, secret, Some(Duration::from_secs(30)));
+        let provider = DomeneshopProvider::new(&token, &secret, Some(Duration::from_secs(30)));
         assert!(
             provider
                 .set_rrset(
-                    name,
+                    &name,
                     DnsRecordType::A,
                     3600,
                     vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
-                    origin,
+                    &origin,
                 )
                 .await
                 .is_ok()
@@ -842,11 +845,11 @@ mod tests {
         assert!(
             provider
                 .add_to_rrset(
-                    name,
+                    &name,
                     DnsRecordType::A,
                     3600,
                     vec![DnsRecord::A("2.2.2.2".parse().unwrap())],
-                    origin,
+                    &origin,
                 )
                 .await
                 .is_ok()
@@ -854,17 +857,17 @@ mod tests {
         assert!(
             provider
                 .remove_from_rrset(
-                    name,
+                    &name,
                     DnsRecordType::A,
                     vec![DnsRecord::A("2.2.2.2".parse().unwrap())],
-                    origin,
+                    &origin,
                 )
                 .await
                 .is_ok()
         );
         assert!(
             provider
-                .set_rrset(name, DnsRecordType::A, 3600, vec![], origin)
+                .set_rrset(&name, DnsRecordType::A, 3600, vec![], &origin)
                 .await
                 .is_ok()
         );

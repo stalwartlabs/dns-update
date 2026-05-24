@@ -11,9 +11,11 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector, utils::strip_origin_from_name,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder},
+    utils::strip_origin_from_name,
 };
-use reqwest::Client;
+use reqwest::header::SET_COOKIE;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -26,7 +28,7 @@ const SESSION_TTL: Duration = Duration::from_secs(50 * 60);
 
 #[derive(Clone)]
 pub struct InwxProvider {
-    client: Client,
+    client: HttpClient,
     username: String,
     password: String,
     endpoint: String,
@@ -86,13 +88,9 @@ impl InwxProvider {
         sandbox: bool,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
-        let mut builder = Client::builder();
-        if let Some(timeout) = timeout {
-            builder = builder.timeout(timeout);
-        }
-        let client = builder
-            .build()
-            .map_err(|err| Error::Client(format!("Failed to build INWX HTTP client: {err}")))?;
+        let client = HttpClientBuilder::default()
+            .with_timeout(timeout)
+            .build();
         let endpoint = if sandbox {
             SANDBOX_ENDPOINT.to_string()
         } else {
@@ -319,29 +317,24 @@ impl InwxProvider {
             "user": &self.username,
             "pass": &self.password,
         });
-        let response = self
+        let (body, headers) = self
             .client
             .post(&self.endpoint)
-            .header("content-type", "application/json")
-            .json(&RpcRequest {
+            .with_body(&RpcRequest {
                 method: "account.login",
                 params,
-            })
-            .send()
-            .await
-            .map_err(|err| Error::Api(format!("INWX login request failed: {err}")))?;
+            })?
+            .send_raw_with_headers()
+            .await?;
 
-        let cookie = response
-            .headers()
-            .get_all(reqwest::header::SET_COOKIE)
+        let cookie = headers
+            .get_all(SET_COOKIE)
             .iter()
             .filter_map(|value| value.to_str().ok())
             .find_map(|value| value.split(';').next().map(|part| part.trim().to_string()))
             .unwrap_or_default();
 
-        let rpc: RpcResponse = response
-            .json()
-            .await
+        let rpc: RpcResponse = serde_json::from_str(&body)
             .map_err(|err| Error::Api(format!("Failed to parse INWX login response: {err}")))?;
         if rpc.code / 1000 != 1 {
             return Err(Error::Api(format!(
@@ -387,32 +380,11 @@ impl InwxProvider {
         let mut request = self
             .client
             .post(&self.endpoint)
-            .header("content-type", "application/json")
-            .json(&RpcRequest { method, params });
+            .with_body(&RpcRequest { method, params })?;
         if !cookie.is_empty() {
-            request = request.header(reqwest::header::COOKIE, &cookie);
+            request = request.with_header("cookie", &cookie);
         }
-
-        let response = request
-            .send()
-            .await
-            .map_err(|err| Error::Api(format!("INWX request to {method} failed: {err}")))?;
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|err| Error::Api(format!("Failed to read INWX response body: {err}")))?;
-
-        if !status.is_success() {
-            return match status.as_u16() {
-                401 => Err(Error::Unauthorized),
-                404 => Err(Error::NotFound),
-                400 => Err(Error::BadRequest),
-                _ => Err(Error::Api(format!(
-                    "INWX returned HTTP {status} for {method}: {body}"
-                ))),
-            };
-        }
+        let body = request.send_raw().await?;
 
         let rpc: RpcResponse = serde_json::from_str(&body).map_err(|err| {
             Error::Api(format!(

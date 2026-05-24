@@ -254,7 +254,7 @@ impl ScalewayProvider {
         self.client
             .patch(format!("{}/dns-zones/{}/records", self.endpoint, zone))
             .with_body(body)?
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }

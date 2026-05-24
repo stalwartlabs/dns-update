@@ -9,13 +9,13 @@
  * except according to those terms.
  */
 
+use crate::http::{HttpClient, HttpClientBuilder};
 use crate::jwt::{ServiceAccount, create_jwt, exchange_jwt_for_token};
 use crate::utils::txt_chunks_to_text;
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, Result, SRVRecord,
     TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
 };
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -42,7 +42,7 @@ pub struct GoogleCloudDnsConfig {
 /// Google Cloud DNS provider implementation.
 #[derive(Clone)]
 pub struct GoogleCloudDnsProvider {
-    client: Client,
+    client: HttpClient,
     config: GoogleCloudDnsConfig,
     token: Arc<Mutex<Option<(String, Instant)>>>,
     endpoints: GoogleCloudDnsEndpoints,
@@ -56,14 +56,9 @@ struct GoogleCloudDnsEndpoints {
 
 impl GoogleCloudDnsProvider {
     pub fn new(config: GoogleCloudDnsConfig) -> Result<Self> {
-        let mut client_builder = Client::builder();
-        if let Some(timeout) = config.request_timeout {
-            client_builder = client_builder.timeout(timeout);
-        }
-
-        let client = client_builder
-            .build()
-            .map_err(|err| Error::Client(format!("Failed to build reqwest client: {err}")))?;
+        let client = HttpClientBuilder::default()
+            .with_timeout(config.request_timeout)
+            .build();
 
         Ok(Self {
             client,
@@ -134,15 +129,11 @@ impl GoogleCloudDnsProvider {
             self.endpoints.dns_base_url, self.config.project_id
         );
 
-        let response = self
+        let resp: Value = self
             .client
             .get(&url)
-            .bearer_auth(&token)
-            .send()
-            .await
-            .map_err(|e| Error::Api(format!("Failed to list managed zones: {}", e)))?;
-        let resp: Value = self
-            .parse_json_response(response, "Failed to parse zones list")
+            .with_header("authorization", format!("Bearer {token}"))
+            .send_with_retry(3)
             .await?;
 
         let zones = resp
@@ -429,15 +420,11 @@ impl GoogleCloudDnsProvider {
             "{}/dns/v1/projects/{}/managedZones/{}/rrsets?{}",
             self.endpoints.dns_base_url, self.config.project_id, zone, query
         );
-        let response = self
+        let resp: Value = self
             .client
             .get(&list_url)
-            .bearer_auth(token)
-            .send()
-            .await
-            .map_err(|e| Error::Api(format!("List RRSet failed: {}", e)))?;
-        let resp: Value = self
-            .parse_json_response(response, "Parse RRSet list failed")
+            .with_header("authorization", format!("Bearer {token}"))
+            .send_with_retry(3)
             .await?;
         let rrsets = resp
             .get("rrsets")
@@ -464,15 +451,13 @@ impl GoogleCloudDnsProvider {
             "{}/dns/v1/projects/{}/managedZones/{}/changes",
             self.endpoints.dns_base_url, self.config.project_id, zone
         );
-        let response = self
-            .client
+        self.client
             .post(&url)
-            .bearer_auth(token)
-            .json(&change)
-            .send()
+            .with_header("authorization", format!("Bearer {token}"))
+            .with_body(&change)?
+            .send_with_retry::<Value>(3)
             .await
-            .map_err(|e| Error::Api(format!("Change request failed: {}", e)))?;
-        self.expect_success(response).await.map(|_| ())
+            .map(|_| ())
     }
 
     pub(crate) async fn impersonate_access_token(
@@ -496,16 +481,12 @@ impl GoogleCloudDnsProvider {
             lifetime: "3600s".to_string(),
         };
 
-        let response = self
+        let resp: Value = self
             .client
             .post(&url)
-            .bearer_auth(access_token)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| Error::Api(format!("Impersonation request failed: {}", e)))?;
-        let resp: Value = self
-            .parse_json_response(response, "Failed to parse impersonation response")
+            .with_header("authorization", format!("Bearer {access_token}"))
+            .with_body(&body)?
+            .send_with_retry(3)
             .await?;
 
         if let Some(token) = resp.get("accessToken").and_then(Value::as_str) {
@@ -521,36 +502,6 @@ impl GoogleCloudDnsProvider {
                 "Impersonation did not return accessToken".into(),
             ))
         }
-    }
-
-    async fn expect_success(&self, response: reqwest::Response) -> Result<reqwest::Response> {
-        let status = response.status();
-        if status.is_success() {
-            return Ok(response);
-        }
-
-        let body = response
-            .text()
-            .await
-            .map_err(|e| Error::Api(format!("Failed to read error response: {e}")))?;
-
-        match status.as_u16() {
-            400 => Err(Error::BadRequest),
-            401 | 403 => Err(Error::Unauthorized),
-            404 => Err(Error::NotFound),
-            _ => Err(Error::Api(api_error_message(&body))),
-        }
-    }
-
-    async fn parse_json_response<T>(&self, response: reqwest::Response, context: &str) -> Result<T>
-    where
-        T: for<'de> Deserialize<'de>,
-    {
-        let response = self.expect_success(response).await?;
-        response
-            .json::<T>()
-            .await
-            .map_err(|e| Error::Api(format!("{}: {}", context, e)))
     }
 
     fn token_lock(&self) -> Result<std::sync::MutexGuard<'_, Option<(String, Instant)>>> {
@@ -884,20 +835,3 @@ fn tlsa_matching_from_u8(value: u8) -> Result<TlsaMatching> {
     })
 }
 
-fn api_error_message(body: &str) -> String {
-    serde_json::from_str::<Value>(body)
-        .ok()
-        .and_then(|json| {
-            json.get("error")
-                .and_then(|error| error.get("message").or_else(|| error.get("status")))
-                .and_then(Value::as_str)
-                .map(ToString::to_string)
-                .or_else(|| {
-                    json.get("error_description")
-                        .and_then(Value::as_str)
-                        .map(ToString::to_string)
-                })
-        })
-        .filter(|message| !message.is_empty())
-        .unwrap_or_else(|| body.to_string())
-}

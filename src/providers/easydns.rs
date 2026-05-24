@@ -284,7 +284,7 @@ impl EasyDnsProvider {
                 "{}/zones/records/{}/{}?format=json",
                 self.endpoint, domain, record_id,
             ))
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }

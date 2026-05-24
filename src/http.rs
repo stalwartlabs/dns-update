@@ -164,6 +164,10 @@ impl HttpRequest {
     }
 
     pub async fn send_raw(self) -> crate::Result<String> {
+        self.send_raw_with_headers().await.map(|(body, _)| body)
+    }
+
+    pub async fn send_raw_with_headers(self) -> crate::Result<(String, HeaderMap<HeaderValue>)> {
         let mut request = self
             .client
             .request(self.method, &self.url)
@@ -179,11 +183,16 @@ impl HttpRequest {
             .map_err(|err| Error::Api(format!("Failed to send request to {}: {err}", self.url)))?;
 
         let code = response.status().as_u16();
+        let headers = response.headers().clone();
         match code {
-            204 => Ok(String::new()),
-            200..=299 => response.text().await.map_err(|err| {
-                Error::Api(format!("Failed to read response from {}: {err}", self.url))
-            }),
+            204 => Ok((String::new(), headers)),
+            200..=299 => response
+                .text()
+                .await
+                .map(|body| (body, headers))
+                .map_err(|err| {
+                    Error::Api(format!("Failed to read response from {}: {err}", self.url))
+                }),
             401 => Err(Error::Unauthorized),
             404 => Err(Error::NotFound),
             _ => {
@@ -222,7 +231,8 @@ impl HttpRequest {
                     let text = response.text().await.map_err(|err| {
                         Error::Api(format!("Failed to read response from {}: {err}", self.url))
                     })?;
-                    serde_json::from_str(&text).map_err(|err| {
+                    let parse_target = if text.trim().is_empty() { "{}" } else { &text };
+                    serde_json::from_str(parse_target).map_err(|err| {
                         Error::Serialize(format!("Failed to deserialize response: {err}"))
                     })
                 }

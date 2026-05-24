@@ -643,40 +643,37 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires AutoDNS account credentials"]
     async fn integration_test() {
-        let user = "";
-        let pass = "";
-        let origin = "";
-        let subdomain = "";
+        let user = std::env::var("AUTODNS_USER").unwrap_or_default();
+        let pass = std::env::var("AUTODNS_PASS").unwrap_or_default();
+        let origin = std::env::var("AUTODNS_ORIGIN").unwrap_or_default();
+        let subdomain = std::env::var("AUTODNS_SUBDOMAIN").unwrap_or_default();
 
-        assert!(!user.is_empty(), "Configure user in the integration test");
-        assert!(!pass.is_empty(), "Configure pass in the integration test");
         assert!(
-            !origin.is_empty(),
-            "Configure origin in the integration test"
-        );
-        assert!(
-            !subdomain.is_empty(),
-            "Configure subdomain in the integration test"
+            !user.is_empty()
+                && !pass.is_empty()
+                && !origin.is_empty()
+                && !subdomain.is_empty(),
+            "Set AUTODNS_USER, AUTODNS_PASS, AUTODNS_ORIGIN and AUTODNS_SUBDOMAIN env vars"
         );
 
         let provider =
-            AutodnsProvider::new(user, pass, None, Some(Duration::from_secs(30))).unwrap();
+            AutodnsProvider::new(&user, &pass, None, Some(Duration::from_secs(30))).unwrap();
 
         assert!(
             provider
                 .set_rrset(
-                    subdomain,
+                    &subdomain,
                     DnsRecordType::TXT,
                     300,
                     vec![DnsRecord::TXT("integration".to_string())],
-                    origin
+                    &origin
                 )
                 .await
                 .is_ok()
         );
         assert!(
             provider
-                .set_rrset(subdomain, DnsRecordType::TXT, 300, vec![], origin)
+                .set_rrset(&subdomain, DnsRecordType::TXT, 300, vec![], &origin)
                 .await
                 .is_ok()
         );

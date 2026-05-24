@@ -262,7 +262,7 @@ impl DomeneshopProvider {
                 endpoint = self.endpoint
             ))
             .with_body(&body)?
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
@@ -273,7 +273,7 @@ impl DomeneshopProvider {
                 "{endpoint}/domains/{domain_id}/dns/{record_id}",
                 endpoint = self.endpoint
             ))
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }

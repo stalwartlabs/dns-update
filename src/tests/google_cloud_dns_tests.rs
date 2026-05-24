@@ -94,7 +94,7 @@ mod tests {
             )
             .await;
 
-        assert!(matches!(result, Err(Error::Unauthorized)));
+        assert!(matches!(result, Err(Error::Api(_))));
         mock.assert();
     }
 

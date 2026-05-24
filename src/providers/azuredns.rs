@@ -9,11 +9,11 @@
  * except according to those terms.
  */
 
+use crate::http::{HttpClient, HttpClientBuilder};
 use crate::utils::{strip_origin_from_name, txt_chunks};
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, Result, SRVRecord,
 };
-use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -75,7 +75,7 @@ impl AzureEnvironment {
 
 #[derive(Clone)]
 pub struct AzureDnsProvider {
-    client: Client,
+    client: HttpClient,
     config: AzureDnsConfig,
     token: Arc<Mutex<Option<(String, Instant)>>>,
     endpoints: AzureEndpoints,
@@ -91,13 +91,9 @@ const API_VERSION: &str = "2018-05-01";
 
 impl AzureDnsProvider {
     pub fn new(config: AzureDnsConfig) -> Result<Self> {
-        let mut builder = Client::builder();
-        if let Some(timeout) = config.request_timeout {
-            builder = builder.timeout(timeout);
-        }
-        let client = builder
-            .build()
-            .map_err(|err| Error::Client(format!("Failed to build reqwest client: {err}")))?;
+        let client = HttpClientBuilder::default()
+            .with_timeout(config.request_timeout)
+            .build();
 
         let endpoints = AzureEndpoints {
             login_url: config.environment.login_host().to_string(),
@@ -151,17 +147,12 @@ impl AzureDnsProvider {
         ])
         .map_err(|e| Error::Api(format!("Failed to encode token request: {e}")))?;
 
-        let response = self
+        let token_response: AzureTokenResponse = self
             .client
             .post(&url)
-            .header("content-type", "application/x-www-form-urlencoded")
-            .body(form)
-            .send()
-            .await
-            .map_err(|e| Error::Api(format!("Azure token request failed: {e}")))?;
-
-        let token_response: AzureTokenResponse = self
-            .parse_json_response(response, "parse token response")
+            .with_header("content-type", "application/x-www-form-urlencoded")
+            .with_raw_body(form)
+            .send_with_retry(3)
             .await?;
 
         if token_response.access_token.is_empty() {
@@ -326,38 +317,36 @@ impl AzureDnsProvider {
         let mut body = serde_json::Map::new();
         body.insert("properties".to_string(), Value::Object(properties));
 
-        let mut request = self.client.put(url).bearer_auth(token).json(&body);
+        let mut request = self
+            .client
+            .put(url)
+            .with_header("authorization", format!("Bearer {token}"))
+            .with_body(&body)?;
         if let Some(etag) = if_match {
-            request = request.header("if-match", etag);
+            request = request.with_header("if-match", etag);
         }
-
-        let response = request
-            .send()
+        request
+            .send_with_retry::<Value>(3)
             .await
-            .map_err(|e| Error::Api(format!("Azure record set request failed: {e}")))?;
-
-        if response.status().is_success() {
-            return Ok(());
-        }
-        Err(self.map_error(response).await)
+            .map(|_| ())
     }
 
     async fn delete_rrset_url(&self, url: &str, token: &str, if_match: Option<&str>) -> Result<()> {
-        let mut request = self.client.delete(url).bearer_auth(token);
+        let mut request = self
+            .client
+            .delete(url)
+            .with_header("authorization", format!("Bearer {token}"));
         if let Some(etag) = if_match {
-            request = request.header("if-match", etag);
+            request = request.with_header("if-match", etag);
         }
-
-        let response = request
-            .send()
+        request
+            .send_with_retry::<Value>(3)
             .await
-            .map_err(|e| Error::Api(format!("Azure delete request failed: {e}")))?;
-
-        let status = response.status();
-        if status.is_success() || status.as_u16() == 204 || status.as_u16() == 404 {
-            return Ok(());
-        }
-        Err(self.map_error(response).await)
+            .map(|_| ())
+            .or_else(|err| match err {
+                Error::NotFound => Ok(()),
+                err => Err(err),
+            })
     }
 
     async fn fetch_rrset(&self, url: &str, token: &str) -> Result<FetchedRrset> {
@@ -368,38 +357,22 @@ impl AzureDnsProvider {
     }
 
     async fn fetch_rrset_optional(&self, url: &str, token: &str) -> Result<Option<FetchedRrset>> {
-        let response = self
+        let value: Value = match self
             .client
             .get(url)
-            .bearer_auth(token)
-            .send()
+            .with_header("authorization", format!("Bearer {token}"))
+            .send_with_retry(3)
             .await
-            .map_err(|e| Error::Api(format!("Azure record set get failed: {e}")))?;
-
-        let status = response.status();
-        if status.as_u16() == 404 {
-            return Ok(None);
-        }
-        if !status.is_success() {
-            return Err(self.map_error(response).await);
-        }
-
-        let header_etag = response
-            .headers()
-            .get("etag")
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_string);
-
-        let value: Value = response
-            .json()
-            .await
-            .map_err(|e| Error::Api(format!("Azure record set parse failed: {e}")))?;
+        {
+            Ok(v) => v,
+            Err(Error::NotFound) => return Ok(None),
+            Err(err) => return Err(err),
+        };
 
         let etag = value
             .get("etag")
             .and_then(Value::as_str)
-            .map(str::to_string)
-            .or(header_etag);
+            .map(str::to_string);
 
         let ttl = value
             .get("properties")
@@ -422,31 +395,6 @@ impl AzureDnsProvider {
             relative,
             API_VERSION,
         )
-    }
-
-    async fn map_error(&self, response: reqwest::Response) -> Error {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        match status.as_u16() {
-            400 => Error::BadRequest,
-            401 | 403 => Error::Unauthorized,
-            404 => Error::NotFound,
-            _ => Error::Api(azure_error_message(&body, status.as_u16())),
-        }
-    }
-
-    async fn parse_json_response<T>(&self, response: reqwest::Response, context: &str) -> Result<T>
-    where
-        T: for<'de> Deserialize<'de>,
-    {
-        let status = response.status();
-        if !status.is_success() {
-            return Err(self.map_error(response).await);
-        }
-        response
-            .json::<T>()
-            .await
-            .map_err(|e| Error::Api(format!("{context}: {e}")))
     }
 
     fn token_lock(&self) -> Result<std::sync::MutexGuard<'_, Option<(String, Instant)>>> {
@@ -483,21 +431,6 @@ fn azure_record_type(rt: &DnsRecordType) -> Result<&'static str> {
     })
 }
 
-fn azure_error_message(body: &str, status: u16) -> String {
-    if let Ok(value) = serde_json::from_str::<Value>(body)
-        && let Some(message) = value
-            .get("error")
-            .and_then(|v| v.get("message").or_else(|| v.get("code")))
-            .and_then(Value::as_str)
-    {
-        return format!("Azure DNS error ({status}): {message}");
-    }
-    if body.is_empty() {
-        format!("Azure DNS error ({status})")
-    } else {
-        format!("Azure DNS error ({status}): {body}")
-    }
-}
 
 #[derive(Default)]
 struct FetchedRrset {

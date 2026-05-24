@@ -775,30 +775,31 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires SafeDNS auth token"]
     async fn integration_test() {
-        let token = "";
-        let origin = "";
-        let name = "";
+        let token = std::env::var("SAFEDNS_AUTH_TOKEN").unwrap_or_default();
+        let origin = std::env::var("SAFEDNS_ORIGIN").unwrap_or_default();
+        let name = std::env::var("SAFEDNS_NAME").unwrap_or_default();
 
-        assert!(!token.is_empty(), "Set SAFEDNS_AUTH_TOKEN");
-        assert!(!origin.is_empty(), "Set origin");
-        assert!(!name.is_empty(), "Set name");
+        assert!(
+            !token.is_empty() && !origin.is_empty() && !name.is_empty(),
+            "Set SAFEDNS_AUTH_TOKEN, SAFEDNS_ORIGIN and SAFEDNS_NAME env vars"
+        );
 
-        let provider = SafeDnsProvider::new(token, Some(Duration::from_secs(30)));
+        let provider = SafeDnsProvider::new(&token, Some(Duration::from_secs(30)));
         assert!(
             provider
                 .set_rrset(
-                    name,
+                    &name,
                     DnsRecordType::A,
                     300,
                     vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
-                    origin
+                    &origin
                 )
                 .await
                 .is_ok()
         );
         assert!(
             provider
-                .set_rrset(name, DnsRecordType::A, 300, vec![], origin)
+                .set_rrset(&name, DnsRecordType::A, 300, vec![], &origin)
                 .await
                 .is_ok()
         );

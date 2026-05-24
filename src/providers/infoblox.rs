@@ -253,7 +253,7 @@ impl InfobloxProvider {
         self.client
             .post(format!("{}/{object}", self.base_url))
             .with_body(body)?
-            .send_raw()
+            .send_with_retry::<Value>(3)
             .await
             .map(|_| ())
             .map_err(|err| map_action_error(err, "create"))
@@ -262,7 +262,7 @@ impl InfobloxProvider {
     async fn delete_record(&self, reference: &str) -> Result<()> {
         self.client
             .delete(format!("{}/{reference}", self.base_url))
-            .send_raw()
+            .send_with_retry::<Value>(3)
             .await
             .map(|_| ())
             .map_err(|err| map_action_error(err, "delete"))

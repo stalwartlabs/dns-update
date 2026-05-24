@@ -95,7 +95,7 @@ impl GodaddyProvider {
             return self
                 .client
                 .delete(url)
-                .send_raw()
+                .send_with_retry::<serde_json::Value>(3)
                 .await
                 .map(|_| ())
                 .or_else(|err| match err {
@@ -108,7 +108,7 @@ impl GodaddyProvider {
         self.client
             .put(url)
             .with_body(payload)?
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
@@ -156,7 +156,7 @@ impl GodaddyProvider {
         self.client
             .put(url)
             .with_body(merged)?
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
@@ -197,7 +197,7 @@ impl GodaddyProvider {
             return self
                 .client
                 .delete(url)
-                .send_raw()
+                .send_with_retry::<serde_json::Value>(3)
                 .await
                 .map(|_| ())
                 .or_else(|err| match err {
@@ -209,7 +209,7 @@ impl GodaddyProvider {
         self.client
             .put(url)
             .with_body(filtered)?
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }

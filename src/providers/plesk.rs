@@ -299,7 +299,7 @@ impl PleskProvider {
     async fn delete_record(&self, id: i64) -> crate::Result<()> {
         self.client
             .delete(format!("{}/api/v2/dns/records/{}", self.endpoint, id))
-            .send_raw()
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
