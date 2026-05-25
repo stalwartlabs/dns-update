@@ -628,11 +628,13 @@ impl DnsUpdater {
     pub fn new_transip(
         login: impl AsRef<str>,
         private_key_pem: impl AsRef<str>,
+        global_key: bool,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::Transip(TransipProvider::new(
             login,
             private_key_pem,
+            global_key,
             timeout,
         )?))
     }

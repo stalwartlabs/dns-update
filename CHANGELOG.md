@@ -4,9 +4,11 @@ dns-update 0.5.0
 - Infomaniak fixes (#57)
 - Namecheap (#58): fix duplicate `Content-Type` header that IIS rejected as invalid.
 - TransIP fixes (#59): shorten nonce to fit the API's 6-32 character limit, accept PKCS#1 (`BEGIN RSA PRIVATE KEY`) PEMs in addition to PKCS#8.
-- RFC 2136: fix YXRRSET when publishing multiple records at the same owner (e.g. two TLSA).
-- Netcup: SRV `destination` now sends the full `priority weight port target.` 4-tuple.
+- TransIP: expose `global_key` parameter on `new_transip` so callers without an IP whitelist can mint global-scope tokens.
+- RFC 2136: fix RRSET when publishing multiple records at the same owner (e.g. two TLSA).
+- Netcup: SRV records now send `priority` in the dedicated field and `weight port target` in `destination` (fixes 4013 "destination of SRV entry is in wrong format").
 - Hetzner: chunk long TXT values (DKIM keys >255 bytes) into multiple quoted segments.
+- Cloudflare: chunk long TXT values (DKIM keys >255 bytes) into multiple quoted segments so wire chunk boundaries are predictable for propagation checks.
 - HTTP: preserve response body in `Error::Api` for all non-success status codes.
 - HTTP: add `HttpClient::set_header` (insert) alongside the existing `with_header` (append).
 

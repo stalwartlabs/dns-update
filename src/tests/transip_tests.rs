@@ -21,7 +21,7 @@ mod tests {
     const DUMMY_PEM: &str = "-----BEGIN PRIVATE KEY-----\nMIIBVgIBADANBgkqhkiG9w0BAQEFAASCAUAwggE8AgEAAkEAuYAi\n-----END PRIVATE KEY-----";
 
     fn provider(endpoint: String) -> TransipProvider {
-        TransipProvider::new("johndoe", DUMMY_PEM, Some(Duration::from_secs(1)))
+        TransipProvider::new("johndoe", DUMMY_PEM, true, Some(Duration::from_secs(1)))
             .unwrap()
             .with_endpoint(endpoint)
             .with_cached_token("preset-token")

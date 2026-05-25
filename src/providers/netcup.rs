@@ -484,13 +484,12 @@ fn encode_record(record: &DnsRecord, hostname: &str) -> crate::Result<NetcupReco
         DnsRecord::SRV(srv) => (
             "SRV",
             format!(
-                "{} {} {} {}",
-                srv.priority,
+                "{} {} {}",
                 srv.weight,
                 srv.port,
                 ensure_trailing_dot(&srv.target),
             ),
-            String::new(),
+            srv.priority.to_string(),
         ),
         DnsRecord::CAA(caa) => {
             let (flags, tag, value) = caa.clone().decompose();
@@ -560,19 +559,21 @@ fn decode_record(record_type: DnsRecordType, record: &NetcupRecord) -> crate::Re
             })
         }
         DnsRecordType::TXT => DnsRecord::TXT(record.destination.clone()),
-        DnsRecordType::SRV => parse_srv(&record.destination)?,
+        DnsRecordType::SRV => parse_srv(record)?,
         DnsRecordType::TLSA => parse_tlsa(&record.destination)?,
         DnsRecordType::CAA => parse_caa(&record.destination)?,
     })
 }
 
-fn parse_srv(value: &str) -> crate::Result<DnsRecord> {
+fn parse_srv(record: &NetcupRecord) -> crate::Result<DnsRecord> {
+    let priority: u16 = record.priority.parse().map_err(|e| {
+        Error::Parse(format!(
+            "invalid Netcup SRV priority '{}': {e}",
+            record.priority
+        ))
+    })?;
+    let value = record.destination.as_str();
     let mut parts = value.split_whitespace();
-    let priority = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV priority in '{value}': {e}")))?;
     let weight = parts
         .next()
         .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?

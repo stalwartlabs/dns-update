@@ -13,6 +13,7 @@ use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
     TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
     http::{HttpClient, HttpClientBuilder},
+    utils::txt_chunks_to_text,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -392,9 +393,11 @@ impl From<DnsRecord> for DnsContent {
                 content: mx.exchange,
                 priority: mx.priority,
             },
-            DnsRecord::TXT(content) => DnsContent::TXT {
-                content: format!("\"{}\"", content.replace('\"', "\\\"")),
-            },
+            DnsRecord::TXT(content) => {
+                let mut out = String::with_capacity(content.len() + 4);
+                txt_chunks_to_text(&mut out, &content, " ");
+                DnsContent::TXT { content: out }
+            }
             DnsRecord::SRV(srv) => DnsContent::SRV {
                 data: SrvData {
                     priority: srv.priority,
@@ -453,11 +456,32 @@ impl TryFrom<DnsContent> for DnsRecord {
 }
 
 fn unquote_txt(content: &str) -> String {
-    let trimmed = content
-        .strip_prefix('"')
-        .and_then(|s| s.strip_suffix('"'))
-        .unwrap_or(content);
-    trimmed.replace("\\\"", "\"")
+    let trimmed = content.trim();
+    if !trimmed.starts_with('"') {
+        return trimmed.to_string();
+    }
+    let mut out = String::with_capacity(trimmed.len());
+    let mut bytes = trimmed.as_bytes().iter().copied().peekable();
+    while let Some(b) = bytes.peek().copied() {
+        if b != b'"' {
+            bytes.next();
+            continue;
+        }
+        bytes.next();
+        loop {
+            match bytes.next() {
+                Some(b'"') => break,
+                Some(b'\\') => {
+                    if let Some(next) = bytes.next() {
+                        out.push(next as char);
+                    }
+                }
+                Some(other) => out.push(other as char),
+                None => break,
+            }
+        }
+    }
+    out
 }
 
 fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {

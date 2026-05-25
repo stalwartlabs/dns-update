@@ -30,6 +30,7 @@ pub struct TransipProvider {
     auth: Arc<Mutex<AuthState>>,
     login: String,
     private_key_pem: String,
+    global_key: bool,
     endpoint: String,
     client: HttpClient,
 }
@@ -78,6 +79,7 @@ impl TransipProvider {
     pub(crate) fn new(
         login: impl AsRef<str>,
         private_key_pem: impl AsRef<str>,
+        global_key: bool,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
         let login = login.as_ref().to_string();
@@ -95,6 +97,7 @@ impl TransipProvider {
             auth: Arc::new(Mutex::new(AuthState { token: None })),
             login,
             private_key_pem,
+            global_key,
             endpoint: DEFAULT_API_ENDPOINT.to_string(),
             client,
         })
@@ -136,7 +139,7 @@ impl TransipProvider {
             read_only: false,
             expiration_time: "30 minutes",
             label: format!("dns-update-{nonce}"),
-            global_key: false,
+            global_key: self.global_key,
         };
 
         let payload = serde_json::to_string(&body)

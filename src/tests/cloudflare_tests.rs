@@ -1143,7 +1143,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_set_rrset_long_txt_dkim_key_sent_as_one_quoted_string() {
+    async fn test_set_rrset_long_txt_dkim_key_sent_as_chunked_strings() {
         let mut server = mockito::Server::new_async().await;
         let zone = mock_zone_lookup(&mut server, "example.com");
         let list = mock_list(
@@ -1154,7 +1154,8 @@ mod tests {
         );
 
         let long_value: String = "v=DKIM1;k=rsa;p=".to_string() + &"A".repeat(380);
-        let expected_sent = format!("\"{}\"", long_value);
+        let (head, tail) = long_value.split_at(255);
+        let expected_sent = format!("\"{head}\" \"{tail}\"");
 
         let create = server
             .mock("POST", format!("/zones/{ZONE_ID}/dns_records").as_str())
