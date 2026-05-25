@@ -223,12 +223,7 @@ impl OvhProvider {
         self.send_authenticated_request(Method::GET, &url, "")
             .await
             .map(|_| domain_name.to_string())
-            .map_err(|_| {
-                Error::Api(format!(
-                    "Zone {} not found or not accessible",
-                    domain_name
-                ))
-            })
+            .map_err(|_| Error::Api(format!("Zone {} not found or not accessible", domain_name)))
     }
 
     async fn list_record_ids(
@@ -341,10 +336,7 @@ impl OvhProvider {
         let mut leftovers: Vec<&OvhRecordBody> = existing.iter().collect();
 
         for wanted in &desired {
-            if let Some(pos) = leftovers
-                .iter()
-                .position(|e| target_equivalent(e, wanted))
-            {
+            if let Some(pos) = leftovers.iter().position(|e| target_equivalent(e, wanted)) {
                 leftovers.swap_remove(pos);
             } else {
                 to_add.push(wanted.clone());
@@ -386,10 +378,7 @@ impl OvhProvider {
 
         let mut mutated = false;
         for wire in desired {
-            if existing
-                .iter()
-                .any(|e| target_equivalent(e, &wire))
-            {
+            if existing.iter().any(|e| target_equivalent(e, &wire)) {
                 continue;
             }
             self.post_record(&zone, &subdomain, ttl, &wire).await?;
@@ -420,10 +409,7 @@ impl OvhProvider {
 
         let mut mutated = false;
         for wire in to_remove {
-            if let Some(entry) = existing
-                .iter()
-                .find(|e| target_equivalent(e, &wire))
-            {
+            if let Some(entry) = existing.iter().find(|e| target_equivalent(e, &wire)) {
                 self.delete_record_id(&zone, entry.id).await?;
                 mutated = true;
             }
@@ -477,16 +463,14 @@ fn target_equivalent(existing: &OvhRecordBody, wanted: &OvhRecordFormat) -> bool
         return true;
     }
     match wanted.field_type.as_str() {
-        "CNAME" | "NS" => {
-            existing.target.trim_end_matches('.').eq_ignore_ascii_case(
-                wanted.target.trim_end_matches('.'),
-            )
-        }
+        "CNAME" | "NS" => existing
+            .target
+            .trim_end_matches('.')
+            .eq_ignore_ascii_case(wanted.target.trim_end_matches('.')),
         "MX" | "SRV" => {
-            normalize_priority_target(&existing.target)
-                == normalize_priority_target(&wanted.target)
+            normalize_priority_target(&existing.target) == normalize_priority_target(&wanted.target)
         }
-        "TLSA" => existing.target.to_ascii_lowercase() == wanted.target.to_ascii_lowercase(),
+        "TLSA" => existing.target.eq_ignore_ascii_case(&wanted.target),
         _ => false,
     }
 }

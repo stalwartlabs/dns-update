@@ -822,10 +822,7 @@ mod tests {
         let name = std::env::var("DOMENESHOP_NAME").unwrap_or_default();
 
         assert!(
-            !token.is_empty()
-                && !secret.is_empty()
-                && !origin.is_empty()
-                && !name.is_empty(),
+            !token.is_empty() && !secret.is_empty() && !origin.is_empty() && !name.is_empty(),
             "Set DOMENESHOP_API_TOKEN, DOMENESHOP_API_SECRET, DOMENESHOP_ORIGIN and DOMENESHOP_NAME env vars"
         );
 

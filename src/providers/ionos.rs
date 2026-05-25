@@ -179,10 +179,7 @@ impl IonosProvider {
 
         let mut to_add: Vec<Record> = Vec::new();
         for (record, content) in records.iter().zip(desired.iter()) {
-            if existing_contents
-                .iter()
-                .any(|c| c.rdata_matches(content))
-            {
+            if existing_contents.iter().any(|c| c.rdata_matches(content)) {
                 continue;
             }
             let mut payloads = build_records(record, &name, ttl)?;

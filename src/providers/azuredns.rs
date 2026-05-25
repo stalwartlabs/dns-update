@@ -325,10 +325,7 @@ impl AzureDnsProvider {
         if let Some(etag) = if_match {
             request = request.with_header("if-match", etag);
         }
-        request
-            .send_with_retry::<Value>(3)
-            .await
-            .map(|_| ())
+        request.send_with_retry::<Value>(3).await.map(|_| ())
     }
 
     async fn delete_rrset_url(&self, url: &str, token: &str, if_match: Option<&str>) -> Result<()> {
@@ -430,7 +427,6 @@ fn azure_record_type(rt: &DnsRecordType) -> Result<&'static str> {
         }
     })
 }
-
 
 #[derive(Default)]
 struct FetchedRrset {

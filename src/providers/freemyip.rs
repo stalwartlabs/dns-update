@@ -91,7 +91,8 @@ impl FreeMyIpProvider {
         if records.is_empty() {
             return Ok(());
         }
-        self.set_rrset(name, record_type, ttl, records, origin).await
+        self.set_rrset(name, record_type, ttl, records, origin)
+            .await
     }
 
     pub(crate) async fn remove_from_rrset(

@@ -546,9 +546,10 @@ fn decoded_data_matches(stored_b64: &[String], desired: &[String]) -> bool {
     if stored.len() != desired.len() {
         return false;
     }
-    stored.iter().zip(desired.iter()).all(|(a, b)| {
-        a == b || unquote_txt(a) == *b
-    })
+    stored
+        .iter()
+        .zip(desired.iter())
+        .all(|(a, b)| a == b || unquote_txt(a) == *b)
 }
 
 fn decode_to_dns_record(record_type: DnsRecordType, fields: &[String]) -> crate::Result<DnsRecord> {

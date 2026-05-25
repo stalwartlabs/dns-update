@@ -303,10 +303,7 @@ fn check_error(error: Option<ApiError>) -> crate::Result<()> {
 
 fn record_wire_of(record: &ZoneRecord) -> RecordWire {
     let prio = record.prio.parse::<u16>().unwrap_or(0);
-    let rdata = if matches!(
-        record.record_type.as_str(),
-        "CNAME" | "NS" | "MX" | "SRV"
-    ) {
+    let rdata = if matches!(record.record_type.as_str(), "CNAME" | "NS" | "MX" | "SRV") {
         record.rdata.trim_end_matches('.').to_string()
     } else {
         record.rdata.clone()

@@ -300,7 +300,11 @@ impl AlidnsProvider {
                 record_id: r.record_id,
                 value: r.value,
                 ttl: r.ttl,
-                priority: if record_type == "MX" { r.priority } else { None },
+                priority: if record_type == "MX" {
+                    r.priority
+                } else {
+                    None
+                },
             })
             .collect();
         Ok(records)

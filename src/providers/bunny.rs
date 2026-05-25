@@ -74,7 +74,10 @@ impl BunnyProvider {
 
         let mut to_add = Vec::new();
         for content in desired {
-            if let Some(idx) = existing_pool.iter().position(|r| r.content.equivalent(&content)) {
+            if let Some(idx) = existing_pool
+                .iter()
+                .position(|r| r.content.equivalent(&content))
+            {
                 existing_pool.swap_remove(idx);
             } else {
                 to_add.push(content);

@@ -210,18 +210,9 @@ mod tests {
         let hostname = std::env::var("HURRICANE_HOSTNAME").unwrap_or_default();
         let password = std::env::var("HURRICANE_PASSWORD").unwrap_or_default();
 
-        assert!(
-            !zone.is_empty(),
-            "Set HURRICANE_ZONE env var"
-        );
-        assert!(
-            !hostname.is_empty(),
-            "Set HURRICANE_HOSTNAME env var"
-        );
-        assert!(
-            !password.is_empty(),
-            "Set HURRICANE_PASSWORD env var"
-        );
+        assert!(!zone.is_empty(), "Set HURRICANE_ZONE env var");
+        assert!(!hostname.is_empty(), "Set HURRICANE_HOSTNAME env var");
+        assert!(!password.is_empty(), "Set HURRICANE_PASSWORD env var");
 
         let mut creds = HashMap::new();
         creds.insert(zone.to_string(), password.to_string());

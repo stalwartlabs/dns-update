@@ -36,8 +36,7 @@ mod tests {
 
     #[test]
     fn dns_updater_creation() {
-        let updater =
-            DnsUpdater::new_inwx("user", "pass", false, Some(Duration::from_secs(1)));
+        let updater = DnsUpdater::new_inwx("user", "pass", false, Some(Duration::from_secs(1)));
         assert!(matches!(updater, Ok(DnsUpdater::Inwx(..))));
     }
 

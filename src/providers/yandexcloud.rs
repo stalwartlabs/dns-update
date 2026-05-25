@@ -223,9 +223,7 @@ impl YandexCloudProvider {
         let zone = self.resolve_zone(&origin).await?;
         let subdomain = strip_origin_from_name(&name, &zone.zone, None);
 
-        let existing = self
-            .get_record_set(&zone.id, &subdomain, type_str)
-            .await?;
+        let existing = self.get_record_set(&zone.id, &subdomain, type_str).await?;
         let existing_data = existing
             .as_ref()
             .map(|rs| rs.data.clone())

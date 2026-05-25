@@ -88,9 +88,7 @@ impl InwxProvider {
         sandbox: bool,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
-        let client = HttpClientBuilder::default()
-            .with_timeout(timeout)
-            .build();
+        let client = HttpClientBuilder::default().with_timeout(timeout).build();
         let endpoint = if sandbox {
             SANDBOX_ENDPOINT.to_string()
         } else {

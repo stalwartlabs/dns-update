@@ -834,4 +834,3 @@ fn tlsa_matching_from_u8(value: u8) -> Result<TlsaMatching> {
         _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
     })
 }
-

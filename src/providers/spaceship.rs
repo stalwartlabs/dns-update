@@ -411,9 +411,19 @@ impl SpaceshipProvider {
 }
 
 enum RrsetIdentity {
-    Simple { name: String },
-    Srv { name: String, service: String, protocol: String },
-    Tlsa { name: String, port: u16, protocol: String },
+    Simple {
+        name: String,
+    },
+    Srv {
+        name: String,
+        service: String,
+        protocol: String,
+    },
+    Tlsa {
+        name: String,
+        port: u16,
+        protocol: String,
+    },
 }
 
 impl RrsetIdentity {

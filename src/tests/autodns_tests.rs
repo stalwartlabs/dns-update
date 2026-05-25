@@ -649,10 +649,7 @@ mod tests {
         let subdomain = std::env::var("AUTODNS_SUBDOMAIN").unwrap_or_default();
 
         assert!(
-            !user.is_empty()
-                && !pass.is_empty()
-                && !origin.is_empty()
-                && !subdomain.is_empty(),
+            !user.is_empty() && !pass.is_empty() && !origin.is_empty() && !subdomain.is_empty(),
             "Set AUTODNS_USER, AUTODNS_PASS, AUTODNS_ORIGIN and AUTODNS_SUBDOMAIN env vars"
         );
 

@@ -182,7 +182,10 @@ mod tests {
                 "host.freemyip.com",
             )
             .await;
-        assert!(result.is_ok(), "expected Ok for empty remove, got {result:?}");
+        assert!(
+            result.is_ok(),
+            "expected Ok for empty remove, got {result:?}"
+        );
     }
 
     #[tokio::test]
