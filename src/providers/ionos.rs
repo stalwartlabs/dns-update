@@ -49,7 +49,7 @@ struct Record {
     ttl: u32,
     #[serde(rename = "type")]
     record_type: String,
-    #[serde(default, skip_serializing_if = "is_zero_u16", rename = "prio")]
+    #[serde(default, rename = "prio")]
     priority: u16,
     #[serde(default, skip_serializing_if = "is_false")]
     disabled: bool,
@@ -68,10 +68,6 @@ impl RecordContent {
     }
 }
 
-fn is_zero_u16(v: &u16) -> bool {
-    *v == 0
-}
-
 fn is_false(v: &bool) -> bool {
     !*v
 }
@@ -81,6 +77,10 @@ impl IonosProvider {
         let client = HttpClientBuilder::default()
             .with_header("X-Api-Key", api_key.as_ref())
             .with_header("Accept", "application/json")
+            .with_header(
+                "User-Agent",
+                concat!("dns-update/", env!("CARGO_PKG_VERSION")),
+            )
             .with_timeout(timeout)
             .build();
         Self {
