@@ -81,6 +81,10 @@ impl IonosProvider {
         let client = HttpClientBuilder::default()
             .with_header("X-Api-Key", api_key.as_ref())
             .with_header("Accept", "application/json")
+            .with_header(
+                "User-Agent",
+                concat!("dns-update/", env!("CARGO_PKG_VERSION")),
+            )
             .with_timeout(timeout)
             .build();
         Self {
