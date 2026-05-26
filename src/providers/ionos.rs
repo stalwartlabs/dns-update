@@ -49,7 +49,7 @@ struct Record {
     ttl: u32,
     #[serde(rename = "type")]
     record_type: String,
-    #[serde(default, skip_serializing_if = "is_zero_u16", rename = "prio")]
+    #[serde(default, rename = "prio")]
     priority: u16,
     #[serde(default, skip_serializing_if = "is_false")]
     disabled: bool,
@@ -66,10 +66,6 @@ impl RecordContent {
     fn rdata_matches(&self, other: &Self) -> bool {
         self.content == other.content && self.priority == other.priority
     }
-}
-
-fn is_zero_u16(v: &u16) -> bool {
-    *v == 0
 }
 
 fn is_false(v: &bool) -> bool {
