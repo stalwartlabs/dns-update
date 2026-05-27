@@ -11,6 +11,7 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
     http::{HttpClient, HttpClientBuilder},
     utils::{strip_origin_from_name, txt_chunks_to_text},
 };
@@ -44,16 +45,9 @@ struct ApiErrorBody {
     description: String,
 }
 
-#[derive(Deserialize, Debug)]
-struct Domain {
-    id: u64,
-    #[serde(default, rename = "customer_name")]
-    customer_name: String,
-}
-
 #[derive(Deserialize, Debug, Clone)]
 struct ExistingRecord {
-    id: String,
+    id: u64,
     #[serde(default)]
     source: String,
     #[serde(default, rename = "source_idn")]
@@ -73,8 +67,6 @@ struct RecordPayload<'a> {
     #[serde(rename = "type")]
     record_type: &'a str,
     ttl: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    priority: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     dkim_type: Option<&'a str>,
 }
@@ -121,13 +113,13 @@ impl InfomaniakProvider {
         check_record_types(record_type, &records)?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
-        let ik_domain = self.find_domain(&domain).await?;
-        let source = source_from_name(&name, &ik_domain.customer_name);
 
-        let desired = build_wire_records(record_type, records)?;
-        let mut existing_pool = self
-            .list_filtered(ik_domain.id, &source, record_type)
-            .await?;
+        // possible &domain.trim_end_matches('.');
+        let ik_domain = &domain;
+        let source = source_from_name(&name, ik_domain);
+
+        let desired = build_wire_records(records)?;
+        let mut existing_pool = self.list_filtered(ik_domain, &source, record_type).await?;
 
         let mut to_add = Vec::new();
         for wire in desired {
@@ -139,17 +131,16 @@ impl InfomaniakProvider {
         }
 
         for entry in existing_pool {
-            self.delete_record(ik_domain.id, &entry.id).await?;
+            self.delete_record(ik_domain, entry.id).await?;
         }
         let dkim_type = is_dkim_owner(record_type.as_str(), &source).then_some("rsa");
         for wire in to_add {
             self.post_record(
-                ik_domain.id,
+                ik_domain,
                 &source,
                 &wire.target,
                 record_type.as_str(),
                 ttl,
-                wire.priority,
                 dkim_type,
             )
             .await?;
@@ -171,13 +162,11 @@ impl InfomaniakProvider {
         }
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
-        let ik_domain = self.find_domain(&domain).await?;
-        let source = source_from_name(&name, &ik_domain.customer_name);
+        let ik_domain = &domain;
+        let source = source_from_name(&name, ik_domain);
 
-        let desired = build_wire_records(record_type, records)?;
-        let existing = self
-            .list_filtered(ik_domain.id, &source, record_type)
-            .await?;
+        let desired = build_wire_records(records)?;
+        let existing = self.list_filtered(ik_domain, &source, record_type).await?;
         let dkim_type = is_dkim_owner(record_type.as_str(), &source).then_some("rsa");
 
         for wire in desired {
@@ -185,12 +174,11 @@ impl InfomaniakProvider {
                 continue;
             }
             self.post_record(
-                ik_domain.id,
+                ik_domain,
                 &source,
                 &wire.target,
                 record_type.as_str(),
                 ttl,
-                wire.priority,
                 dkim_type,
             )
             .await?;
@@ -211,17 +199,15 @@ impl InfomaniakProvider {
         }
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
-        let ik_domain = self.find_domain(&domain).await?;
-        let source = source_from_name(&name, &ik_domain.customer_name);
+        let ik_domain = &domain;
+        let source = source_from_name(&name, ik_domain);
 
-        let to_remove = build_wire_records(record_type, records)?;
-        let existing = self
-            .list_filtered(ik_domain.id, &source, record_type)
-            .await?;
+        let to_remove = build_wire_records(records)?;
+        let existing = self.list_filtered(ik_domain, &source, record_type).await?;
 
         for wire in to_remove {
             if let Some(entry) = existing.iter().find(|r| matches_wire(r, &wire)) {
-                self.delete_record(ik_domain.id, &entry.id).await?;
+                self.delete_record(ik_domain, entry.id).await?;
             }
         }
         Ok(())
@@ -233,18 +219,11 @@ impl InfomaniakProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
-        if matches!(record_type, DnsRecordType::TLSA) {
-            return Err(Error::Api(
-                "TLSA records are not supported by Infomaniak".to_string(),
-            ));
-        }
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
-        let ik_domain = self.find_domain(&domain).await?;
-        let source = source_from_name(&name, &ik_domain.customer_name);
-        let existing = self
-            .list_filtered(ik_domain.id, &source, record_type)
-            .await?;
+        let ik_domain = &domain;
+        let source = source_from_name(&name, ik_domain);
+        let existing = self.list_filtered(ik_domain, &source, record_type).await?;
         existing
             .into_iter()
             .map(|r| decode_existing(&r, record_type))
@@ -253,12 +232,12 @@ impl InfomaniakProvider {
 
     async fn replace_existing_spf(
         &self,
-        domain_id: u64,
+        domain: &str,
         source: &str,
         target: &str,
         ttl: u32,
     ) -> crate::Result<()> {
-        let url = format!("{}/1/domain/{}/dns/record", self.endpoint, domain_id);
+        let url = format!("{}/2/zones/{}/records", self.endpoint, domain);
         let existing = self
             .send_expect_success::<Vec<ExistingRecord>>(self.client.get(&url))
             .await?;
@@ -277,38 +256,27 @@ impl InfomaniakProvider {
                 )
             })?;
 
-        self.put_record(
-            domain_id,
-            &existing_id,
-            source,
-            target,
-            "TXT",
-            ttl,
-            None,
-            None,
-        )
-        .await
+        self.put_record(domain, existing_id, source, target, "TXT", ttl, None)
+            .await
     }
 
     #[allow(clippy::too_many_arguments)]
     async fn post_record(
         &self,
-        domain_id: u64,
+        domain: &str,
         source: &str,
         target: &str,
         record_type: &str,
         ttl: u32,
-        priority: Option<u16>,
         mut dkim_type: Option<&'static str>,
     ) -> crate::Result<()> {
-        let url = format!("{}/1/domain/{}/dns/record", self.endpoint, domain_id);
+        let url = format!("{}/2/zones/{}/records", self.endpoint, domain);
         loop {
             let payload = RecordPayload {
                 source,
                 target,
                 record_type,
                 ttl,
-                priority,
                 dkim_type,
             };
             let request = self.client.post(url.clone()).with_body(&payload)?;
@@ -320,9 +288,7 @@ impl InfomaniakProvider {
                         continue;
                     }
                     Recovery::ReplaceSpf => {
-                        return self
-                            .replace_existing_spf(domain_id, source, target, ttl)
-                            .await;
+                        return self.replace_existing_spf(domain, source, target, ttl).await;
                     }
                     Recovery::Propagate => return Err(err),
                 },
@@ -333,13 +299,12 @@ impl InfomaniakProvider {
     #[allow(clippy::too_many_arguments)]
     async fn put_record(
         &self,
-        domain_id: u64,
-        record_id: &str,
+        domain: &str,
+        record_id: u64,
         source: &str,
         target: &str,
         record_type: &str,
         ttl: u32,
-        priority: Option<u16>,
         dkim_type: Option<&'static str>,
     ) -> crate::Result<()> {
         let payload = RecordPayload {
@@ -347,60 +312,28 @@ impl InfomaniakProvider {
             target,
             record_type,
             ttl,
-            priority,
             dkim_type,
         };
-        let url = format!(
-            "{}/1/domain/{}/dns/record/{}",
-            self.endpoint, domain_id, record_id
-        );
+        let url = format!("{}/2/zones/{}/records/{}", self.endpoint, domain, record_id);
         self.send_expect_success::<serde_json::Value>(self.client.put(url).with_body(payload)?)
             .await
             .map(|_| ())
     }
 
-    async fn delete_record(&self, domain_id: u64, record_id: &str) -> crate::Result<()> {
-        let url = format!(
-            "{}/1/domain/{}/dns/record/{}",
-            self.endpoint, domain_id, record_id
-        );
+    async fn delete_record(&self, domain: &str, record_id: u64) -> crate::Result<()> {
+        let url = format!("{}/2/zones/{}/records/{}", self.endpoint, domain, record_id);
         self.send_expect_success::<serde_json::Value>(self.client.delete(url))
             .await
             .map(|_| ())
     }
 
-    async fn find_domain(&self, name: &str) -> crate::Result<Domain> {
-        let mut candidate = name.trim_end_matches('.');
-        loop {
-            let url = format!(
-                "{}/1/product?service_name=domain&customer_name={}",
-                self.endpoint, candidate
-            );
-            let domains = self
-                .send_expect_success::<Vec<Domain>>(self.client.get(url))
-                .await?;
-            if let Some(domain) = domains.into_iter().find(|d| d.customer_name == candidate) {
-                return Ok(domain);
-            }
-            match candidate.split_once('.') {
-                Some((_, rest)) if rest.contains('.') => candidate = rest,
-                _ => {
-                    return Err(Error::Api(format!(
-                        "No Infomaniak domain found for {}",
-                        name
-                    )));
-                }
-            }
-        }
-    }
-
     async fn list_filtered(
         &self,
-        domain_id: u64,
+        domain: &str,
         source: &str,
         record_type: DnsRecordType,
     ) -> crate::Result<Vec<ExistingRecord>> {
-        let url = format!("{}/1/domain/{}/dns/record", self.endpoint, domain_id);
+        let url = format!("{}/2/zones/{}/records", self.endpoint, domain);
         let records = self
             .send_expect_success::<Vec<ExistingRecord>>(self.client.get(url))
             .await?;
@@ -449,20 +382,12 @@ fn is_dkim_owner(record_type: &str, source: &str) -> bool {
 }
 
 fn unquote_txt(target: &str) -> String {
-    let mut out = String::with_capacity(target.len());
-    let mut chars = target.chars();
-    while let Some(ch) = chars.next() {
-        match ch {
-            '"' => continue,
-            '\\' => {
-                if let Some(next) = chars.next() {
-                    out.push(next);
-                }
-            }
-            _ => out.push(ch),
-        }
-    }
-    out
+    target
+        .split('"')
+        .filter(|s| !s.trim().is_empty())
+        .flat_map(|chunk| chunk.chars())
+        .filter(|c| *c != ' ')
+        .collect()
 }
 
 fn normalize_txt_wire(target: &str) -> String {
@@ -501,11 +426,6 @@ fn recovery_action(err: &Error, current_dkim: Option<&str>) -> Recovery {
 }
 
 fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
-    if matches!(expected, DnsRecordType::TLSA) {
-        return Err(Error::Api(
-            "TLSA records are not supported by Infomaniak".to_string(),
-        ));
-    }
     for r in records {
         if r.as_type() != expected {
             return Err(Error::Api(format!(
@@ -518,30 +438,43 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
     Ok(())
 }
 
-fn build_wire_records(
-    expected: DnsRecordType,
-    records: Vec<DnsRecord>,
-) -> crate::Result<Vec<WireRecord>> {
+fn build_wire_records(records: Vec<DnsRecord>) -> crate::Result<Vec<WireRecord>> {
     records
         .into_iter()
         .map(|r| {
             let (_, target, priority) = encode_record(&r)?;
-            let target = if matches!(expected, DnsRecordType::TXT) {
-                normalize_txt_wire(&target)
-            } else {
-                target
-            };
             Ok(WireRecord { target, priority })
         })
         .collect()
 }
 
+fn normalize_tlsa_wire(target: &str) -> String {
+    let mut parts = target.split_whitespace();
+
+    let header = parts.by_ref().take(3).collect::<Vec<_>>().join(" ");
+
+    let data = parts
+        .map(|p| p.to_ascii_uppercase())
+        .collect::<Vec<_>>()
+        .join("");
+
+    if data.is_empty() {
+        header
+    } else {
+        format!("{header} {data}")
+    }
+}
+
 fn matches_wire(existing: &ExistingRecord, wire: &WireRecord) -> bool {
-    let target_match =
-        existing.target == wire.target || normalize_txt_wire(&existing.target) == wire.target;
+    let target_match = if existing.record_type == "TLSA" {
+        normalize_tlsa_wire(&existing.target) == normalize_tlsa_wire(&wire.target)
+    } else {
+        normalize_txt_wire(&existing.target) == normalize_txt_wire(&wire.target)
+    };
     if !target_match {
         return false;
     }
+
     match (wire.priority, existing.priority) {
         (Some(a), Some(b)) => a == b,
         (None, _) => true,
@@ -555,7 +488,11 @@ fn encode_record(record: &DnsRecord) -> crate::Result<(&'static str, String, Opt
         DnsRecord::AAAA(addr) => ("AAAA", addr.to_string(), None),
         DnsRecord::CNAME(value) => ("CNAME", ensure_trailing_dot(value), None),
         DnsRecord::NS(value) => ("NS", ensure_trailing_dot(value), None),
-        DnsRecord::MX(mx) => ("MX", ensure_trailing_dot(&mx.exchange), Some(mx.priority)),
+        DnsRecord::MX(mx) => (
+            "MX",
+            format!("{} {}", mx.priority, ensure_trailing_dot(&mx.exchange)),
+            None,
+        ),
         DnsRecord::TXT(value) => ("TXT", encode_txt_value(value), None),
         DnsRecord::SRV(srv) => (
             "SRV",
@@ -576,11 +513,17 @@ fn encode_record(record: &DnsRecord) -> crate::Result<(&'static str, String, Opt
                 None,
             )
         }
-        DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
-                "TLSA records are not supported by Infomaniak".to_string(),
-            ));
-        }
+        DnsRecord::TLSA(tlsa) => (
+            "TLSA",
+            format!(
+                "{} {} {} {}",
+                u8::from(tlsa.cert_usage),
+                u8::from(tlsa.selector),
+                u8::from(tlsa.matching),
+                hex::encode(&tlsa.cert_data),
+            ),
+            None,
+        ),
     })
 }
 
@@ -610,11 +553,7 @@ fn decode_existing(
         DnsRecordType::TXT => DnsRecord::TXT(unquote_txt(&record.target)),
         DnsRecordType::SRV => DnsRecord::SRV(parse_srv(&record.target)?),
         DnsRecordType::CAA => DnsRecord::CAA(parse_caa(&record.target)?),
-        DnsRecordType::TLSA => {
-            return Err(Error::Api(
-                "TLSA records are not supported by Infomaniak".to_string(),
-            ));
-        }
+        DnsRecordType::TLSA => DnsRecord::TLSA(parse_tlsa(&record.target)?),
     })
 }
 
@@ -710,4 +649,73 @@ fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
         })
         .collect();
     (name, options)
+}
+
+fn parse_tlsa(target: &str) -> crate::Result<TLSARecord> {
+    let mut parts = target.split_whitespace();
+
+    let cert_usage = parts
+        .next()
+        .and_then(|s| s.parse::<u8>().ok())
+        .and_then(tlsa_cert_usage_from_u8)
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA cert usage in {target}")))?;
+
+    let selector = parts
+        .next()
+        .and_then(|s| s.parse::<u8>().ok())
+        .and_then(tlsa_selector_from_u8)
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA selector in {target}")))?;
+
+    let matching = parts
+        .next()
+        .and_then(|s| s.parse::<u8>().ok())
+        .and_then(tlsa_matching_from_u8)
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA matching type in {target}")))?;
+
+    let cert_data_hex = parts.collect::<String>();
+    if cert_data_hex.is_empty() {
+        return Err(Error::Parse(format!(
+            "missing TLSA certificate data in {target}"
+        )));
+    }
+
+    let cert_data = hex::decode(&cert_data_hex)
+        .map_err(|e| Error::Parse(format!("invalid TLSA certificate data in {target}: {e}")))?;
+
+    Ok(TLSARecord {
+        cert_usage,
+        selector,
+        matching,
+        cert_data,
+    })
+}
+
+fn tlsa_cert_usage_from_u8(value: u8) -> Option<TlsaCertUsage> {
+    Some(match value {
+        0 => TlsaCertUsage::PkixTa,
+        1 => TlsaCertUsage::PkixEe,
+        2 => TlsaCertUsage::DaneTa,
+        3 => TlsaCertUsage::DaneEe,
+        255 => TlsaCertUsage::Private,
+        _ => return None,
+    })
+}
+
+fn tlsa_selector_from_u8(value: u8) -> Option<TlsaSelector> {
+    Some(match value {
+        0 => TlsaSelector::Full,
+        1 => TlsaSelector::Spki,
+        255 => TlsaSelector::Private,
+        _ => return None,
+    })
+}
+
+fn tlsa_matching_from_u8(value: u8) -> Option<TlsaMatching> {
+    Some(match value {
+        0 => TlsaMatching::Raw,
+        1 => TlsaMatching::Sha256,
+        2 => TlsaMatching::Sha512,
+        255 => TlsaMatching::Private,
+        _ => return None,
+    })
 }
