@@ -637,7 +637,7 @@ mod tests {
                 "example.com",
             )
             .await;
-        assert!(matches!(result, Err(Error::Api(_))), "got {result:?}");
+        assert!(matches!(result, Err(Error::Unsupported(_))), "got {result:?}");
     }
 
     #[tokio::test]

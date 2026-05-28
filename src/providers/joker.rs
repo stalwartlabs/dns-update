@@ -430,7 +430,7 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
 
 fn reject_tlsa(record_type: DnsRecordType) -> crate::Result<()> {
     if matches!(record_type, DnsRecordType::TLSA) {
-        Err(Error::Api(
+        Err(Error::Unsupported(
             "TLSA records are not supported by Joker.com".to_string(),
         ))
     } else {
@@ -461,7 +461,7 @@ fn render_zone_entries(host: &str, record: &DnsRecord, ttl: u32) -> crate::Resul
             )],
         ),
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Joker.com".to_string(),
             ));
         }
@@ -675,7 +675,7 @@ fn parse_zone_record(
             DnsRecord::CAA(build_caa(flags, &tag, &value)?)
         }
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Joker.com".to_string(),
             ));
         }

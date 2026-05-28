@@ -509,7 +509,7 @@ fn bluecat_record_type(record_type: DnsRecordType) -> crate::Result<&'static str
         DnsRecordType::SRV => "SRV",
         DnsRecordType::CAA => "CAA",
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Bluecat".into(),
             ));
         }
@@ -597,7 +597,7 @@ fn record_to_normalized(record: DnsRecord) -> crate::Result<NormalizedContent> {
             NormalizedContent::Caa { flags, tag, value }
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Bluecat".into(),
             ));
         }

@@ -367,7 +367,7 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
 
 fn reject_tlsa(record_type: DnsRecordType) -> crate::Result<()> {
     if record_type == DnsRecordType::TLSA {
-        Err(Error::Api(
+        Err(Error::Unsupported(
             "TLSA records are not supported by Hetzner".to_string(),
         ))
     } else {
@@ -405,7 +405,7 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
             ensure_trailing_dot(srv.target),
         ),
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Hetzner".to_string(),
             ));
         }
@@ -427,7 +427,7 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
         DnsRecordType::TXT => DnsRecord::TXT(parse_txt(value)),
         DnsRecordType::SRV => parse_srv(value)?,
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Hetzner".to_string(),
             ));
         }

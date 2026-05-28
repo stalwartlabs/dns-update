@@ -81,7 +81,7 @@ impl DdnssProvider {
         _records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        Err(Error::Api(
+        Err(Error::Unsupported(
             "DDNSS does not support add_to_rrset (no list endpoint)".to_string(),
         ))
     }
@@ -93,7 +93,7 @@ impl DdnssProvider {
         _records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        Err(Error::Api(
+        Err(Error::Unsupported(
             "DDNSS does not support remove_from_rrset (no list endpoint)".to_string(),
         ))
     }
@@ -104,7 +104,7 @@ impl DdnssProvider {
         _record_type: DnsRecordType,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
-        Err(Error::Api(
+        Err(Error::Unsupported(
             "DDNSS does not support listing records".to_string(),
         ))
     }

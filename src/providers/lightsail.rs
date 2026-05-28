@@ -568,10 +568,10 @@ fn lightsail_record_type(record_type: DnsRecordType) -> Result<&'static str> {
         DnsRecordType::MX => Ok("MX"),
         DnsRecordType::TXT => Ok("TXT"),
         DnsRecordType::SRV => Ok("SRV"),
-        DnsRecordType::CAA => Err(Error::Api(
+        DnsRecordType::CAA => Err(Error::Unsupported(
             "CAA records are not supported by Lightsail".to_string(),
         )),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Lightsail".to_string(),
         )),
     }
@@ -623,12 +623,12 @@ impl LightsailRecord {
                 )],
             ),
             DnsRecord::CAA(_) => {
-                return Err(Error::Api(
+                return Err(Error::Unsupported(
                     "CAA records are not supported by Lightsail".to_string(),
                 ));
             }
             DnsRecord::TLSA(_) => {
-                return Err(Error::Api(
+                return Err(Error::Unsupported(
                     "TLSA records are not supported by Lightsail".to_string(),
                 ));
             }
@@ -697,10 +697,10 @@ fn parse_target(record_type: DnsRecordType, target: &str) -> Result<DnsRecord> {
                 target: target_field,
             }))
         }
-        DnsRecordType::CAA => Err(Error::Api(
+        DnsRecordType::CAA => Err(Error::Unsupported(
             "CAA records are not supported by Lightsail".to_string(),
         )),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Lightsail".to_string(),
         )),
     }

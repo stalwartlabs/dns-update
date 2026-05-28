@@ -315,7 +315,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("TLSA")),
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("TLSA")),
             "expected TLSA refusal, got {result:?}"
         );
     }
@@ -784,7 +784,7 @@ mod tests {
             .list_rrset("a.example.com", DnsRecordType::TLSA, "example.com")
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("TLSA")),
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("TLSA")),
             "got {result:?}"
         );
     }
@@ -808,7 +808,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("TLSA")),
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("TLSA")),
             "got {result:?}"
         );
     }

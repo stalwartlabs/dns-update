@@ -596,7 +596,7 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
 
 fn reject_tlsa(record_type: DnsRecordType) -> crate::Result<()> {
     if record_type == DnsRecordType::TLSA {
-        Err(Error::Api(
+        Err(Error::Unsupported(
             "TLSA records are not supported by huaweicloud".to_string(),
         ))
     } else {
@@ -632,7 +632,7 @@ fn render_record(record: &DnsRecord) -> crate::Result<String> {
             ensure_fqdn(&srv.target)
         )),
         DnsRecord::CAA(caa) => Ok(caa.clone().to_string()),
-        DnsRecord::TLSA(_) => Err(Error::Api(
+        DnsRecord::TLSA(_) => Err(Error::Unsupported(
             "TLSA records are not supported by huaweicloud".to_string(),
         )),
     }
@@ -653,7 +653,7 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
         DnsRecordType::SRV => parse_srv(value)?,
         DnsRecordType::CAA => parse_caa(value)?,
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by huaweicloud".to_string(),
             ));
         }

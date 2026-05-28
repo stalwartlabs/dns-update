@@ -199,7 +199,9 @@ impl OvhProvider {
             Method::DELETE => self.client.delete(url),
             Method::PATCH => self.client.patch(url),
             other => {
-                return Err(Error::Client(format!("OVH unsupported method: {other}")));
+                return Err(Error::Unsupported(format!(
+                    "OVH unsupported method: {other}"
+                )));
             }
         };
         request = request

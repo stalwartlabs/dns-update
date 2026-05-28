@@ -294,7 +294,7 @@ fn normalize_host(host: &str) -> String {
 
 fn validate_type(record_type: DnsRecordType) -> crate::Result<()> {
     if matches!(record_type, DnsRecordType::TLSA) {
-        return Err(Error::Api(
+        return Err(Error::Unsupported(
             "TLSA records are not supported by Name.com".to_string(),
         ));
     }
@@ -332,7 +332,7 @@ fn render_answer(record: DnsRecord) -> crate::Result<String> {
         DnsRecord::SRV(srv) => format!("{} {} {}", srv.weight, srv.port, srv.target),
         DnsRecord::CAA(caa) => caa.to_string(),
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Name.com".to_string(),
             ));
         }
@@ -363,7 +363,7 @@ fn normalized_to_record(
         })),
         DnsRecordType::SRV => parse_srv(record),
         DnsRecordType::CAA => parse_caa(&record.answer).map(DnsRecord::CAA),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Name.com".to_string(),
         )),
     }

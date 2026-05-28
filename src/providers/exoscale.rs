@@ -319,7 +319,7 @@ impl ExoscaleProvider {
 
 fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
     if expected == DnsRecordType::TLSA {
-        return Err(Error::Api(
+        return Err(Error::Unsupported(
             "TLSA records are not supported by Exoscale".into(),
         ));
     }
@@ -364,7 +364,7 @@ fn build_create_record<'a>(
             req.priority = Some(srv.priority);
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Exoscale".into(),
             ));
         }
@@ -386,7 +386,7 @@ fn dns_type(record: &DnsRecord) -> crate::Result<&'static str> {
         DnsRecord::TXT(_) => Ok("TXT"),
         DnsRecord::SRV(_) => Ok("SRV"),
         DnsRecord::CAA(_) => Ok("CAA"),
-        DnsRecord::TLSA(_) => Err(Error::Api(
+        DnsRecord::TLSA(_) => Err(Error::Unsupported(
             "TLSA records are not supported by Exoscale".into(),
         )),
     }

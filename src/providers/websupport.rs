@@ -374,7 +374,7 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
 
 fn reject_unsupported_type(record_type: DnsRecordType) -> crate::Result<()> {
     if matches!(record_type, DnsRecordType::TLSA) {
-        return Err(Error::Api(
+        return Err(Error::Unsupported(
             "TLSA records are not supported by WebSupport".into(),
         ));
     }
@@ -450,7 +450,7 @@ fn record_to_content(record: DnsRecord) -> crate::Result<RecordContent> {
             weight: None,
         },
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by WebSupport".into(),
             ));
         }
@@ -502,7 +502,7 @@ fn record_from_listed(
         }),
         DnsRecordType::CAA => DnsRecord::CAA(parse_caa(&content.content)?),
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by WebSupport".into(),
             ));
         }

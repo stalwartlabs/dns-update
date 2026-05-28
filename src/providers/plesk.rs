@@ -105,7 +105,7 @@ impl PleskProvider {
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
         if matches!(record_type, DnsRecordType::TLSA) {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Plesk".to_string(),
             ));
         }
@@ -150,7 +150,7 @@ impl PleskProvider {
             return Ok(());
         }
         if matches!(record_type, DnsRecordType::TLSA) {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Plesk".to_string(),
             ));
         }
@@ -185,7 +185,7 @@ impl PleskProvider {
             return Ok(());
         }
         if matches!(record_type, DnsRecordType::TLSA) {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Plesk".to_string(),
             ));
         }
@@ -214,7 +214,7 @@ impl PleskProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
         if matches!(record_type, DnsRecordType::TLSA) {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Plesk".to_string(),
             ));
         }
@@ -403,7 +403,7 @@ fn encode_record(record: &DnsRecord) -> crate::Result<Vec<EncodedPayload>> {
             }]
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Plesk".to_string(),
             ));
         }
@@ -478,7 +478,7 @@ fn decode_record(expected_type: DnsRecordType, record: &PleskRecord) -> crate::R
                 .ok_or_else(|| Error::Parse("missing CAA tag".to_string()))?;
             build_caa(flags, tag, &record.value).map(DnsRecord::CAA)
         }
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Plesk".to_string(),
         )),
     }

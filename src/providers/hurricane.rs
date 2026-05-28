@@ -89,7 +89,7 @@ impl HurricaneProvider {
         _records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        Err(Error::Api(
+        Err(Error::Unsupported(
             "Hurricane Electric does not support add_to_rrset (no list endpoint)".to_string(),
         ))
     }
@@ -101,7 +101,7 @@ impl HurricaneProvider {
         _records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        Err(Error::Api(
+        Err(Error::Unsupported(
             "Hurricane Electric does not support remove_from_rrset (no list endpoint)".to_string(),
         ))
     }
@@ -112,7 +112,7 @@ impl HurricaneProvider {
         _record_type: DnsRecordType,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
-        Err(Error::Api(
+        Err(Error::Unsupported(
             "Hurricane Electric does not support listing records".to_string(),
         ))
     }
@@ -145,7 +145,7 @@ impl HurricaneProvider {
 fn extract_txt(record: &DnsRecord) -> crate::Result<String> {
     match record {
         DnsRecord::TXT(content) => Ok(content.clone()),
-        other => Err(Error::Api(format!(
+        other => Err(Error::Unsupported(format!(
             "{} records are not supported by Hurricane Electric",
             other.as_type().as_str()
         ))),

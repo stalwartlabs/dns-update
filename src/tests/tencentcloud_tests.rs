@@ -420,7 +420,7 @@ mod tests {
                 "example.com",
             )
             .await;
-        assert!(matches!(result, Err(Error::Api(msg)) if msg.contains("TLSA")));
+        assert!(matches!(result, Err(Error::Unsupported(msg)) if msg.contains("TLSA")));
     }
 
     #[tokio::test]

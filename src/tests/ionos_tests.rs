@@ -63,8 +63,8 @@ mod tests {
         let create = server
             .mock("POST", "/v1/zones/zone-1/records")
             .match_body(Matcher::Json(json!([
-                {"name": "host.example.com", "content": "1.1.1.1", "ttl": 300, "type": "A"},
-                {"name": "host.example.com", "content": "2.2.2.2", "ttl": 300, "type": "A"},
+                {"name": "host.example.com", "content": "1.1.1.1", "ttl": 300, "type": "A", "prio": 0},
+                {"name": "host.example.com", "content": "2.2.2.2", "ttl": 300, "type": "A", "prio": 0},
             ])))
             .with_status(201)
             .with_body("[]")
@@ -146,7 +146,7 @@ mod tests {
         let create_new = server
             .mock("POST", "/v1/zones/zone-1/records")
             .match_body(Matcher::Json(json!([
-                {"name": "host.example.com", "content": "2.2.2.2", "ttl": 300, "type": "A"},
+                {"name": "host.example.com", "content": "2.2.2.2", "ttl": 300, "type": "A", "prio": 0},
             ])))
             .with_status(201)
             .with_body("[]")
@@ -226,7 +226,7 @@ mod tests {
         let create = server
             .mock("POST", "/v1/zones/zone-1/records")
             .match_body(Matcher::Json(json!([
-                {"name": "host.example.com", "content": "1.1.1.1", "ttl": 300, "type": "A"},
+                {"name": "host.example.com", "content": "1.1.1.1", "ttl": 300, "type": "A", "prio": 0},
             ])))
             .with_status(201)
             .with_body("[]")
@@ -308,7 +308,7 @@ mod tests {
         let create = server
             .mock("POST", "/v1/zones/zone-1/records")
             .match_body(Matcher::Json(json!([
-                {"name": "host.example.com", "content": "2.2.2.2", "ttl": 300, "type": "A"},
+                {"name": "host.example.com", "content": "2.2.2.2", "ttl": 300, "type": "A", "prio": 0},
             ])))
             .with_status(201)
             .with_body("[]")

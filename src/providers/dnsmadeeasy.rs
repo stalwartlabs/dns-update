@@ -357,7 +357,7 @@ fn check_record_types(expected_type: DnsRecordType, records: &[DnsRecord]) -> cr
 
 fn ensure_supported_type(record_type: DnsRecordType) -> crate::Result<()> {
     if record_type == DnsRecordType::TLSA {
-        return Err(Error::Api(
+        return Err(Error::Unsupported(
             "TLSA records are not supported by DNSMadeEasy".into(),
         ));
     }
@@ -443,7 +443,7 @@ fn listed_to_record(
         DnsRecordType::CAA => {
             build_caa(&listed.caa_type, listed.issuer_critical, listed.value).map(DnsRecord::CAA)
         }
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by DNSMadeEasy".into(),
         )),
     }
@@ -549,7 +549,7 @@ fn build_create_request<'a>(
             request.port = Some(srv.port);
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by DNSMadeEasy".into(),
             ));
         }
@@ -573,7 +573,7 @@ fn dns_type(record: &DnsRecord) -> crate::Result<&'static str> {
         DnsRecord::TXT(_) => Ok("TXT"),
         DnsRecord::SRV(_) => Ok("SRV"),
         DnsRecord::CAA(_) => Ok("CAA"),
-        DnsRecord::TLSA(_) => Err(Error::Api(
+        DnsRecord::TLSA(_) => Err(Error::Unsupported(
             "TLSA records are not supported by DNSMadeEasy".into(),
         )),
     }

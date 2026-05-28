@@ -316,7 +316,7 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
             )));
         }
         if matches!(record, DnsRecord::TLSA(_)) {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by IONOS".to_string(),
             ));
         }
@@ -378,7 +378,7 @@ fn build_records(record: &DnsRecord, name: &str, ttl: u32) -> crate::Result<Vec<
             )
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by IONOS".to_string(),
             ));
         }
@@ -419,7 +419,7 @@ fn record_from_api(record: &Record, record_type: DnsRecordType) -> crate::Result
         DnsRecordType::TXT => Ok(DnsRecord::TXT(unquote_txt(&record.content))),
         DnsRecordType::SRV => parse_srv(&record.content, record.priority).map(DnsRecord::SRV),
         DnsRecordType::CAA => parse_caa(&record.content).map(DnsRecord::CAA),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by IONOS".to_string(),
         )),
     }

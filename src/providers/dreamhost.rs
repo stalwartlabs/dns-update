@@ -258,10 +258,10 @@ impl DreamhostProvider {
 
 fn ensure_supported_type(record_type: DnsRecordType) -> crate::Result<()> {
     match record_type {
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Dreamhost".to_string(),
         )),
-        DnsRecordType::CAA => Err(Error::Api(
+        DnsRecordType::CAA => Err(Error::Unsupported(
             "CAA records are not supported by Dreamhost".to_string(),
         )),
         _ => Ok(()),
@@ -299,12 +299,12 @@ fn render_value(record: &DnsRecord) -> crate::Result<String> {
             srv.priority, srv.weight, srv.port, srv.target
         ),
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Dreamhost".to_string(),
             ));
         }
         DnsRecord::CAA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "CAA records are not supported by Dreamhost".to_string(),
             ));
         }
@@ -359,7 +359,7 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
                 target: parts[3].to_string(),
             }))
         }
-        DnsRecordType::TLSA | DnsRecordType::CAA => Err(Error::Api(format!(
+        DnsRecordType::TLSA | DnsRecordType::CAA => Err(Error::Unsupported(format!(
             "{} records are not supported by Dreamhost",
             record_type.as_str()
         ))),

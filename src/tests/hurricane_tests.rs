@@ -162,7 +162,7 @@ mod tests {
             .await;
 
         assert!(
-            matches!(result, Err(Error::Api(msg)) if msg.contains("does not support add_to_rrset"))
+            matches!(result, Err(Error::Unsupported(msg)) if msg.contains("does not support add_to_rrset"))
         );
     }
 
@@ -181,7 +181,7 @@ mod tests {
             .await;
 
         assert!(
-            matches!(result, Err(Error::Api(msg)) if msg.contains("does not support remove_from_rrset"))
+            matches!(result, Err(Error::Unsupported(msg)) if msg.contains("does not support remove_from_rrset"))
         );
     }
 
@@ -199,7 +199,7 @@ mod tests {
             .await;
 
         assert!(
-            matches!(result, Err(Error::Api(msg)) if msg.contains("does not support listing records"))
+            matches!(result, Err(Error::Unsupported(msg)) if msg.contains("does not support listing records"))
         );
     }
 

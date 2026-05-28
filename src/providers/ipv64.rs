@@ -263,7 +263,7 @@ fn validate_record_type(record_type: DnsRecordType) -> crate::Result<()> {
         | DnsRecordType::MX
         | DnsRecordType::TXT
         | DnsRecordType::SRV => Ok(()),
-        DnsRecordType::TLSA | DnsRecordType::CAA => Err(Error::Api(format!(
+        DnsRecordType::TLSA | DnsRecordType::CAA => Err(Error::Unsupported(format!(
             "{} records are not supported by IPv64",
             record_type.as_str()
         ))),
@@ -280,12 +280,12 @@ fn encode_record_content(record: &DnsRecord) -> crate::Result<String> {
         DnsRecord::TXT(text) => text.clone(),
         DnsRecord::SRV(srv) => srv.to_string(),
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by IPv64".to_string(),
             ));
         }
         DnsRecord::CAA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "CAA records are not supported by IPv64".to_string(),
             ));
         }
@@ -347,7 +347,7 @@ fn decode_record(record_type: DnsRecordType, content: &str) -> crate::Result<Dns
             })
         }
         DnsRecordType::TLSA | DnsRecordType::CAA => {
-            return Err(Error::Api(format!(
+            return Err(Error::Unsupported(format!(
                 "{} records are not supported by IPv64",
                 record_type.as_str()
             )));

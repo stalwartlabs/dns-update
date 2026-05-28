@@ -661,13 +661,13 @@ fn dns_type_str(record_type: DnsRecordType) -> crate::Result<&'static str> {
         DnsRecordType::NS => Ok("NS"),
         DnsRecordType::MX => Ok("MX"),
         DnsRecordType::TXT => Ok("TXT"),
-        DnsRecordType::SRV => Err(Error::Api(
+        DnsRecordType::SRV => Err(Error::Unsupported(
             "SRV records are not supported by Nifcloud".into(),
         )),
-        DnsRecordType::CAA => Err(Error::Api(
+        DnsRecordType::CAA => Err(Error::Unsupported(
             "CAA records are not supported by Nifcloud".into(),
         )),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Nifcloud".into(),
         )),
     }
@@ -695,17 +695,17 @@ fn build_value(record: &DnsRecord) -> crate::Result<String> {
             out
         }
         DnsRecord::SRV(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "SRV records are not supported by Nifcloud".into(),
             ));
         }
         DnsRecord::CAA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "CAA records are not supported by Nifcloud".into(),
             ));
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Nifcloud".into(),
             ));
         }
@@ -740,17 +740,17 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
         }
         DnsRecordType::TXT => DnsRecord::TXT(unquote_txt(value)),
         DnsRecordType::SRV => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "SRV records are not supported by Nifcloud".into(),
             ));
         }
         DnsRecordType::CAA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "CAA records are not supported by Nifcloud".into(),
             ));
         }
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Nifcloud".into(),
             ));
         }

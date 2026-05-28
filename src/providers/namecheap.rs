@@ -415,10 +415,10 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
 
 fn reject_unsupported(record_type: DnsRecordType) -> crate::Result<()> {
     match record_type {
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Namecheap".to_string(),
         )),
-        DnsRecordType::SRV => Err(Error::Api(
+        DnsRecordType::SRV => Err(Error::Unsupported(
             "SRV records are not supported by Namecheap".to_string(),
         )),
         _ => Ok(()),
@@ -505,12 +505,12 @@ fn build_hosts_for_record(
             }
         }
         DnsRecord::SRV(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "SRV records are not supported by Namecheap".to_string(),
             ));
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Namecheap".to_string(),
             ));
         }
@@ -564,12 +564,12 @@ fn host_to_dns_record(host: &Host, record_type: DnsRecordType) -> crate::Result<
         DnsRecordType::TXT => DnsRecord::TXT(host.address.clone()),
         DnsRecordType::CAA => DnsRecord::CAA(parse_caa_address(&host.address)?),
         DnsRecordType::SRV => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "SRV records are not supported by Namecheap".to_string(),
             ));
         }
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Namecheap".to_string(),
             ));
         }

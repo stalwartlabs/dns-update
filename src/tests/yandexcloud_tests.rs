@@ -291,7 +291,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref m)) if m.contains("TLSA")),
+            matches!(result, Err(Error::Unsupported(ref m)) if m.contains("TLSA")),
             "expected TLSA rejection, got: {:?}",
             result
         );
@@ -546,7 +546,7 @@ mod tests {
             .list_rrset("x.example.com", DnsRecordType::TLSA, "example.com")
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref m)) if m.contains("TLSA")),
+            matches!(result, Err(Error::Unsupported(ref m)) if m.contains("TLSA")),
             "expected TLSA rejection, got: {:?}",
             result
         );

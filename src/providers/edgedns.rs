@@ -360,7 +360,7 @@ impl EdgeDnsProvider {
             "PUT" => self.client.put(url),
             "DELETE" => self.client.delete(url),
             other => {
-                return Err(Error::Client(format!(
+                return Err(Error::Unsupported(format!(
                     "edgedns unsupported method: {other}"
                 )));
             }
@@ -435,7 +435,7 @@ fn edgedns_record_type(record_type: DnsRecordType) -> Result<&'static str> {
         DnsRecordType::TXT => Ok("TXT"),
         DnsRecordType::SRV => Ok("SRV"),
         DnsRecordType::CAA => Ok("CAA"),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by EdgeDNS".to_string(),
         )),
     }
@@ -499,7 +499,7 @@ impl TryFrom<&DnsRecord> for EdgeDnsRecord {
                 rdata: vec![caa_to_rdata(caa)],
             },
             DnsRecord::TLSA(_) => {
-                return Err(Error::Api(
+                return Err(Error::Unsupported(
                     "TLSA records are not supported by EdgeDNS".to_string(),
                 ));
             }
@@ -643,7 +643,7 @@ fn rdata_to_record(record_type: DnsRecordType, entry: &str) -> Result<DnsRecord>
             }))
         }
         DnsRecordType::CAA => parse_caa_rdata(entry),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by EdgeDNS".to_string(),
         )),
     }
@@ -720,7 +720,9 @@ fn parse_caa_rdata(entry: &str) -> Result<DnsRecord> {
             issuer_critical,
             url: value,
         })),
-        other => Err(Error::Api(format!("edgedns CAA tag unsupported: {other}"))),
+        other => Err(Error::Unsupported(format!(
+            "edgedns CAA tag unsupported: {other}"
+        ))),
     }
 }
 

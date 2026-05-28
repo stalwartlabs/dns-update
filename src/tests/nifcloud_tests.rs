@@ -647,7 +647,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("SRV")),
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("SRV")),
             "expected SRV rejection, got {result:?}"
         );
     }
@@ -666,7 +666,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("CAA")),
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("CAA")),
             "expected CAA rejection, got {result:?}"
         );
     }
@@ -685,7 +685,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("TLSA")),
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("TLSA")),
             "expected TLSA rejection, got {result:?}"
         );
     }

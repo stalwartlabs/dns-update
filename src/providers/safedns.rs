@@ -272,7 +272,7 @@ impl SafeDnsProvider {
 
 fn reject_unsupported(record_type: DnsRecordType) -> crate::Result<()> {
     if record_type == DnsRecordType::TLSA {
-        return Err(Error::Api(
+        return Err(Error::Unsupported(
             "TLSA records are not supported by SafeDNS".to_string(),
         ));
     }
@@ -326,7 +326,7 @@ fn safedns_record_to_dns_record(
         })),
         DnsRecordType::TXT => Ok(DnsRecord::TXT(unquote_txt(&record.content))),
         DnsRecordType::SRV => parse_srv(&record.content, record.priority.unwrap_or(0)),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by SafeDNS".to_string(),
         )),
         DnsRecordType::CAA => parse_caa(&record.content),
@@ -486,7 +486,7 @@ impl TryFrom<DnsRecord> for SafeDnsRecordContent {
                 content: format!("{} {} {}", srv.weight, srv.port, srv.target),
                 priority: Some(srv.priority),
             }),
-            DnsRecord::TLSA(_) => Err(Error::Api(
+            DnsRecord::TLSA(_) => Err(Error::Unsupported(
                 "TLSA records are not supported by SafeDNS".to_string(),
             )),
             DnsRecord::CAA(caa) => {

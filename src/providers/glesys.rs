@@ -284,7 +284,7 @@ fn render_data(record: &DnsRecord) -> crate::Result<String> {
             srv.priority, srv.weight, srv.port, srv.target
         ),
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Glesys".to_string(),
             ));
         }
@@ -325,7 +325,7 @@ fn parse_record(record_type: DnsRecordType, content: &str) -> crate::Result<DnsR
         DnsRecordType::MX => parse_mx(content),
         DnsRecordType::TXT => Ok(DnsRecord::TXT(content.to_string())),
         DnsRecordType::SRV => parse_srv(content),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Glesys".to_string(),
         )),
         DnsRecordType::CAA => parse_caa(content),

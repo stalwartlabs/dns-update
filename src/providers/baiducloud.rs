@@ -543,7 +543,7 @@ fn render_record(record: &DnsRecord) -> crate::Result<Vec<WireRecord>> {
             value: caa.clone().to_string(),
             priority: None,
         }]),
-        DnsRecord::TLSA(_) => Err(Error::Api(
+        DnsRecord::TLSA(_) => Err(Error::Unsupported(
             "TLSA records are not supported by baiducloud".to_string(),
         )),
     }
@@ -579,7 +579,7 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
 
 fn reject_unsupported_type(record_type: DnsRecordType) -> crate::Result<()> {
     if record_type == DnsRecordType::TLSA {
-        return Err(Error::Api(
+        return Err(Error::Unsupported(
             "TLSA records are not supported by baiducloud".to_string(),
         ));
     }

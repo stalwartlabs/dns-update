@@ -427,7 +427,7 @@ mod tests {
             .await;
 
         assert!(
-            matches!(result, Err(Error::Api(ref m)) if m.contains("TLSA")),
+            matches!(result, Err(Error::Unsupported(ref m)) if m.contains("TLSA")),
             "got {result:?}"
         );
     }

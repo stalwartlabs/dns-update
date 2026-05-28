@@ -353,7 +353,7 @@ impl InwxProvider {
             && !tfa.is_empty()
             && tfa != "0"
         {
-            return Err(Error::Api(format!(
+            return Err(Error::Unsupported(format!(
                 "INWX account requires 2FA ({tfa}); not supported by this port"
             )));
         }

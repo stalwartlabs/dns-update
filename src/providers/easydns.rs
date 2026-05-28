@@ -313,7 +313,7 @@ fn record_wire_of(record: &ZoneRecord) -> RecordWire {
 
 fn reject_unsupported(record_type: DnsRecordType) -> crate::Result<()> {
     if record_type == DnsRecordType::TLSA {
-        return Err(Error::Api(
+        return Err(Error::Unsupported(
             "TLSA records are not supported by EasyDNS".to_string(),
         ));
     }
@@ -355,7 +355,7 @@ fn render_wire(record: DnsRecord) -> crate::Result<RecordWire> {
         ),
         DnsRecord::CAA(caa) => caa.to_string(),
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by EasyDNS".to_string(),
             ));
         }
@@ -410,7 +410,7 @@ fn parse_record(
             }))
         }
         DnsRecordType::CAA => parse_caa(rdata).map(DnsRecord::CAA),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by EasyDNS".to_string(),
         )),
     }

@@ -301,7 +301,7 @@ impl CpanelProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
         if matches!(record_type, DnsRecordType::TLSA) {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by cPanel".to_string(),
             ));
         }
@@ -416,7 +416,7 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
 
 fn reject_tlsa(record_type: DnsRecordType) -> crate::Result<()> {
     if matches!(record_type, DnsRecordType::TLSA) {
-        Err(Error::Api(
+        Err(Error::Unsupported(
             "TLSA records are not supported by cPanel".to_string(),
         ))
     } else {
@@ -469,7 +469,7 @@ fn encode_record_data(record: &DnsRecord) -> crate::Result<Vec<String>> {
             vec![flags.to_string(), tag, value]
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by cPanel".to_string(),
             ));
         }
@@ -627,7 +627,7 @@ fn decode_to_dns_record(record_type: DnsRecordType, fields: &[String]) -> crate:
                 .map_err(|err| Error::Parse(format!("invalid CAA flags: {err}")))?;
             Ok(DnsRecord::CAA(build_caa(flags, &fields[1], &fields[2])?))
         }
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by cPanel".to_string(),
         )),
     }

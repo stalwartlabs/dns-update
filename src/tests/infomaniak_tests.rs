@@ -271,10 +271,9 @@ mod tests {
             .mock("POST", "/2/zones/example.com/records")
             .match_body(Matcher::Json(json!({
                 "source": "",
-                "target": "mail.example.com.",
+                "target": "10 mail.example.com.",
                 "type": "MX",
                 "ttl": 3600,
-                "priority": 10,
             })))
             .with_status(200)
             .with_body(ok_envelope())
@@ -304,7 +303,7 @@ mod tests {
             &mut server,
             "example.com",
             json!({"result":"success","data":[
-                {"id":42,"source":"","type":"MX","target":"mx1.example.com.","priority":10}
+                {"id":42,"source":"","type":"MX","target":"10 mx1.example.com."}
             ]}),
         );
 
@@ -312,10 +311,9 @@ mod tests {
             .mock("POST", "/2/zones/example.com/records")
             .match_body(Matcher::Json(json!({
                 "source": "",
-                "target": "mx2.example.com.",
+                "target": "20 mx2.example.com.",
                 "type": "MX",
                 "ttl": 3600,
-                "priority": 20,
             })))
             .with_status(200)
             .with_body(ok_envelope())

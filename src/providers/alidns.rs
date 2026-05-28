@@ -559,7 +559,7 @@ fn record_from_listed(
         })),
         DnsRecordType::SRV => parse_srv_value(&listed.value).map(DnsRecord::SRV),
         DnsRecordType::CAA => parse_caa_value(&listed.value).map(DnsRecord::CAA),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Alibaba Cloud DNS".to_string(),
         )),
     }
@@ -713,7 +713,7 @@ impl TryFrom<DnsRecord> for AlidnsRecord {
                 value: caa.to_string(),
                 priority: None,
             }),
-            DnsRecord::TLSA(_) => Err(Error::Api(
+            DnsRecord::TLSA(_) => Err(Error::Unsupported(
                 "TLSA records are not supported by Alibaba Cloud DNS".to_string(),
             )),
         }

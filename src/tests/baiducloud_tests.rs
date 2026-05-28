@@ -485,7 +485,7 @@ mod tests {
             )
             .await;
         match result {
-            Err(Error::Api(msg)) => assert!(msg.contains("TLSA"), "unexpected: {msg}"),
+            Err(Error::Unsupported(msg)) => assert!(msg.contains("TLSA"), "unexpected: {msg}"),
             other => panic!("expected TLSA error, got {:?}", other),
         }
     }

@@ -428,7 +428,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("CAA")),
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("CAA")),
             "expected CAA rejection, got {result:?}"
         );
 
@@ -442,7 +442,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("CAA")),
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("CAA")),
             "expected CAA rejection on add_to_rrset, got {result:?}"
         );
 
@@ -455,7 +455,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("CAA")),
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("CAA")),
             "expected CAA rejection on remove_from_rrset, got {result:?}"
         );
 
@@ -483,7 +483,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("TLSA")),
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("TLSA")),
             "expected TLSA rejection, got {result:?}"
         );
         no_calls.assert();

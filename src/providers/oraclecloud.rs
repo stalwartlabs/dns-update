@@ -118,7 +118,7 @@ impl OracleCloudProvider {
             .as_ref()
             .is_some_and(|p| !p.is_empty())
         {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "OCI private keys with a passphrase are not supported".into(),
             ));
         }

@@ -442,7 +442,7 @@ mod tests {
         let result = provider
             .list_rrset("any.example.com", DnsRecordType::TLSA, "example.com")
             .await;
-        assert!(matches!(result, Err(crate::Error::Api(ref msg)) if msg.contains("not supported")));
+        assert!(matches!(result, Err(crate::Error::Unsupported(ref msg)) if msg.contains("not supported")));
     }
 
     #[tokio::test]

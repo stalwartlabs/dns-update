@@ -178,7 +178,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(res, Err(Error::Api(ref msg)) if msg.contains("TLSA")),
+            matches!(res, Err(Error::Unsupported(ref msg)) if msg.contains("TLSA")),
             "{res:?}"
         );
         let _ = server;
@@ -376,7 +376,7 @@ mod tests {
             .list_rrset("_443._tcp.example.com", DnsRecordType::TLSA, "example.com")
             .await;
         assert!(
-            matches!(res, Err(Error::Api(ref msg)) if msg.contains("TLSA")),
+            matches!(res, Err(Error::Unsupported(ref msg)) if msg.contains("TLSA")),
             "{res:?}"
         );
         let _ = server;

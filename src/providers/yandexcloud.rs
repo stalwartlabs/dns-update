@@ -506,7 +506,7 @@ fn record_to_entry(record: &DnsRecord) -> crate::Result<RecordEntry> {
             }
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Yandex Cloud".into(),
             ));
         }
@@ -575,7 +575,7 @@ fn record_type_str(record_type: DnsRecordType) -> crate::Result<&'static str> {
         DnsRecordType::SRV => "SRV",
         DnsRecordType::CAA => "CAA",
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Yandex Cloud".into(),
             ));
         }
@@ -697,7 +697,7 @@ fn parse_rrdata(record_type: DnsRecordType, text: &str) -> crate::Result<DnsReco
         }
         DnsRecordType::CAA => parse_caa_rrdata(text)?,
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Yandex Cloud".into(),
             ));
         }

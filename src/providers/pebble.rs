@@ -117,7 +117,7 @@ impl PebbleProvider {
                 self.set_singular(&host, records.into_iter().next().unwrap())
                     .await
             }
-            other => Err(Error::Api(format!(
+            other => Err(Error::Unsupported(format!(
                 "{other} records are not supported by Pebble"
             ))),
         }
@@ -175,7 +175,7 @@ impl PebbleProvider {
                 self.set_singular(&host, records.into_iter().next().unwrap())
                     .await
             }
-            other => Err(Error::Api(format!(
+            other => Err(Error::Unsupported(format!(
                 "{other} records are not supported by Pebble"
             ))),
         }
@@ -202,7 +202,7 @@ impl PebbleProvider {
         _record_type: DnsRecordType,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
-        Err(Error::Api(
+        Err(Error::Unsupported(
             "Pebble does not support listing records".to_string(),
         ))
     }
@@ -251,7 +251,7 @@ impl PebbleProvider {
                 .send_raw()
                 .await
                 .map(|_| ()),
-            other => Err(Error::Api(format!(
+            other => Err(Error::Unsupported(format!(
                 "{} records are not supported by Pebble",
                 other.as_type()
             ))),
@@ -266,7 +266,7 @@ impl PebbleProvider {
             DnsRecordType::TXT => "clear-txt",
             DnsRecordType::CAA => "clear-caa",
             other => {
-                return Err(Error::Api(format!(
+                return Err(Error::Unsupported(format!(
                     "{other} records are not supported by Pebble"
                 )));
             }

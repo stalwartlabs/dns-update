@@ -426,7 +426,7 @@ fn record_to_value(record: &DnsRecord) -> crate::Result<(&'static str, String)> 
             ("CAA", format!("{} {} \"{}\"", flags, tag, value))
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Volcengine".into(),
             ));
         }
@@ -496,7 +496,7 @@ fn value_to_record(record_type: DnsRecordType, value: &str) -> crate::Result<Dns
             }))
         }
         DnsRecordType::CAA => parse_caa_value(value).map(DnsRecord::CAA),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Volcengine".into(),
         )),
     }
@@ -613,7 +613,7 @@ fn record_type_str(record_type: DnsRecordType) -> crate::Result<&'static str> {
         DnsRecordType::SRV => "SRV",
         DnsRecordType::CAA => "CAA",
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Volcengine".into(),
             ));
         }

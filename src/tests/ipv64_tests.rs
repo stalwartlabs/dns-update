@@ -368,8 +368,8 @@ mod tests {
             .set_rrset("test.example.com", DnsRecordType::TLSA, 300, vec![], DOMAIN)
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("not supported")),
-            "expected Error::Api, got {result:?}"
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("not supported")),
+            "expected Error::Unsupported, got {result:?}"
         );
     }
 
@@ -380,8 +380,8 @@ mod tests {
             .set_rrset("test.example.com", DnsRecordType::CAA, 300, vec![], DOMAIN)
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("not supported")),
-            "expected Error::Api, got {result:?}"
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("not supported")),
+            "expected Error::Unsupported, got {result:?}"
         );
     }
 

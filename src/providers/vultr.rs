@@ -339,7 +339,7 @@ fn record_target(record: &DnsRecord) -> Result<String, Error> {
             Ok(out)
         }
         DnsRecord::SRV(srv) => Ok(format!("{} {} {}", srv.weight, srv.port, srv.target)),
-        DnsRecord::TLSA(_) => Err(Error::Api(
+        DnsRecord::TLSA(_) => Err(Error::Unsupported(
             "TLSA records are not supported by Vultr".to_string(),
         )),
         DnsRecord::CAA(caa) => {

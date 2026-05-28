@@ -542,7 +542,7 @@ impl TryFrom<DnsRecord> for TencentRecord {
                 value: caa.to_string(),
                 priority: None,
             }),
-            DnsRecord::TLSA(_) => Err(Error::Api(
+            DnsRecord::TLSA(_) => Err(Error::Unsupported(
                 "TLSA records are not supported by TencentCloud DNSPod".to_string(),
             )),
         }
@@ -572,7 +572,7 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
 
 fn reject_tlsa(record_type: DnsRecordType) -> crate::Result<()> {
     if record_type == DnsRecordType::TLSA {
-        Err(Error::Api(
+        Err(Error::Unsupported(
             "TLSA records are not supported by TencentCloud DNSPod".to_string(),
         ))
     } else {
@@ -643,7 +643,7 @@ fn parse_record(record_type: DnsRecordType, item: &RecordListItem) -> crate::Res
         DnsRecordType::SRV => parse_srv(value)?,
         DnsRecordType::CAA => parse_caa(value)?,
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by TencentCloud DNSPod".to_string(),
             ));
         }

@@ -320,7 +320,7 @@ impl LinodeProvider {
 
 fn reject_unsupported(record_type: DnsRecordType) -> crate::Result<()> {
     match record_type {
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Linode".to_string(),
         )),
         _ => Ok(()),
@@ -410,7 +410,7 @@ fn record_to_value(record: DnsRecord) -> crate::Result<RecordValue> {
             protocol: None,
             tag: None,
         }),
-        DnsRecord::TLSA(_) => Err(Error::Api(
+        DnsRecord::TLSA(_) => Err(Error::Unsupported(
             "TLSA records are not supported by Linode".to_string(),
         )),
         DnsRecord::CAA(caa) => {
@@ -472,7 +472,7 @@ fn value_to_record(record_type: DnsRecordType, value: RecordValue) -> crate::Res
             weight: value.weight.unwrap_or_default(),
             port: value.port.unwrap_or_default(),
         })),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Linode".to_string(),
         )),
         DnsRecordType::CAA => {

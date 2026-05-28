@@ -131,8 +131,8 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("add_to_rrset")),
-            "expected Error::Api about add_to_rrset, got {result:?}"
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("add_to_rrset")),
+            "expected Error::Unsupported about add_to_rrset, got {result:?}"
         );
     }
 
@@ -148,8 +148,8 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("remove_from_rrset")),
-            "expected Error::Api about remove_from_rrset, got {result:?}"
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("remove_from_rrset")),
+            "expected Error::Unsupported about remove_from_rrset, got {result:?}"
         );
     }
 
@@ -160,8 +160,8 @@ mod tests {
             .list_rrset("host.example.com", DnsRecordType::TXT, "example.com")
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("listing")),
-            "expected Error::Api about listing, got {result:?}"
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("listing")),
+            "expected Error::Unsupported about listing, got {result:?}"
         );
     }
 

@@ -77,6 +77,7 @@ pub enum Error {
     Unauthorized,
     NotFound,
     BadRequest,
+    Unsupported(String),
 }
 
 /// A DNS record type.

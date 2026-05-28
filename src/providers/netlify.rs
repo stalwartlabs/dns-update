@@ -295,7 +295,7 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
 
 fn reject_tlsa(record_type: DnsRecordType) -> crate::Result<()> {
     if record_type == DnsRecordType::TLSA {
-        return Err(Error::Api(
+        return Err(Error::Unsupported(
             "TLSA records are not supported by Netlify".to_string(),
         ));
     }
@@ -338,7 +338,7 @@ fn record_to_content(record: &DnsRecord) -> crate::Result<RecordContent> {
             content.value = value;
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Netlify".to_string(),
             ));
         }
@@ -384,7 +384,7 @@ fn listed_to_record(record_type: DnsRecordType, r: &ListedRecord) -> crate::Resu
         }),
         DnsRecordType::CAA => DnsRecord::CAA(build_caa(r)?),
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Netlify".to_string(),
             ));
         }

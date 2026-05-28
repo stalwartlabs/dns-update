@@ -421,7 +421,7 @@ fn azure_record_type(rt: &DnsRecordType) -> Result<&'static str> {
         DnsRecordType::SRV => "SRV",
         DnsRecordType::CAA => "CAA",
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Azure DNS".to_string(),
             ));
         }
@@ -556,7 +556,7 @@ fn insert_rrset_payload(
             props.insert("caaRecords".to_string(), Value::Array(arr));
         }
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Azure DNS".to_string(),
             ));
         }

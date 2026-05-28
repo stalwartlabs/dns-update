@@ -318,8 +318,8 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("TLSA")),
-            "expected TLSA Api error, got {result:?}"
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("TLSA")),
+            "expected TLSA Unsupported error, got {result:?}"
         );
     }
 

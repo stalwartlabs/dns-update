@@ -410,7 +410,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("NS records are not supported")),
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("NS records are not supported")),
             "expected NS rejection, got {result:?}"
         );
     }
@@ -428,7 +428,7 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(result, Err(Error::Api(ref msg)) if msg.contains("TLSA")),
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("TLSA")),
             "expected TLSA rejection, got {result:?}"
         );
     }

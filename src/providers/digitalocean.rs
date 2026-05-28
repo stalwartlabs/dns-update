@@ -300,7 +300,7 @@ impl DigitalOceanProvider {
 
 fn reject_unsupported(record_type: DnsRecordType) -> crate::Result<()> {
     if record_type == DnsRecordType::TLSA {
-        return Err(Error::Api(
+        return Err(Error::Unsupported(
             "TLSA records are not supported by DigitalOcean".to_string(),
         ));
     }

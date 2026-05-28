@@ -415,7 +415,7 @@ fn record_type_segment(record_type: DnsRecordType) -> crate::Result<&'static str
         DnsRecordType::TXT => Ok("txt"),
         DnsRecordType::SRV => Ok("srv"),
         DnsRecordType::CAA => Ok("caa"),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Constellix".into(),
         )),
     }
@@ -448,7 +448,7 @@ fn record_to_round_robin_entries(record: &DnsRecord) -> crate::Result<Vec<RoundR
             entry.port = Some(srv.port);
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Constellix".into(),
             ));
         }
@@ -546,7 +546,7 @@ fn round_robin_to_record(
                 .ok_or_else(|| Error::Parse("Constellix CAA record missing tag".into()))?;
             Ok(DnsRecord::CAA(build_caa(flags, &tag, value)?))
         }
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Constellix".into(),
         )),
     }

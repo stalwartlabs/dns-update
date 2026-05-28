@@ -285,12 +285,12 @@ fn base_params(api_key: &str) -> Vec<(&'static str, String)> {
 
 fn ensure_supported_type(record_type: DnsRecordType) -> crate::Result<()> {
     match record_type {
-        DnsRecordType::NS => Err(Error::Api(
+        DnsRecordType::NS => Err(Error::Unsupported(
             "NS records are not supported by NameSilo's dnsAddRecord; \
              use the registrar changeNameServers endpoint instead"
                 .to_string(),
         )),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by NameSilo".to_string(),
         )),
         _ => Ok(()),
@@ -335,7 +335,7 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
         DnsRecord::AAAA(addr) => addr.to_string(),
         DnsRecord::CNAME(content) => content,
         DnsRecord::NS(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "NS records are not supported by NameSilo's dnsAddRecord; \
                  use the registrar changeNameServers endpoint instead"
                     .to_string(),
@@ -349,7 +349,7 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
             format!("{}:{}:{}", flags, tag, value)
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by NameSilo".to_string(),
             ));
         }
@@ -379,10 +379,10 @@ fn parse_record(record_type: DnsRecordType, raw: &ResourceRecord) -> crate::Resu
         }
         DnsRecordType::SRV => parse_srv(raw),
         DnsRecordType::CAA => parse_caa(&raw.value),
-        DnsRecordType::NS => Err(Error::Api(
+        DnsRecordType::NS => Err(Error::Unsupported(
             "NS records are not supported by NameSilo".to_string(),
         )),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by NameSilo".to_string(),
         )),
     }

@@ -394,6 +394,7 @@ impl Display for Error {
             Error::Unauthorized => write!(f, "Unauthorized"),
             Error::NotFound => write!(f, "Not found"),
             Error::BadRequest => write!(f, "Bad request"),
+            Error::Unsupported(e) => write!(f, "Unsupported: {}", e),
         }
     }
 }

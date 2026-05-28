@@ -68,8 +68,8 @@ mod tests {
         let mut cfg = config();
         cfg.private_key_password = Some("secret".to_string());
         match OracleCloudProvider::new(cfg) {
-            Err(Error::Api(msg)) => assert!(msg.contains("passphrase")),
-            Err(other) => panic!("expected Api error, got {:?}", other),
+            Err(Error::Unsupported(msg)) => assert!(msg.contains("passphrase")),
+            Err(other) => panic!("expected Unsupported error, got {:?}", other),
             Ok(_) => panic!("expected error"),
         }
     }

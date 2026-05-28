@@ -368,7 +368,7 @@ fn build_record(record: DnsRecord, ttl: u32) -> crate::Result<GodaddyRecord> {
             service: None,
         },
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by GoDaddy".to_string(),
             ));
         }
@@ -401,7 +401,7 @@ fn parse_record(record_type: DnsRecordType, record: &GodaddyRecord) -> crate::Re
             target: strip_trailing_dot(&record.data),
         })),
         DnsRecordType::CAA => Ok(DnsRecord::CAA(parse_caa(&record.data)?)),
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by GoDaddy".to_string(),
         )),
     }

@@ -378,12 +378,12 @@ fn build_record_payload(
             payload.complex_type = Some("SoftLayer_Dns_Domain_ResourceRecord_SrvType".to_string());
         }
         DnsRecord::CAA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "CAA records are not supported by ibmcloud".to_string(),
             ));
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by ibmcloud".to_string(),
             ));
         }
@@ -451,12 +451,12 @@ fn softlayer_record_type(rt: &DnsRecordType) -> Result<&'static str> {
         DnsRecordType::TXT => "txt",
         DnsRecordType::SRV => "srv",
         DnsRecordType::CAA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "CAA records are not supported by ibmcloud".to_string(),
             ));
         }
         DnsRecordType::TLSA => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by ibmcloud".to_string(),
             ));
         }

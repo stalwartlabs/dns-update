@@ -389,7 +389,7 @@ impl TryFrom<DnsRecord> for DomeneshopRecordContent {
                 flags: None,
                 tag: None,
             }),
-            DnsRecord::TLSA(_) => Err(Error::Api(
+            DnsRecord::TLSA(_) => Err(Error::Unsupported(
                 "TLSA records are not supported by Domeneshop".to_string(),
             )),
             DnsRecord::CAA(caa) => {

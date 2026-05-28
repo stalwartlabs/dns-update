@@ -232,7 +232,7 @@ impl VercelProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
         if record_type == DnsRecordType::TLSA {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Vercel".to_string(),
             ));
         }
@@ -381,7 +381,7 @@ fn vercel_content_from_record(record: &DnsRecord) -> crate::Result<VercelContent
             target: srv.target.clone(),
         }),
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by Vercel".to_string(),
             ));
         }
@@ -470,7 +470,7 @@ fn listed_to_dns_record(
                 target: srv.target,
             }))
         }
-        DnsRecordType::TLSA => Err(Error::Api(
+        DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Vercel".to_string(),
         )),
         DnsRecordType::CAA => parse_caa_value(record.value.as_deref().unwrap_or("")),

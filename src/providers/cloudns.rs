@@ -386,7 +386,7 @@ fn build_record_params(record: &DnsRecord) -> crate::Result<Vec<(&'static str, S
             params.push(("port", srv.port.to_string()));
         }
         DnsRecord::TLSA(_) => {
-            return Err(Error::Api(
+            return Err(Error::Unsupported(
                 "TLSA records are not supported by ClouDNS".to_string(),
             ));
         }
@@ -595,7 +595,7 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
 
 fn reject_tlsa(record_type: DnsRecordType) -> crate::Result<()> {
     if matches!(record_type, DnsRecordType::TLSA) {
-        Err(Error::Api(
+        Err(Error::Unsupported(
             "TLSA records are not supported by ClouDNS".to_string(),
         ))
     } else {

@@ -120,7 +120,7 @@ impl FreeMyIpProvider {
         _record_type: DnsRecordType,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
-        Err(Error::Api(
+        Err(Error::Unsupported(
             "FreeMyIP does not support listing records".to_string(),
         ))
     }

@@ -239,7 +239,7 @@ fn rdata_to_dns_record(data: &RData) -> crate::Result<DnsRecord> {
         }),
         RData::CAA(caa) => DnsRecord::CAA(caa_to_record(caa)?),
         other => {
-            return Err(Error::Api(format!(
+            return Err(Error::Unsupported(format!(
                 "Unsupported RData type for list_rrset: {}",
                 other.record_type()
             )));
@@ -275,7 +275,7 @@ fn caa_to_record(caa: &CAA) -> crate::Result<CAARecord> {
             issuer_critical,
             url: value_text,
         }),
-        other => Err(Error::Api(format!(
+        other => Err(Error::Unsupported(format!(
             "Unsupported CAA tag for list_rrset: {other}"
         ))),
     }

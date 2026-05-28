@@ -221,10 +221,10 @@ mod tests {
             .list_rrset("host.freemyip.com", DnsRecordType::TXT, "host.freemyip.com")
             .await;
         match result {
-            Err(Error::Api(msg)) => {
+            Err(Error::Unsupported(msg)) => {
                 assert!(msg.contains("listing"), "unexpected error message: {msg}")
             }
-            other => panic!("expected Error::Api, got {other:?}"),
+            other => panic!("expected Error::Unsupported, got {other:?}"),
         }
     }
 
