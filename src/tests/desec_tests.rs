@@ -87,19 +87,19 @@ mod tests {
     #[tokio::test]
     async fn test_set_rrset_replaces_existing() {
         let mut server = mockito::Server::new_async().await;
-        let expected_request = json!({
+        let expected_request = json!([{
             "subname": "test",
             "type": "A",
             "ttl": 3600,
             "records": ["1.1.1.1", "2.2.2.2"],
-        });
+        }]);
         let mock = server
-            .mock("PUT", "/domains/example.com/rrsets/test/A/")
+            .mock("PUT", "/domains/example.com/rrsets/")
             .with_status(200)
             .match_header("authorization", "Token test_token")
             .match_body(mockito::Matcher::Json(expected_request))
             .with_body(
-                r#"{
+                r#"[{
                     "created": "2025-07-25T19:18:37.286381Z",
                     "domain": "example.com",
                     "subname": "test",
@@ -108,7 +108,7 @@ mod tests {
                     "ttl": 3600,
                     "type": "A",
                     "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
+                }]"#,
             )
             .create();
 
@@ -131,21 +131,64 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_set_rrset_at_apex_uses_at_in_url() {
+    async fn test_set_rrset_creates_when_absent() {
         let mut server = mockito::Server::new_async().await;
-        let expected_request = json!({
-            "subname": "",
-            "type": "A",
+        let expected_request = json!([{
+            "subname": "test",
+            "type": "TXT",
             "ttl": 3600,
-            "records": ["1.1.1.1"],
-        });
+            "records": ["\"v=DKIM1; p=abc\""],
+        }]);
         let mock = server
-            .mock("PUT", "/domains/example.com/rrsets/@/A/")
+            .mock("PUT", "/domains/example.com/rrsets/")
             .with_status(200)
             .match_header("authorization", "Token test_token")
             .match_body(mockito::Matcher::Json(expected_request))
             .with_body(
-                r#"{
+                r#"[{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "test",
+                    "name": "test.example.com.",
+                    "records": ["\"v=DKIM1; p=abc\""],
+                    "ttl": 3600,
+                    "type": "TXT",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }]"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "test.example.com",
+                DnsRecordType::TXT,
+                3600,
+                vec![DnsRecord::TXT("v=DKIM1; p=abc".to_string())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok());
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_at_apex_uses_empty_subname() {
+        let mut server = mockito::Server::new_async().await;
+        let expected_request = json!([{
+            "subname": "",
+            "type": "A",
+            "ttl": 3600,
+            "records": ["1.1.1.1"],
+        }]);
+        let mock = server
+            .mock("PUT", "/domains/example.com/rrsets/")
+            .with_status(200)
+            .match_header("authorization", "Token test_token")
+            .match_body(mockito::Matcher::Json(expected_request))
+            .with_body(
+                r#"[{
                     "created": "2025-07-25T19:18:37.286381Z",
                     "domain": "example.com",
                     "subname": "",
@@ -154,7 +197,7 @@ mod tests {
                     "ttl": 3600,
                     "type": "A",
                     "touched": "2025-07-25T19:18:37.292390Z"
-                }"#,
+                }]"#,
             )
             .create();
 

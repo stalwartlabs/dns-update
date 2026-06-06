@@ -96,15 +96,15 @@ impl DesecProvider {
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
         let rr_type = record_type.as_str();
 
-        let rrset_url = format!(
-            "{endpoint}/domains/{domain}/rrsets/{subdomain}/{rr_type}/",
-            endpoint = self.endpoint,
-            domain = &domain,
-            subdomain = url_subname(&subdomain),
-            rr_type = rr_type,
-        );
-
         if records.is_empty() {
+            let rrset_url = format!(
+                "{endpoint}/domains/{domain}/rrsets/{subdomain}/{rr_type}/",
+                endpoint = self.endpoint,
+                domain = &domain,
+                subdomain = url_subname(&subdomain),
+                rr_type = rr_type,
+            );
+
             return self
                 .client
                 .delete(rrset_url)
@@ -120,15 +120,21 @@ impl DesecProvider {
         let contents = build_contents(record_type, records)?;
         let ttl = ttl.max(DESEC_MIN_TTL);
 
+        let rrsets_url = format!(
+            "{endpoint}/domains/{domain}/rrsets/",
+            endpoint = self.endpoint,
+            domain = &domain,
+        );
+
         self.client
-            .put(rrset_url)
-            .with_body(DnsRecordParams {
+            .put(rrsets_url)
+            .with_body(vec![DnsRecordParams {
                 subname: &subdomain,
                 rr_type,
                 ttl: Some(ttl),
                 records: contents,
-            })?
-            .send_with_retry::<DesecApiResponse>(3)
+            }])?
+            .send_with_retry::<Vec<DesecApiResponse>>(3)
             .await
             .map(|_| ())
     }
