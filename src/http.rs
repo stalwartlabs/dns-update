@@ -236,15 +236,12 @@ impl HttpRequest {
                         Error::Serialize(format!("Failed to deserialize response: {err}"))
                     })
                 }
-                429 if attempts < max_retries => {
-                    if let Some(retry_after) = response.headers().get("retry-after")
-                        && let Ok(seconds) = retry_after.to_str().unwrap_or("0").parse::<u64>()
-                    {
-                        tokio::time::sleep(Duration::from_secs(seconds)).await;
-                        attempts += 1;
-                        continue;
-                    }
-                    Err(Error::Api("Rate limit exceeded".to_string()))
+                429 | 503 if attempts < max_retries => {
+                    let delay = retry_after(response.headers())
+                        .unwrap_or_else(|| Duration::from_secs(1u64 << attempts.min(6)));
+                    tokio::time::sleep(delay.min(MAX_RETRY_DELAY)).await;
+                    attempts += 1;
+                    continue;
                 }
                 401 => Err(Error::Unauthorized),
                 404 => Err(Error::NotFound),
@@ -255,6 +252,18 @@ impl HttpRequest {
             };
         }
     }
+}
+
+const MAX_RETRY_DELAY: Duration = Duration::from_secs(60);
+
+fn retry_after(headers: &HeaderMap<HeaderValue>) -> Option<Duration> {
+    headers
+        .get("retry-after")?
+        .to_str()
+        .ok()?
+        .parse::<u64>()
+        .ok()
+        .map(Duration::from_secs)
 }
 
 fn http_status_message(code: u16, body: &str) -> String {

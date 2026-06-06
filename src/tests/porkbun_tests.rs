@@ -227,6 +227,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn edit_by_name_type_retries_on_503_throttle() {
+        let mut server = mockito::Server::new_async().await;
+
+        let throttled = server
+            .mock("POST", "/dns/editByNameType/example.com/SRV/_pop3s._tcp")
+            .with_status(503)
+            .with_header("retry-after", "0")
+            .with_body("<html><body>openresty</body></html>")
+            .expect(1)
+            .create();
+        let success = server
+            .mock("POST", "/dns/editByNameType/example.com/SRV/_pop3s._tcp")
+            .with_status(200)
+            .with_body(ok_status())
+            .expect(1)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "_pop3s._tcp.example.com",
+                DnsRecordType::SRV,
+                300,
+                vec![DnsRecord::SRV(SRVRecord {
+                    target: "mail.example.com".to_string(),
+                    priority: 0,
+                    weight: 1,
+                    port: 995,
+                })],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "got {result:?}");
+        throttled.assert();
+        success.assert();
+    }
+
+    #[tokio::test]
     async fn set_rrset_single_mx_sends_prio_via_edit_by_name_type() {
         let mut server = mockito::Server::new_async().await;
 
