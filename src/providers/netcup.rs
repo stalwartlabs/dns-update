@@ -484,7 +484,8 @@ fn encode_record(record: &DnsRecord, hostname: &str) -> crate::Result<NetcupReco
         DnsRecord::SRV(srv) => (
             "SRV",
             format!(
-                "{} {} {}",
+                "{} {} {} {}",
+                srv.priority,
                 srv.weight,
                 srv.port,
                 ensure_trailing_dot(&srv.target),
