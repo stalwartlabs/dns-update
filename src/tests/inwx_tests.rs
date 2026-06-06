@@ -168,7 +168,7 @@ mod tests {
             .mock("POST", "/")
             .match_body(json_match(json!({
                 "method": "nameserver.deleteRecord",
-                "params": {"id": 32}
+                "params": {"id": "32"}
             })))
             .with_status(200)
             .with_body(r#"{"code":1000}"#)
@@ -229,7 +229,7 @@ mod tests {
             .mock("POST", "/")
             .match_body(json_match(json!({
                 "method": "nameserver.deleteRecord",
-                "params": {"id": 41}
+                "params": {"id": "41"}
             })))
             .with_status(200)
             .with_body(r#"{"code":1000}"#)
@@ -238,7 +238,7 @@ mod tests {
             .mock("POST", "/")
             .match_body(json_match(json!({
                 "method": "nameserver.deleteRecord",
-                "params": {"id": 42}
+                "params": {"id": "42"}
             })))
             .with_status(200)
             .with_body(r#"{"code":1000}"#)
@@ -627,7 +627,7 @@ mod tests {
             .mock("POST", "/")
             .match_body(json_match(json!({
                 "method": "nameserver.deleteRecord",
-                "params": {"id": 102}
+                "params": {"id": "102"}
             })))
             .with_status(200)
             .with_body(r#"{"code":1000}"#)
@@ -636,7 +636,7 @@ mod tests {
             .mock("POST", "/")
             .match_body(json_match(json!({
                 "method": "nameserver.deleteRecord",
-                "params": {"id": 101}
+                "params": {"id": "101"}
             })))
             .expect(0)
             .create();
@@ -752,6 +752,63 @@ mod tests {
             })
         );
         list.assert();
+    }
+
+    #[tokio::test]
+    async fn set_rrset_handles_string_record_ids() {
+        let mut server = mockito::Server::new_async().await;
+        let list = server
+            .mock("POST", "/")
+            .match_body(match_method("nameserver.info"))
+            .with_status(200)
+            .with_body(
+                r#"{"code":1000,"resData":{"record":[
+                    {"id":"2377221647","name":"host.example.com","type":"A","content":"9.9.9.9"}
+                ]}}"#,
+            )
+            .create();
+
+        let delete = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.deleteRecord",
+                "params": {"id": "2377221647"}
+            })))
+            .with_status(200)
+            .with_body(r#"{"code":1000}"#)
+            .create();
+
+        let create = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.createRecord",
+                "params": {
+                    "domain": "example.com",
+                    "name": "host.example.com",
+                    "type": "A",
+                    "content": "1.1.1.1",
+                    "ttl": 300
+                }
+            })))
+            .with_status(200)
+            .with_body(r#"{"code":1000,"resData":{"id":"2377221648"}}"#)
+            .create();
+
+        let provider = setup(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "host.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "{result:?}");
+        list.assert();
+        delete.assert();
+        create.assert();
     }
 
     #[tokio::test]

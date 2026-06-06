@@ -70,7 +70,8 @@ struct NameserverInfoResData {
 
 #[derive(Deserialize, Debug, Clone)]
 struct NameserverRecord {
-    id: i64,
+    #[serde(deserialize_with = "deserialize_record_id")]
+    id: String,
     #[serde(default)]
     name: String,
     #[serde(default, rename = "type")]
@@ -398,6 +399,33 @@ impl InwxProvider {
         }
         Ok(rpc)
     }
+}
+
+fn deserialize_record_id<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct RecordId;
+    impl serde::de::Visitor<'_> for RecordId {
+        type Value = String;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a record id as string or integer")
+        }
+
+        fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<String, E> {
+            Ok(v.to_string())
+        }
+
+        fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<String, E> {
+            Ok(v.to_string())
+        }
+
+        fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<String, E> {
+            Ok(v.to_string())
+        }
+    }
+    deserializer.deserialize_any(RecordId)
 }
 
 fn inwx_record_type(record_type: DnsRecordType) -> &'static str {

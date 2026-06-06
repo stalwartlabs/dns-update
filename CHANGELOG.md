@@ -3,6 +3,7 @@ dns-update 0.5.1
 - TransIP: append a trailing dot to CNAME, NS, MX and SRV hostname targets.
 - HTTP: retry on 503 in addition to 429, back off when no `Retry-After` is present, and cap the retry delay at 60s.
 - deSEC: fix `set_rrset` returning "Not found" when creating a record that does not yet exist.
+- INWX: accept record IDs returned as JSON strings.
 
 dns-update 0.5.0
 ================================
