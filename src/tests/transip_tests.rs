@@ -521,6 +521,113 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_set_rrset_appends_trailing_dot_to_mx_exchange() {
+        let mut server = mockito::Server::new_async().await;
+        let list = server
+            .mock("GET", "/domains/example.com/dns")
+            .with_status(200)
+            .with_body(r#"{"dnsEntries":[]}"#)
+            .create();
+
+        let post = server
+            .mock("POST", "/domains/example.com/dns")
+            .match_body(Matcher::PartialJsonString(
+                r#"{"dnsEntry":{"name":"@","expire":300,"type":"MX","content":"10 mail.example.com."}}"#
+                    .to_string(),
+            ))
+            .with_status(201)
+            .with_body("")
+            .create();
+
+        let provider = provider(server.url());
+        let result = provider
+            .set_rrset(
+                "example.com",
+                DnsRecordType::MX,
+                300,
+                vec![DnsRecord::MX(crate::MXRecord {
+                    priority: 10,
+                    exchange: "mail.example.com".to_string(),
+                })],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "set_rrset returned {result:?}");
+        list.assert();
+        post.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_idempotent_for_mx_already_dotted() {
+        let mut server = mockito::Server::new_async().await;
+        let list = server
+            .mock("GET", "/domains/example.com/dns")
+            .with_status(200)
+            .with_body(
+                r#"{"dnsEntries":[
+                    {"name":"@","expire":300,"type":"MX","content":"10 mail.example.com."}
+                ]}"#,
+            )
+            .create();
+
+        let no_post = server
+            .mock("POST", "/domains/example.com/dns")
+            .with_status(201)
+            .expect(0)
+            .create();
+        let no_delete = server
+            .mock("DELETE", "/domains/example.com/dns")
+            .with_status(204)
+            .expect(0)
+            .create();
+
+        let provider = provider(server.url());
+        let result = provider
+            .set_rrset(
+                "example.com",
+                DnsRecordType::MX,
+                300,
+                vec![DnsRecord::MX(crate::MXRecord {
+                    priority: 10,
+                    exchange: "mail.example.com".to_string(),
+                })],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "set_rrset returned {result:?}");
+        list.assert();
+        no_post.assert();
+        no_delete.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_rrset_strips_trailing_dot_from_mx() {
+        let mut server = mockito::Server::new_async().await;
+        let _list = server
+            .mock("GET", "/domains/example.com/dns")
+            .with_status(200)
+            .with_body(
+                r#"{"dnsEntries":[
+                    {"name":"@","expire":300,"type":"MX","content":"10 mail.example.com."}
+                ]}"#,
+            )
+            .create();
+
+        let provider = provider(server.url());
+        let result = provider
+            .list_rrset("example.com", DnsRecordType::MX, "example.com")
+            .await
+            .expect("list_rrset failed");
+        assert_eq!(
+            result,
+            vec![DnsRecord::MX(crate::MXRecord {
+                priority: 10,
+                exchange: "mail.example.com".to_string(),
+            })]
+        );
+    }
+
+    #[tokio::test]
     async fn test_set_rrset_uses_apex_when_name_equals_origin() {
         let mut server = mockito::Server::new_async().await;
         let list = server

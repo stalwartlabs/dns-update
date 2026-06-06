@@ -378,13 +378,16 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
     Ok(match record {
         DnsRecord::A(addr) => addr.to_string(),
         DnsRecord::AAAA(addr) => addr.to_string(),
-        DnsRecord::CNAME(content) => content,
-        DnsRecord::NS(content) => content,
-        DnsRecord::MX(mx) => format!("{} {}", mx.priority, mx.exchange),
+        DnsRecord::CNAME(content) => ensure_fqdn(content),
+        DnsRecord::NS(content) => ensure_fqdn(content),
+        DnsRecord::MX(mx) => format!("{} {}", mx.priority, ensure_fqdn(mx.exchange)),
         DnsRecord::TXT(content) => content,
         DnsRecord::SRV(srv) => format!(
             "{} {} {} {}",
-            srv.priority, srv.weight, srv.port, srv.target
+            srv.priority,
+            srv.weight,
+            srv.port,
+            ensure_fqdn(srv.target)
         ),
         DnsRecord::TLSA(tlsa) => tlsa.to_string(),
         DnsRecord::CAA(caa) => {
@@ -392,6 +395,18 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
             format!("{flags} {tag} \"{value}\"")
         }
     })
+}
+
+fn ensure_fqdn(name: String) -> String {
+    if name.ends_with('.') {
+        name
+    } else {
+        format!("{name}.")
+    }
+}
+
+fn strip_trailing_dot(s: &str) -> &str {
+    s.strip_suffix('.').unwrap_or(s)
 }
 
 fn parse_dns_entry(entry: &DnsEntry, record_type: DnsRecordType) -> crate::Result<DnsRecord> {
@@ -409,19 +424,25 @@ fn parse_dns_entry(entry: &DnsEntry, record_type: DnsRecordType) -> crate::Resul
             })?;
             Ok(DnsRecord::AAAA(addr))
         }
-        DnsRecordType::CNAME => Ok(DnsRecord::CNAME(entry.content.clone())),
-        DnsRecordType::NS => Ok(DnsRecord::NS(entry.content.clone())),
+        DnsRecordType::CNAME => Ok(DnsRecord::CNAME(
+            strip_trailing_dot(&entry.content).to_string(),
+        )),
+        DnsRecordType::NS => Ok(DnsRecord::NS(
+            strip_trailing_dot(&entry.content).to_string(),
+        )),
         DnsRecordType::TXT => Ok(DnsRecord::TXT(entry.content.clone())),
         DnsRecordType::MX => {
             let mut parts = entry.content.splitn(2, char::is_whitespace);
             let priority_token = parts
                 .next()
                 .ok_or_else(|| Error::Parse(format!("invalid MX content: {}", entry.content)))?;
-            let exchange = parts
-                .next()
-                .ok_or_else(|| Error::Parse(format!("invalid MX content: {}", entry.content)))?
-                .trim()
-                .to_string();
+            let exchange = strip_trailing_dot(
+                parts
+                    .next()
+                    .ok_or_else(|| Error::Parse(format!("invalid MX content: {}", entry.content)))?
+                    .trim(),
+            )
+            .to_string();
             let priority: u16 = priority_token
                 .parse()
                 .map_err(|e| Error::Parse(format!("invalid MX priority: {e}")))?;
@@ -444,9 +465,10 @@ fn parse_dns_entry(entry: &DnsEntry, record_type: DnsRecordType) -> crate::Resul
                 .ok_or_else(|| Error::Parse(format!("invalid SRV content: {}", entry.content)))?
                 .parse()
                 .map_err(|e| Error::Parse(format!("invalid SRV port: {e}")))?;
-            let target = parts
-                .next()
-                .ok_or_else(|| Error::Parse(format!("invalid SRV content: {}", entry.content)))?
+            let target =
+                strip_trailing_dot(parts.next().ok_or_else(|| {
+                    Error::Parse(format!("invalid SRV content: {}", entry.content))
+                })?)
                 .to_string();
             Ok(DnsRecord::SRV(SRVRecord {
                 priority,

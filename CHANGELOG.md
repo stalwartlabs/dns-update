@@ -1,3 +1,7 @@
+dns-update 0.5.1
+================================
+- TransIP: append a trailing dot to CNAME, NS, MX and SRV hostname targets.
+
 dns-update 0.5.0
 ================================
 - New RRSet-oriented API: `set_rrset`, `add_to_rrset`, `remove_from_rrset`. See `PROMPT.md` for per-provider migration plan.
