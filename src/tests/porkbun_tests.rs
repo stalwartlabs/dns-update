@@ -193,22 +193,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_rrset_single_uses_edit_by_name_type() {
+    async fn set_rrset_single_creates_when_absent() {
         let mut server = mockito::Server::new_async().await;
 
-        let edit = server
-            .mock("POST", "/dns/editByNameType/example.com/A/www")
+        let list = mock_retrieve(&mut server, "A", "www", json!([]));
+        let create = server
+            .mock("POST", "/dns/create/example.com")
             .match_body(Matcher::Json(json!({
                 "apikey": "test_api_key",
                 "secretapikey": "test_secret_api_key",
+                "name": "www",
+                "type": "A",
                 "content": "1.2.3.4",
                 "ttl": 300,
             })))
-            .with_body(ok_status())
+            .with_body(r#"{"status": "SUCCESS","id": "new-1"}"#)
             .expect(1)
             .create();
-        let _no_retrieve = server
-            .mock("POST", Matcher::Regex("/dns/retrieveByNameType/.*".into()))
+        let _no_edit = server
+            .mock("POST", Matcher::Regex("/dns/editByNameType/.*".into()))
             .expect(0)
             .create();
 
@@ -223,24 +226,100 @@ mod tests {
             )
             .await;
         assert!(result.is_ok(), "got {result:?}");
-        edit.assert();
+        list.assert();
+        create.assert();
     }
 
     #[tokio::test]
-    async fn edit_by_name_type_retries_on_503_throttle() {
+    async fn set_rrset_single_replaces_existing_different_value() {
         let mut server = mockito::Server::new_async().await;
 
+        let list = mock_retrieve(
+            &mut server,
+            "A",
+            "www",
+            json!([
+                {"id": "rec-old", "name": "www.example.com", "type": "A", "content": "9.9.9.9", "ttl": "300", "prio": "0"},
+            ]),
+        );
+        let delete = server
+            .mock("POST", "/dns/delete/example.com/rec-old")
+            .match_body(Matcher::Json(auth_only()))
+            .with_body(ok_status())
+            .expect(1)
+            .create();
+        let create = server
+            .mock("POST", "/dns/create/example.com")
+            .match_body(Matcher::PartialJson(
+                json!({"content": "1.2.3.4", "type": "A"}),
+            ))
+            .with_body(r#"{"status": "SUCCESS","id": "new-1"}"#)
+            .expect(1)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "www.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.2.3.4".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "got {result:?}");
+        list.assert();
+        delete.assert();
+        create.assert();
+    }
+
+    #[tokio::test]
+    async fn set_rrset_single_idempotent_when_present() {
+        let mut server = mockito::Server::new_async().await;
+
+        let list = mock_retrieve(
+            &mut server,
+            "A",
+            "www",
+            json!([
+                {"id": "rec-1", "name": "www.example.com", "type": "A", "content": "1.2.3.4", "ttl": "300", "prio": "0"},
+            ]),
+        );
+        let _no_mutation = server
+            .mock("POST", Matcher::Regex("/dns/(create|delete)/.*".into()))
+            .expect(0)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "www.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.2.3.4".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "got {result:?}");
+        list.assert();
+    }
+
+    #[tokio::test]
+    async fn set_rrset_single_create_retries_on_503_throttle() {
+        let mut server = mockito::Server::new_async().await;
+
+        let _list = mock_retrieve(&mut server, "SRV", "_pop3s._tcp", json!([]));
         let throttled = server
-            .mock("POST", "/dns/editByNameType/example.com/SRV/_pop3s._tcp")
+            .mock("POST", "/dns/create/example.com")
             .with_status(503)
             .with_header("retry-after", "0")
             .with_body("<html><body>openresty</body></html>")
             .expect(1)
             .create();
         let success = server
-            .mock("POST", "/dns/editByNameType/example.com/SRV/_pop3s._tcp")
+            .mock("POST", "/dns/create/example.com")
             .with_status(200)
-            .with_body(ok_status())
+            .with_body(r#"{"status": "SUCCESS","id": "n1"}"#)
             .expect(1)
             .create();
 
@@ -265,19 +344,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_rrset_single_mx_sends_prio_via_edit_by_name_type() {
+    async fn set_rrset_single_mx_creates_with_prio() {
         let mut server = mockito::Server::new_async().await;
 
-        let edit = server
-            .mock("POST", "/dns/editByNameType/example.com/MX")
+        let list = mock_retrieve(&mut server, "MX", "", json!([]));
+        let create = server
+            .mock("POST", "/dns/create/example.com")
             .match_body(Matcher::Json(json!({
                 "apikey": "test_api_key",
                 "secretapikey": "test_secret_api_key",
+                "name": "",
+                "type": "MX",
                 "content": "mail.example.com",
-                "ttl": 3600,
                 "prio": 10,
+                "ttl": 3600,
             })))
-            .with_body(ok_status())
+            .with_body(r#"{"status": "SUCCESS","id": "n1"}"#)
             .expect(1)
             .create();
 
@@ -295,7 +377,8 @@ mod tests {
             )
             .await;
         assert!(result.is_ok(), "got {result:?}");
-        edit.assert();
+        list.assert();
+        create.assert();
     }
 
     #[tokio::test]
@@ -748,11 +831,14 @@ mod tests {
     async fn set_rrset_cname_strips_trailing_dot_in_payload() {
         let mut server = mockito::Server::new_async().await;
 
-        let edit = server
-            .mock("POST", "/dns/editByNameType/example.com/CNAME/www")
+        let list = mock_retrieve(&mut server, "CNAME", "www", json!([]));
+        let create = server
+            .mock("POST", "/dns/create/example.com")
             .match_body(Matcher::Json(json!({
                 "apikey": "test_api_key",
                 "secretapikey": "test_secret_api_key",
+                "name": "www",
+                "type": "CNAME",
                 "content": "target.example.com",
                 "ttl": 300,
             })))
@@ -771,7 +857,8 @@ mod tests {
             )
             .await;
         assert!(result.is_ok(), "got {result:?}");
-        edit.assert();
+        list.assert();
+        create.assert();
     }
 
     #[tokio::test]
@@ -809,8 +896,9 @@ mod tests {
     async fn api_error_response_maps_to_error_api() {
         let mut server = mockito::Server::new_async().await;
 
-        let edit = server
-            .mock("POST", "/dns/editByNameType/example.com/A/www")
+        let _list = mock_retrieve(&mut server, "A", "www", json!([]));
+        let create = server
+            .mock("POST", "/dns/create/example.com")
             .with_body(r#"{"status": "ERROR", "message": "Invalid API key"}"#)
             .create();
 
@@ -828,7 +916,7 @@ mod tests {
             matches!(result, Err(Error::Api(ref m)) if m.contains("Invalid API key")),
             "got {result:?}"
         );
-        edit.assert();
+        create.assert();
     }
 
     #[tokio::test]

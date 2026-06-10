@@ -48,17 +48,6 @@ pub struct DnsRecordParams<'a> {
     content: RecordData,
 }
 
-#[derive(Serialize, Debug)]
-pub struct EditByNameTypeParams<'a> {
-    #[serde(flatten)]
-    pub auth: AuthParams<'a>,
-    pub content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ttl: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prio: Option<u16>,
-}
-
 #[derive(Deserialize, Debug)]
 pub struct ApiResponse {
     pub status: String,
@@ -148,11 +137,6 @@ impl PorkBunProvider {
         }
 
         let desired = build_record_data(record_type, records)?;
-
-        if desired.len() == 1 {
-            let data = desired.into_iter().next().unwrap();
-            return self.edit_by_name_type(&domain, &subdomain, ttl, data).await;
-        }
 
         let existing = self
             .retrieve_by_name_type(&domain, record_type.as_str(), &subdomain)
@@ -336,32 +320,6 @@ impl PorkBunProvider {
             .into_result()
     }
 
-    async fn edit_by_name_type(
-        &self,
-        domain: &str,
-        subdomain: &str,
-        ttl: u32,
-        data: RecordData,
-    ) -> crate::Result<()> {
-        let variant = data.variant_name();
-        let (content, prio) = data.into_content_prio();
-        self.client
-            .post(edit_by_name_type_url(
-                &self.endpoint,
-                domain,
-                variant,
-                subdomain,
-            ))
-            .with_body(EditByNameTypeParams {
-                auth: self.auth(),
-                content,
-                ttl: Some(ttl),
-                prio,
-            })?
-            .send_with_retry::<ApiResponse>(3)
-            .await?
-            .into_result()
-    }
 }
 
 fn retrieve_by_name_type_url(
@@ -374,19 +332,6 @@ fn retrieve_by_name_type_url(
         format!("{endpoint}/dns/retrieveByNameType/{domain}/{record_type}")
     } else {
         format!("{endpoint}/dns/retrieveByNameType/{domain}/{record_type}/{subdomain}")
-    }
-}
-
-fn edit_by_name_type_url(
-    endpoint: &str,
-    domain: &str,
-    record_type: &str,
-    subdomain: &str,
-) -> String {
-    if subdomain.is_empty() {
-        format!("{endpoint}/dns/editByNameType/{domain}/{record_type}")
-    } else {
-        format!("{endpoint}/dns/editByNameType/{domain}/{record_type}/{subdomain}")
     }
 }
 
@@ -697,23 +642,6 @@ impl RecordData {
         }
     }
 
-    fn into_content_prio(self) -> (String, Option<u16>) {
-        match self {
-            RecordData::A { content } => (content.to_string(), None),
-            RecordData::AAAA { content } => (content.to_string(), None),
-            RecordData::CNAME { content }
-            | RecordData::ALIAS { content }
-            | RecordData::NS { content }
-            | RecordData::TXT { content }
-            | RecordData::TLSA { content }
-            | RecordData::CAA { content }
-            | RecordData::HTTPS { content }
-            | RecordData::SVCB { content }
-            | RecordData::SSHFP { content } => (content, None),
-            RecordData::MX { content, prio } => (content, Some(prio)),
-            RecordData::SRV { content, prio } => (content, Some(prio)),
-        }
-    }
 }
 
 fn strip_trailing_dot(value: String) -> String {

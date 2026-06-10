@@ -112,14 +112,12 @@ impl InfomaniakProvider {
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
         let name = name.into_name().into_owned();
-        let domain = origin.into_name().into_owned();
-
-        // possible &domain.trim_end_matches('.');
-        let ik_domain = &domain;
-        let source = source_from_name(&name, ik_domain);
+        let origin = origin.into_name().into_owned();
+        let (domain, all_records) = self.fetch_zone_records(&origin).await?;
+        let source = source_from_name(&name, &domain);
 
         let desired = build_wire_records(records)?;
-        let mut existing_pool = self.list_filtered(ik_domain, &source, record_type).await?;
+        let mut existing_pool = filter_records(all_records, &source, record_type);
 
         let mut to_add = Vec::new();
         for wire in desired {
@@ -131,12 +129,12 @@ impl InfomaniakProvider {
         }
 
         for entry in existing_pool {
-            self.delete_record(ik_domain, entry.id).await?;
+            self.delete_record(&domain, entry.id).await?;
         }
         let dkim_type = is_dkim_owner(record_type.as_str(), &source).then_some("rsa");
         for wire in to_add {
             self.post_record(
-                ik_domain,
+                &domain,
                 &source,
                 &wire.target,
                 record_type.as_str(),
@@ -161,12 +159,12 @@ impl InfomaniakProvider {
             return Ok(());
         }
         let name = name.into_name().into_owned();
-        let domain = origin.into_name().into_owned();
-        let ik_domain = &domain;
-        let source = source_from_name(&name, ik_domain);
+        let origin = origin.into_name().into_owned();
+        let (domain, all_records) = self.fetch_zone_records(&origin).await?;
+        let source = source_from_name(&name, &domain);
 
         let desired = build_wire_records(records)?;
-        let existing = self.list_filtered(ik_domain, &source, record_type).await?;
+        let existing = filter_records(all_records, &source, record_type);
         let dkim_type = is_dkim_owner(record_type.as_str(), &source).then_some("rsa");
 
         for wire in desired {
@@ -174,7 +172,7 @@ impl InfomaniakProvider {
                 continue;
             }
             self.post_record(
-                ik_domain,
+                &domain,
                 &source,
                 &wire.target,
                 record_type.as_str(),
@@ -198,16 +196,16 @@ impl InfomaniakProvider {
             return Ok(());
         }
         let name = name.into_name().into_owned();
-        let domain = origin.into_name().into_owned();
-        let ik_domain = &domain;
-        let source = source_from_name(&name, ik_domain);
+        let origin = origin.into_name().into_owned();
+        let (domain, all_records) = self.fetch_zone_records(&origin).await?;
+        let source = source_from_name(&name, &domain);
 
         let to_remove = build_wire_records(records)?;
-        let existing = self.list_filtered(ik_domain, &source, record_type).await?;
+        let existing = filter_records(all_records, &source, record_type);
 
         for wire in to_remove {
             if let Some(entry) = existing.iter().find(|r| matches_wire(r, &wire)) {
-                self.delete_record(ik_domain, entry.id).await?;
+                self.delete_record(&domain, entry.id).await?;
             }
         }
         Ok(())
@@ -220,10 +218,10 @@ impl InfomaniakProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
         let name = name.into_name().into_owned();
-        let domain = origin.into_name().into_owned();
-        let ik_domain = &domain;
-        let source = source_from_name(&name, ik_domain);
-        let existing = self.list_filtered(ik_domain, &source, record_type).await?;
+        let origin = origin.into_name().into_owned();
+        let (domain, all_records) = self.fetch_zone_records(&origin).await?;
+        let source = source_from_name(&name, &domain);
+        let existing = filter_records(all_records, &source, record_type);
         existing
             .into_iter()
             .map(|r| decode_existing(&r, record_type))
@@ -327,24 +325,33 @@ impl InfomaniakProvider {
             .map(|_| ())
     }
 
-    async fn list_filtered(
+    async fn fetch_zone_records(
         &self,
-        domain: &str,
-        source: &str,
-        record_type: DnsRecordType,
-    ) -> crate::Result<Vec<ExistingRecord>> {
-        let url = format!("{}/2/zones/{}/records", self.endpoint, domain);
-        let records = self
-            .send_expect_success::<Vec<ExistingRecord>>(self.client.get(url))
-            .await?;
-        let type_str = record_type.as_str();
-        Ok(records
-            .into_iter()
-            .filter(|r| {
-                (r.source == source || r.source_idn.as_deref() == Some(source))
-                    && r.record_type.eq_ignore_ascii_case(type_str)
-            })
-            .collect())
+        origin: &str,
+    ) -> crate::Result<(String, Vec<ExistingRecord>)> {
+        let origin = origin.trim_end_matches('.');
+        let mut candidate = origin;
+        loop {
+            match self.try_fetch_records(candidate).await {
+                Ok(records) => return Ok((candidate.to_string(), records)),
+                Err(Error::NotFound) => {}
+                Err(err) => return Err(err),
+            }
+            match candidate.split_once('.') {
+                Some((_, rest)) if rest.contains('.') => candidate = rest,
+                _ => {
+                    return Err(Error::Api(format!(
+                        "Infomaniak: no managed DNS zone found for '{origin}'"
+                    )));
+                }
+            }
+        }
+    }
+
+    async fn try_fetch_records(&self, zone: &str) -> crate::Result<Vec<ExistingRecord>> {
+        let url = format!("{}/2/zones/{}/records", self.endpoint, zone);
+        self.send_expect_success::<Vec<ExistingRecord>>(self.client.get(url))
+            .await
     }
 
     async fn send_expect_success<T>(&self, request: crate::http::HttpRequest) -> crate::Result<T>
@@ -364,6 +371,21 @@ impl InfomaniakProvider {
 
 fn source_from_name(name: &str, domain: &str) -> String {
     strip_origin_from_name(name, domain, Some(""))
+}
+
+fn filter_records(
+    records: Vec<ExistingRecord>,
+    source: &str,
+    record_type: DnsRecordType,
+) -> Vec<ExistingRecord> {
+    let type_str = record_type.as_str();
+    records
+        .into_iter()
+        .filter(|r| {
+            (r.source == source || r.source_idn.as_deref() == Some(source))
+                && r.record_type.eq_ignore_ascii_case(type_str)
+        })
+        .collect()
 }
 
 fn ensure_trailing_dot(value: &str) -> String {

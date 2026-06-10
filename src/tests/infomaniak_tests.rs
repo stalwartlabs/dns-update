@@ -32,6 +32,14 @@ mod tests {
             .create()
     }
 
+    fn mock_zone_not_found(server: &mut ServerGuard, domain: &str) -> Mock {
+        server
+            .mock("GET", format!("/2/zones/{domain}/records").as_str())
+            .with_status(404)
+            .with_body("")
+            .create()
+    }
+
     fn ok_envelope() -> &'static str {
         r#"{"result":"success","data":null}"#
     }
@@ -85,6 +93,129 @@ mod tests {
         list.assert();
         create_1.assert();
         create_2.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_walks_up_to_managed_zone_for_subdomain() {
+        let mut server = mockito::Server::new_async().await;
+        let not_found = mock_zone_not_found(&mut server, "sub.example.com");
+        let list = mock_list(
+            &mut server,
+            "example.com",
+            json!({"result":"success","data":[]}),
+        );
+
+        let create = server
+            .mock("POST", "/2/zones/example.com/records")
+            .match_body(Matcher::Json(json!({
+                "source": "_dmarc.sub",
+                "target": "\"v=DMARC1; p=none\"",
+                "type": "TXT",
+                "ttl": 300,
+            })))
+            .with_status(200)
+            .with_body(ok_envelope())
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .set_rrset(
+                "_dmarc.sub.example.com",
+                DnsRecordType::TXT,
+                300,
+                vec![DnsRecord::TXT("v=DMARC1; p=none".to_string())],
+                "sub.example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        not_found.assert();
+        list.assert();
+        create.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_prefers_most_specific_delegated_zone() {
+        let mut server = mockito::Server::new_async().await;
+        let list = mock_list(
+            &mut server,
+            "sub.example.com",
+            json!({"result":"success","data":[]}),
+        );
+        let _no_apex_lookup = server
+            .mock("GET", "/2/zones/example.com/records")
+            .expect(0)
+            .create();
+
+        let create = server
+            .mock("POST", "/2/zones/sub.example.com/records")
+            .match_body(Matcher::Json(json!({
+                "source": "host",
+                "target": "1.1.1.1",
+                "type": "A",
+                "ttl": 300,
+            })))
+            .with_status(200)
+            .with_body(ok_envelope())
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .set_rrset(
+                "host.sub.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "sub.example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        list.assert();
+        create.assert();
+    }
+
+    #[tokio::test]
+    async fn test_zone_resolution_errors_when_no_managed_zone() {
+        let mut server = mockito::Server::new_async().await;
+        let nf_sub = mock_zone_not_found(&mut server, "sub.example.com");
+        let nf_apex = mock_zone_not_found(&mut server, "example.com");
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .set_rrset(
+                "host.sub.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "sub.example.com",
+            )
+            .await;
+        assert!(
+            matches!(result, Err(Error::Api(ref m)) if m.contains("no managed DNS zone")),
+            "got {result:?}"
+        );
+        nf_sub.assert();
+        nf_apex.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_rrset_walks_up_to_managed_zone_for_subdomain() {
+        let mut server = mockito::Server::new_async().await;
+        let _not_found = mock_zone_not_found(&mut server, "sub.example.com");
+        let _list = mock_list(
+            &mut server,
+            "example.com",
+            json!({"result":"success","data":[
+                {"id":42,"source":"host.sub","type":"A","target":"1.1.1.1"},
+                {"id":43,"source":"host","type":"A","target":"9.9.9.9"}
+            ]}),
+        );
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .list_rrset("host.sub.example.com", DnsRecordType::A, "sub.example.com")
+            .await;
+        let records = result.expect("list_rrset");
+        assert_eq!(records, vec![DnsRecord::A("1.1.1.1".parse().unwrap())]);
     }
 
     #[tokio::test]

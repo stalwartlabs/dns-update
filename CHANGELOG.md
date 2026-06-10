@@ -1,3 +1,8 @@
+dns-update 0.5.2
+================================
+- Porkbun: fix `set_rrset` silently failing to publish a new single-record RRset (#67).
+- Infomaniak: resolve the managed DNS zone by walking up the origin labels instead of using the origin verbatim (#66).
+
 dns-update 0.5.1
 ================================
 - TransIP: append a trailing dot to CNAME, NS, MX and SRV hostname targets.
