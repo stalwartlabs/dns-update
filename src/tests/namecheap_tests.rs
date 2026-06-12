@@ -483,7 +483,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_txt_long_value_is_chunked() {
+    async fn test_set_rrset_long_txt_emitted_as_single_entry() {
         let mut server = mockito::Server::new_async().await;
         let body = get_hosts_xml("");
         let get = server
@@ -493,18 +493,25 @@ mod tests {
             .with_body(body)
             .create();
 
-        let long = "a".repeat(260);
-        let chunk1 = "a".repeat(255);
-        let chunk2 = "a".repeat(5);
+        let long = format!(
+            "v=DKIM1; k=rsa; p={}{}",
+            "A".repeat(200),
+            "B".repeat(220),
+        );
 
+        let long_for_match = long.clone();
         let set = server
             .mock("POST", "/xml.response")
             .match_body(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("Command".into(), "namecheap.domains.dns.setHosts".into()),
+                Matcher::UrlEncoded("HostName1".into(), "dkim".into()),
                 Matcher::UrlEncoded("RecordType1".into(), "TXT".into()),
-                Matcher::UrlEncoded("Address1".into(), chunk1),
-                Matcher::UrlEncoded("RecordType2".into(), "TXT".into()),
-                Matcher::UrlEncoded("Address2".into(), chunk2),
+                Matcher::UrlEncoded("Address1".into(), long_for_match),
             ]))
+            .match_request(|req| {
+                let body = req.utf8_lossy_body().unwrap_or_default();
+                !body.contains("HostName2")
+            })
             .with_status(200)
             .with_body(SET_HOSTS_OK)
             .create();
@@ -512,7 +519,7 @@ mod tests {
         let provider = provider(server.url());
         let result = provider
             .set_rrset(
-                "long.example.com",
+                "dkim.example.com",
                 DnsRecordType::TXT,
                 300,
                 vec![DnsRecord::TXT(long)],
