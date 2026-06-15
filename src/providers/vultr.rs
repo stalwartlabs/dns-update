@@ -12,7 +12,7 @@
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
-    utils::{strip_origin_from_name, txt_chunks_to_text},
+    utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, time::Duration};
@@ -334,8 +334,16 @@ fn record_target(record: &DnsRecord) -> Result<String, Error> {
         DnsRecord::NS(content) => Ok(content.clone()),
         DnsRecord::MX(mx) => Ok(mx.exchange.clone()),
         DnsRecord::TXT(content) => {
-            let mut out = String::new();
-            txt_chunks_to_text(&mut out, content, " ");
+            let mut out = String::with_capacity(content.len() + 2);
+            out.push('"');
+            for ch in content.chars() {
+                match ch {
+                    '\\' => out.push_str("\\\\"),
+                    '"' => out.push_str("\\\""),
+                    _ => out.push(ch),
+                }
+            }
+            out.push('"');
             Ok(out)
         }
         DnsRecord::SRV(srv) => Ok(format!("{} {} {}", srv.weight, srv.port, srv.target)),

@@ -676,14 +676,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_set_rrset_txt_long_value_is_chunked() {
+    async fn test_set_rrset_txt_long_value_is_single_quoted() {
         let mut server = mockito::Server::new_async().await;
         let long = "a".repeat(600);
-        let mut expected = String::new();
-        crate::utils::txt_chunks_to_text(&mut expected, &long, " ");
+        let expected = format!("\"{long}\"");
         assert!(
-            expected.contains("\" \""),
-            "expected chunked TXT, got {expected}"
+            !expected[1..expected.len() - 1].contains('"'),
+            "expected single quoted TXT with no interior quotes, got {expected}"
         );
 
         let list = mock_list(&mut server, json!([]));

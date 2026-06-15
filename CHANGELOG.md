@@ -2,6 +2,7 @@ dns-update 0.5.2
 ================================
 - Porkbun: fix `set_rrset` silently failing to publish a new single-record RRset (#67).
 - Infomaniak: resolve the managed DNS zone by walking up the origin labels instead of using the origin verbatim (#66).
+- Vultr: send long TXT values (DKIM keys >255 bytes) as a single quoted string instead of multiple quoted segments.
 
 dns-update 0.5.1
 ================================
