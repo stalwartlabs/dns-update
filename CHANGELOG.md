@@ -1,3 +1,8 @@
+dns-update 0.5.3
+================================
+- Namecheap: Corrected the behavior of the set_hosts command when adding a TXT record.
+- Mythic Beasts: resolve the managed DNS zone by walking up the origin labels instead of using the origin verbatim (#70).
+
 dns-update 0.5.2
 ================================
 - Porkbun: fix `set_rrset` silently failing to publish a new single-record RRset (#67).

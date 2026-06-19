@@ -36,6 +36,13 @@ pub struct MythicBeastsProvider {
 
 struct AuthState {
     token: Option<(String, Instant)>,
+    zones: Option<(Vec<String>, Instant)>,
+}
+
+#[derive(Deserialize, Debug)]
+struct ZonesResponse {
+    #[serde(default)]
+    zones: Vec<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -114,7 +121,10 @@ impl MythicBeastsProvider {
             .with_timeout(timeout)
             .build();
         Ok(Self {
-            auth: Arc::new(Mutex::new(AuthState { token: None })),
+            auth: Arc::new(Mutex::new(AuthState {
+                token: None,
+                zones: None,
+            })),
             username,
             password,
             api_endpoint: DEFAULT_API_ENDPOINT.to_string(),
@@ -173,6 +183,39 @@ impl MythicBeastsProvider {
         Ok(body.access_token)
     }
 
+    async fn resolve_zone(&self, origin: &str, token: &str) -> crate::Result<String> {
+        let origin = origin.trim_end_matches('.');
+        {
+            let guard = self
+                .auth
+                .lock()
+                .map_err(|_| Error::Client("Mythic Beasts zone lock poisoned".to_string()))?;
+            if let Some((zones, expiry)) = &guard.zones
+                && Instant::now() < *expiry
+            {
+                return Ok(match_zone(zones, origin).unwrap_or_else(|| origin.to_string()));
+            }
+        }
+
+        let zones = match self
+            .client
+            .get(format!("{}/zones", self.api_endpoint))
+            .with_header("Authorization", format!("Bearer {token}"))
+            .send::<ZonesResponse>()
+            .await
+        {
+            Ok(response) => response.zones,
+            Err(_) => return Ok(origin.to_string()),
+        };
+
+        let resolved = match_zone(&zones, origin).unwrap_or_else(|| origin.to_string());
+        let expiry = Instant::now() + Duration::from_secs(300);
+        if let Ok(mut guard) = self.auth.lock() {
+            guard.zones = Some((zones, expiry));
+        }
+        Ok(resolved)
+    }
+
     fn rrset_url(&self, zone: &str, host: &str, record_type: DnsRecordType) -> String {
         format!(
             "{}/zones/{}/records/{}/{}",
@@ -193,10 +236,12 @@ impl MythicBeastsProvider {
     ) -> crate::Result<()> {
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, Some("@"));
-        let payloads = build_payloads(&subdomain, record_type, ttl, records)?;
+        ensure_uniform_type(record_type, &records)?;
         let token = self.ensure_token().await?;
-        let url = self.rrset_url(&domain, &subdomain, record_type);
+        let zone = self.resolve_zone(&domain, &token).await?;
+        let subdomain = strip_origin_from_name(&name, &zone, Some("@"));
+        let payloads = build_payloads(&subdomain, record_type, ttl, records)?;
+        let url = self.rrset_url(&zone, &subdomain, record_type);
 
         if payloads.is_empty() {
             return match self
@@ -233,13 +278,18 @@ impl MythicBeastsProvider {
     ) -> crate::Result<()> {
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, Some("@"));
+        ensure_uniform_type(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let token = self.ensure_token().await?;
+        let zone = self.resolve_zone(&domain, &token).await?;
+        let subdomain = strip_origin_from_name(&name, &zone, Some("@"));
         let payloads = build_payloads(&subdomain, record_type, ttl, records)?;
         if payloads.is_empty() {
             return Ok(());
         }
-        let token = self.ensure_token().await?;
-        let url = self.rrset_url(&domain, &subdomain, record_type);
+        let url = self.rrset_url(&zone, &subdomain, record_type);
 
         let existing = match self
             .client
@@ -281,13 +331,18 @@ impl MythicBeastsProvider {
     ) -> crate::Result<()> {
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, Some("@"));
+        ensure_uniform_type(record_type, &records)?;
+        if records.is_empty() {
+            return Ok(());
+        }
+        let token = self.ensure_token().await?;
+        let zone = self.resolve_zone(&domain, &token).await?;
+        let subdomain = strip_origin_from_name(&name, &zone, Some("@"));
         let to_remove = build_payloads(&subdomain, record_type, 0, records)?;
         if to_remove.is_empty() {
             return Ok(());
         }
-        let token = self.ensure_token().await?;
-        let url = self.rrset_url(&domain, &subdomain, record_type);
+        let url = self.rrset_url(&zone, &subdomain, record_type);
 
         let current = match self
             .client
@@ -343,9 +398,10 @@ impl MythicBeastsProvider {
     ) -> crate::Result<Vec<DnsRecord>> {
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, Some("@"));
         let token = self.ensure_token().await?;
-        let url = self.rrset_url(&domain, &subdomain, record_type);
+        let zone = self.resolve_zone(&domain, &token).await?;
+        let subdomain = strip_origin_from_name(&name, &zone, Some("@"));
+        let url = self.rrset_url(&zone, &subdomain, record_type);
 
         let response = match self
             .client
@@ -384,13 +440,23 @@ fn rdata_matches(a: &RecordPayload, b: &RecordPayload) -> bool {
         && a.tlsa_matching == b.tlsa_matching
 }
 
-fn build_payloads(
-    host: &str,
-    expected_type: DnsRecordType,
-    ttl: u32,
-    records: Vec<DnsRecord>,
-) -> crate::Result<Vec<RecordPayload>> {
-    let mut out = Vec::with_capacity(records.len());
+fn match_zone(zones: &[String], origin: &str) -> Option<String> {
+    let mut candidate = origin;
+    loop {
+        if let Some(zone) = zones
+            .iter()
+            .find(|zone| zone.trim_end_matches('.').eq_ignore_ascii_case(candidate))
+        {
+            return Some(zone.trim_end_matches('.').to_string());
+        }
+        match candidate.split_once('.') {
+            Some((_, rest)) if rest.contains('.') => candidate = rest,
+            _ => return None,
+        }
+    }
+}
+
+fn ensure_uniform_type(expected_type: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
     for record in records {
         if record.as_type() != expected_type {
             return Err(Error::Api(format!(
@@ -399,6 +465,19 @@ fn build_payloads(
                 record.as_type().as_str(),
             )));
         }
+    }
+    Ok(())
+}
+
+fn build_payloads(
+    host: &str,
+    expected_type: DnsRecordType,
+    ttl: u32,
+    records: Vec<DnsRecord>,
+) -> crate::Result<Vec<RecordPayload>> {
+    ensure_uniform_type(expected_type, &records)?;
+    let mut out = Vec::with_capacity(records.len());
+    for record in records {
         out.push(build_payload(host, record, ttl)?);
     }
     Ok(out)

@@ -182,6 +182,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_set_rrset_resolves_parent_zone_for_subdomain_origin() {
+        let mut server = mockito::Server::new_async().await;
+        let token = mock_token(&mut server);
+
+        let zones = server
+            .mock("GET", "/dns/v2/zones")
+            .match_header("authorization", "Bearer tok")
+            .with_status(200)
+            .with_body(r#"{"zones":["example.com"]}"#)
+            .create();
+
+        let put = server
+            .mock("PUT", "/dns/v2/zones/example.com/records/_pop3s._tcp.mxtest/SRV")
+            .match_body(Matcher::Json(json!({
+                "records": [
+                    {"host":"_pop3s._tcp.mxtest","ttl":300,"type":"SRV","data":"mxtest.example.com.","srv_priority":0,"srv_weight":1,"srv_port":995}
+                ]
+            })))
+            .with_status(200)
+            .with_body(r#"{"records_added":1}"#)
+            .create();
+
+        let p = provider(server.url());
+        let result = p
+            .set_rrset(
+                "_pop3s._tcp.mxtest.example.com",
+                DnsRecordType::SRV,
+                300,
+                vec![DnsRecord::SRV(SRVRecord {
+                    priority: 0,
+                    weight: 1,
+                    port: 995,
+                    target: "mxtest.example.com".to_string(),
+                })],
+                "mxtest.example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "set_rrset returned {result:?}");
+        token.assert();
+        zones.assert();
+        put.assert();
+    }
+
+    #[tokio::test]
     async fn test_add_to_rrset_posts_append() {
         let mut server = mockito::Server::new_async().await;
         let token = mock_token(&mut server);
