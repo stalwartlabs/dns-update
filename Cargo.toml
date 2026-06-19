@@ -47,9 +47,9 @@ serde_json = { version = "1.0.116", default-features = false, features = ["std"]
 reqwest = { version = "0.13", default-features = false, features = ["http2", "gzip", "deflate", "json"]}
 serde_urlencoded = { version = "0.7.1", default-features = false }
 ring = { version = "0.17", optional = true }
-aws-lc-rs = { version = "1.16", optional = true }
+aws-lc-rs = { version = "1.17", optional = true }
 rustls = { version = "0.23", default-features = false, optional = true }
-quick-xml = { version = "0.39.4", features = ["serialize"] }
+quick-xml = { version = "0.40", features = ["serialize"] }
 chrono = { version = "0.4" , default-features = false, features = ["std", "clock", "now"] }
 
 [dev-dependencies]
