@@ -12,7 +12,7 @@
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord,
     http::{HttpClient, HttpClientBuilder},
-    utils::{strip_origin_from_name, txt_chunks},
+    utils::strip_origin_from_name,
 };
 use quick_xml::de::from_str;
 use serde::Deserialize;
@@ -492,17 +492,15 @@ fn build_hosts_for_record(
             caa_tag: None,
         }),
         DnsRecord::TXT(content) => {
-            for chunk in txt_chunks(content) {
-                hosts.push(Host {
-                    name: subdomain.to_string(),
-                    record_type: type_str.clone(),
-                    address: chunk,
-                    mx_pref: mx_pref.clone(),
-                    ttl: ttl_str.clone(),
-                    caa_flag: None,
-                    caa_tag: None,
-                });
-            }
+            hosts.push(Host {
+                name: subdomain.to_string(),
+                record_type: type_str,
+                address: content,
+                mx_pref,
+                ttl: ttl_str,
+                caa_flag: None,
+                caa_tag: None,
+            });
         }
         DnsRecord::SRV(_) => {
             return Err(Error::Unsupported(
