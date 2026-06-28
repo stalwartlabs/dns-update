@@ -822,6 +822,124 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_set_rrset_resolves_parent_zone_for_subdomain_origin() {
+        let mut server = mockito::Server::new_async().await;
+        let subdomain_probe = server
+            .mock("GET", "/domains/sub.example.com/")
+            .with_status(404)
+            .with_body(r#"{ "detail": "Not found." }"#)
+            .create();
+        let zone_probe = server
+            .mock("GET", "/domains/example.com/")
+            .with_status(200)
+            .match_header("authorization", "Token test_token")
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "name": "example.com",
+                    "minimum_ttl": 3600,
+                    "published": "2025-07-25T19:18:37.292390Z",
+                    "touched": "2025-07-25T19:18:37.292390Z",
+                    "keys": []
+                }"#,
+            )
+            .create();
+        let expected_request = json!([{
+            "subname": "mail.sub",
+            "type": "A",
+            "ttl": 3600,
+            "records": ["1.1.1.1"],
+        }]);
+        let put_mock = server
+            .mock("PUT", "/domains/example.com/rrsets/")
+            .with_status(200)
+            .match_body(mockito::Matcher::Json(expected_request))
+            .with_body(
+                r#"[{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "mail.sub",
+                    "name": "mail.sub.example.com.",
+                    "records": ["1.1.1.1"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }]"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "mail.sub.example.com",
+                DnsRecordType::A,
+                3600,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "sub.example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned {result:?}");
+        subdomain_probe.assert();
+        zone_probe.assert();
+        put_mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_resolve_domain_is_cached_across_calls() {
+        let mut server = mockito::Server::new_async().await;
+        let zone_probe = server
+            .mock("GET", "/domains/example.com/")
+            .with_status(200)
+            .with_body(
+                r#"{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "name": "example.com",
+                    "minimum_ttl": 3600,
+                    "published": "2025-07-25T19:18:37.292390Z",
+                    "touched": "2025-07-25T19:18:37.292390Z",
+                    "keys": []
+                }"#,
+            )
+            .expect(1)
+            .create();
+        let put_mock = server
+            .mock("PUT", "/domains/example.com/rrsets/")
+            .with_status(200)
+            .with_body(
+                r#"[{
+                    "created": "2025-07-25T19:18:37.286381Z",
+                    "domain": "example.com",
+                    "subname": "test",
+                    "name": "test.example.com.",
+                    "records": ["1.1.1.1"],
+                    "ttl": 3600,
+                    "type": "A",
+                    "touched": "2025-07-25T19:18:37.292390Z"
+                }]"#,
+            )
+            .expect(2)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        for _ in 0..2 {
+            provider
+                .set_rrset(
+                    "test.example.com",
+                    DnsRecordType::A,
+                    3600,
+                    vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                    "example.com",
+                )
+                .await
+                .unwrap();
+        }
+
+        zone_probe.assert();
+        put_mock.assert();
+    }
+
+    #[tokio::test]
     async fn test_add_to_rrset_type_mismatch_rejected() {
         let server = mockito::Server::new_async().await;
         let provider = setup_provider(server.url().as_str());

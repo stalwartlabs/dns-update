@@ -16,7 +16,11 @@ use crate::{
     utils::strip_origin_from_name,
 };
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 pub struct DesecDnsRecordRepresentation {
     pub record_type: String,
@@ -27,6 +31,7 @@ pub struct DesecDnsRecordRepresentation {
 pub struct DesecProvider {
     client: HttpClient,
     endpoint: String,
+    zones: Arc<Mutex<HashMap<String, (String, Instant)>>>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -72,6 +77,55 @@ impl DesecProvider {
         Self {
             client,
             endpoint: DEFAULT_API_ENDPOINT.to_string(),
+            zones: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    async fn resolve_domain(&self, origin: &str) -> crate::Result<String> {
+        let origin = origin.trim_end_matches('.');
+
+        if let Ok(guard) = self.zones.lock()
+            && let Some((resolved, expiry)) = guard.get(origin)
+            && Instant::now() < *expiry
+        {
+            return Ok(resolved.clone());
+        }
+
+        let resolved = self.discover_domain(origin).await;
+
+        if let Ok(mut guard) = self.zones.lock() {
+            guard.insert(
+                origin.to_string(),
+                (resolved.clone(), Instant::now() + Duration::from_secs(300)),
+            );
+        }
+
+        Ok(resolved)
+    }
+
+    async fn discover_domain(&self, origin: &str) -> String {
+        let mut candidate = origin;
+        loop {
+            let domain_url = format!(
+                "{endpoint}/domains/{candidate}/",
+                endpoint = self.endpoint,
+                candidate = candidate,
+            );
+
+            if self
+                .client
+                .get(domain_url)
+                .send_with_retry::<DesecEmptyResponse>(3)
+                .await
+                .is_ok()
+            {
+                return candidate.to_string();
+            }
+
+            match candidate.split_once('.') {
+                Some((_, rest)) if rest.contains('.') => candidate = rest,
+                _ => return origin.to_string(),
+            }
         }
     }
 
@@ -92,7 +146,8 @@ impl DesecProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         let name = name.into_name().to_ascii_lowercase();
-        let domain = origin.into_name().to_ascii_lowercase();
+        let origin = origin.into_name().to_ascii_lowercase();
+        let domain = self.resolve_domain(&origin).await?;
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
         let rr_type = record_type.as_str();
 
@@ -152,7 +207,8 @@ impl DesecProvider {
         }
 
         let name = name.into_name().to_ascii_lowercase();
-        let domain = origin.into_name().to_ascii_lowercase();
+        let origin = origin.into_name().to_ascii_lowercase();
+        let domain = self.resolve_domain(&origin).await?;
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
         let rr_type = record_type.as_str();
         let ttl = ttl.max(DESEC_MIN_TTL);
@@ -223,7 +279,8 @@ impl DesecProvider {
         }
 
         let name = name.into_name().to_ascii_lowercase();
-        let domain = origin.into_name().to_ascii_lowercase();
+        let origin = origin.into_name().to_ascii_lowercase();
+        let domain = self.resolve_domain(&origin).await?;
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
         let rr_type = record_type.as_str();
 
@@ -292,7 +349,8 @@ impl DesecProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
         let name = name.into_name().to_ascii_lowercase();
-        let domain = origin.into_name().to_ascii_lowercase();
+        let origin = origin.into_name().to_ascii_lowercase();
+        let domain = self.resolve_domain(&origin).await?;
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
         let rr_type = record_type.as_str();
 

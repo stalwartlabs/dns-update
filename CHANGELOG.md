@@ -1,6 +1,7 @@
 dns-update 0.5.4
 ================================
 - Include body snippet in deserialization failure messages.
+- deSEC: resolve the managed DNS zone by walking up the origin labels instead of using the origin verbatim (#72).
 
 dns-update 0.5.3
 ================================
