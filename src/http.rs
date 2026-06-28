@@ -9,15 +9,13 @@
  * except according to those terms.
  */
 
-use std::time::Duration;
-
+use crate::Error;
 use reqwest::{
     Method,
     header::{CONTENT_TYPE, HeaderMap, HeaderValue},
 };
 use serde::{Serialize, de::DeserializeOwned};
-
-use crate::Error;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct HttpClientBuilder {
@@ -159,8 +157,12 @@ impl HttpRequest {
         T: DeserializeOwned,
     {
         let response = self.send_raw().await?;
-        serde_json::from_slice::<T>(response.as_bytes())
-            .map_err(|err| Error::Serialize(format!("Failed to deserialize response: {err}")))
+        serde_json::from_slice::<T>(response.as_bytes()).map_err(|err| {
+            Error::Serialize(format!(
+                "Failed to deserialize response: {err} (body: {})",
+                body_snippet(&response)
+            ))
+        })
     }
 
     pub async fn send_raw(self) -> crate::Result<String> {
@@ -233,7 +235,11 @@ impl HttpRequest {
                     })?;
                     let parse_target = if text.trim().is_empty() { "{}" } else { &text };
                     serde_json::from_str(parse_target).map_err(|err| {
-                        Error::Serialize(format!("Failed to deserialize response: {err}"))
+                        Error::Serialize(format!(
+                            "Failed to deserialize response from {}: {err} (body: {})",
+                            self.url,
+                            body_snippet(&text)
+                        ))
                     })
                 }
                 429 | 503 if attempts < max_retries => {
@@ -255,6 +261,16 @@ impl HttpRequest {
 }
 
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(60);
+const MAX_BODY_SNIPPET: usize = 512;
+
+fn body_snippet(body: &str) -> &str {
+    let trimmed = body.trim();
+    if trimmed.len() <= MAX_BODY_SNIPPET {
+        trimmed
+    } else {
+        &trimmed[..trimmed.ceil_char_boundary(MAX_BODY_SNIPPET)]
+    }
+}
 
 fn retry_after(headers: &HeaderMap<HeaderValue>) -> Option<Duration> {
     headers

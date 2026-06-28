@@ -1,3 +1,7 @@
+dns-update 0.5.4
+================================
+- Include body snippet in deserialization failure messages.
+
 dns-update 0.5.3
 ================================
 - Namecheap: Corrected the behavior of the set_hosts command when adding a TXT record.
