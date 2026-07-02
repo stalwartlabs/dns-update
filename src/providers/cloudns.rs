@@ -84,7 +84,11 @@ impl ClouDnsProvider {
         }
 
         let client = HttpClientBuilder::default()
-            .with_header("Content-Type", "application/x-www-form-urlencoded")
+            // NB: set_header (replace), not with_header (append) — the builder
+            // defaults Content-Type to application/json, and appending would send
+            // two Content-Type headers. ClouDNS then can't parse the POST form
+            // body and rejects every write with "Invalid authentication".
+            .set_header("Content-Type", "application/x-www-form-urlencoded")
             .with_timeout(timeout)
             .build();
 
@@ -184,11 +188,43 @@ impl ClouDnsProvider {
                 ],
             )
             .await?;
+        Self::parse_list_response(&body, host, rr_type)
+    }
+
+    /// Parse the response of the ClouDNS `records.json` (list) endpoint.
+    ///
+    /// ClouDNS returns `{ "<record-id>": { ...record... } }` on success, `[]`
+    /// when there are no matching records, and an error envelope
+    /// `{ "status": "Failed", "statusDescription": "..." }` on failure. The
+    /// previous code deserialized straight into the record map, so an error
+    /// envelope produced a cryptic `invalid type: string "Failed", expected
+    /// struct ClouDnsRecord`. Surface the ClouDNS status/description instead.
+    fn parse_list_response(
+        body: &str,
+        host: &str,
+        rr_type: &str,
+    ) -> crate::Result<Vec<ClouDnsRecord>> {
         if body.trim() == "[]" {
             return Ok(Vec::new());
         }
-        let records: HashMap<String, ClouDnsRecord> = serde_json::from_str(&body)
-            .map_err(|err| Error::Serialize(format!("Failed to parse ClouDNS records: {err}")))?;
+        let records: HashMap<String, ClouDnsRecord> = match serde_json::from_str(body) {
+            Ok(records) => records,
+            Err(err) => {
+                if let Ok(resp) = serde_json::from_str::<ApiResponse>(body) {
+                    if let Some(status) = resp.status.as_deref() {
+                        if status != "Success" {
+                            return Err(Error::Api(format!(
+                                "ClouDNS list-records failed: {status} {}",
+                                resp.status_description.unwrap_or_default(),
+                            )));
+                        }
+                    }
+                }
+                return Err(Error::Serialize(format!(
+                    "Failed to parse ClouDNS records: {err}"
+                )));
+            }
+        };
         Ok(records
             .into_values()
             .filter(|r| r.host == host && r.rr_type == rr_type)
@@ -613,4 +649,40 @@ fn ttl_rounder(ttl: u32) -> u32 {
         }
     }
     2592000
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_envelope_surfaces_status_description() {
+        // Regression: ClouDNS error responses used to fail with a cryptic
+        // `invalid type: string "Failed", expected struct ClouDnsRecord`.
+        let body = r#"{"status":"Failed","statusDescription":"Invalid authentication, incorrect auth-id or auth-password."}"#;
+        match ClouDnsProvider::parse_list_response(body, "host", "TXT") {
+            Err(Error::Api(msg)) => {
+                assert!(msg.contains("Failed"), "msg = {msg}");
+                assert!(msg.contains("incorrect auth-id"), "msg = {msg}");
+            }
+            other => panic!("expected Error::Api, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_array_yields_no_records() {
+        let recs = ClouDnsProvider::parse_list_response("[]", "host", "TXT").unwrap();
+        assert!(recs.is_empty());
+    }
+
+    #[test]
+    fn valid_records_are_parsed_and_filtered() {
+        let body = r#"{
+            "111":{"id":"111","type":"TXT","host":"host","record":"v=spf1 -all"},
+            "222":{"id":"222","type":"TXT","host":"other","record":"nope"}
+        }"#;
+        let recs = ClouDnsProvider::parse_list_response(body, "host", "TXT").unwrap();
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].record, "v=spf1 -all");
+    }
 }
