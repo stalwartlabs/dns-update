@@ -26,6 +26,7 @@ fn setup_provider(endpoint: String) -> Route53Provider {
         region: Some("us-east-1".to_string()),
         hosted_zone_id: Some(ZONE_ID.to_string()),
         private_zone_only: Some(false),
+        endpoint: None,
     })
     .with_endpoint(endpoint)
 }
@@ -38,6 +39,7 @@ fn setup_provider_zone_lookup(endpoint: String) -> Route53Provider {
         region: Some("us-east-1".to_string()),
         hosted_zone_id: None,
         private_zone_only: Some(false),
+        endpoint: None,
     })
     .with_endpoint(endpoint)
 }
@@ -124,6 +126,7 @@ async fn test_route53_provider_creation() {
         region: Some("us-east-1".to_string()),
         hosted_zone_id: Some("test_zone_id".to_string()),
         private_zone_only: Some(false),
+        endpoint: None,
     });
 }
 
@@ -136,6 +139,7 @@ async fn test_route53_updater_creation() {
         region: Some("us-west-2".to_string()),
         hosted_zone_id: None,
         private_zone_only: Some(true),
+        endpoint: None,
     })
     .unwrap();
     match updater {
@@ -153,6 +157,7 @@ async fn test_route53_config_defaults() {
         region: None,
         hosted_zone_id: None,
         private_zone_only: None,
+        endpoint: None,
     });
 }
 
@@ -165,6 +170,7 @@ async fn test_route53_config_with_session_token() {
         region: Some("eu-west-1".to_string()),
         hosted_zone_id: Some("Z1234567890".to_string()),
         private_zone_only: Some(true),
+        endpoint: None,
     });
 }
 
@@ -177,12 +183,48 @@ async fn test_route53_config_minimal() {
         region: None,
         hosted_zone_id: None,
         private_zone_only: None,
+        endpoint: None,
     })
     .unwrap();
     match updater {
         DnsUpdater::Route53(_) => {}
         _ => panic!("Expected Route53 provider"),
     }
+}
+
+#[tokio::test]
+async fn test_route53_custom_endpoint_from_config() {
+    let mut server = mockito::Server::new_async().await;
+    let change = mock_change(
+        &mut server,
+        vec![
+            r"<Action>UPSERT</Action>".to_string(),
+            r"<Value>1\.2\.3\.4</Value>".to_string(),
+        ],
+    );
+
+    let provider = Route53Provider::new(Route53Config {
+        access_key_id: "AKIA_TEST".to_string(),
+        secret_access_key: "test_secret".to_string(),
+        session_token: None,
+        region: Some("eu-central-1".to_string()),
+        hosted_zone_id: Some(ZONE_ID.to_string()),
+        private_zone_only: Some(false),
+        endpoint: Some(server.url()),
+    });
+
+    let result = provider
+        .set_rrset(
+            "host.example.com",
+            DnsRecordType::A,
+            300,
+            vec![DnsRecord::A("1.2.3.4".parse().unwrap())],
+            "example.com",
+        )
+        .await;
+
+    assert!(result.is_ok(), "set_rrset returned: {result:?}");
+    change.assert();
 }
 
 #[tokio::test]
@@ -843,6 +885,7 @@ async fn test_session_token_is_signed() {
         region: Some("us-east-1".to_string()),
         hosted_zone_id: Some(ZONE_ID.to_string()),
         private_zone_only: Some(false),
+        endpoint: None,
     })
     .with_endpoint(endpoint);
 
@@ -991,6 +1034,7 @@ async fn integration_test() {
         region: Some("us-east-1".to_string()),
         hosted_zone_id,
         private_zone_only: Some(false),
+        endpoint: None,
     });
 
     provider
