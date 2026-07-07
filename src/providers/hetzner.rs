@@ -11,6 +11,7 @@
 
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
     http::{HttpClient, HttpClientBuilder},
     utils::{strip_origin_from_name, txt_chunks_to_text},
 };
@@ -119,7 +120,6 @@ impl HetznerProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
-        reject_tlsa(record_type)?;
         let name = name.into_name();
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, Some("@"));
@@ -165,7 +165,6 @@ impl HetznerProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
-        reject_tlsa(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -209,7 +208,6 @@ impl HetznerProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
-        reject_tlsa(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -365,16 +363,6 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
     Ok(())
 }
 
-fn reject_tlsa(record_type: DnsRecordType) -> crate::Result<()> {
-    if record_type == DnsRecordType::TLSA {
-        Err(Error::Unsupported(
-            "TLSA records are not supported by Hetzner".to_string(),
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 fn build_values(records: Vec<DnsRecord>) -> crate::Result<Vec<RecordValue>> {
     let mut out = Vec::with_capacity(records.len());
     for record in records {
@@ -404,11 +392,7 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
             srv.port,
             ensure_trailing_dot(srv.target),
         ),
-        DnsRecord::TLSA(_) => {
-            return Err(Error::Unsupported(
-                "TLSA records are not supported by Hetzner".to_string(),
-            ));
-        }
+        DnsRecord::TLSA(tlsa) => tlsa.to_string(),
         DnsRecord::CAA(caa) => caa.to_string(),
     })
 }
@@ -426,13 +410,78 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
         DnsRecordType::MX => parse_mx(value)?,
         DnsRecordType::TXT => DnsRecord::TXT(parse_txt(value)),
         DnsRecordType::SRV => parse_srv(value)?,
-        DnsRecordType::TLSA => {
-            return Err(Error::Unsupported(
-                "TLSA records are not supported by Hetzner".to_string(),
-            ));
-        }
+        DnsRecordType::TLSA => parse_tlsa(value)?,
         DnsRecordType::CAA => parse_caa(value)?,
     })
+}
+
+fn parse_tlsa(content: &str) -> crate::Result<DnsRecord> {
+    let mut parts = content.split_whitespace();
+    let usage: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA record: {content}")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid TLSA usage: {e}")))?;
+    let selector: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA record: {content}")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid TLSA selector: {e}")))?;
+    let matching: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA record: {content}")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid TLSA matching: {e}")))?;
+    let hex: String = parts.collect::<Vec<_>>().join("");
+    Ok(DnsRecord::TLSA(TLSARecord {
+        cert_usage: tlsa_cert_usage_from_u8(usage)?,
+        selector: tlsa_selector_from_u8(selector)?,
+        matching: tlsa_matching_from_u8(matching)?,
+        cert_data: decode_hex(&hex)?,
+    }))
+}
+
+fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
+    Ok(match value {
+        0 => TlsaCertUsage::PkixTa,
+        1 => TlsaCertUsage::PkixEe,
+        2 => TlsaCertUsage::DaneTa,
+        3 => TlsaCertUsage::DaneEe,
+        255 => TlsaCertUsage::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {value}"))),
+    })
+}
+
+fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
+    Ok(match value {
+        0 => TlsaSelector::Full,
+        1 => TlsaSelector::Spki,
+        255 => TlsaSelector::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA selector: {value}"))),
+    })
+}
+
+fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
+    Ok(match value {
+        0 => TlsaMatching::Raw,
+        1 => TlsaMatching::Sha256,
+        2 => TlsaMatching::Sha512,
+        255 => TlsaMatching::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
+    })
+}
+
+fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
+    if !hex.len().is_multiple_of(2) {
+        return Err(Error::Parse(format!("invalid hex string: {hex}")));
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| {
+            u8::from_str_radix(&hex[i..i + 2], 16)
+                .map_err(|e| Error::Parse(format!("invalid hex byte: {e}")))
+        })
+        .collect()
 }
 
 fn parse_mx(value: &str) -> crate::Result<DnsRecord> {
