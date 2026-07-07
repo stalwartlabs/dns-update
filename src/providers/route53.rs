@@ -35,9 +35,32 @@ pub struct Route53Config {
     pub access_key_id: String,
     pub secret_access_key: String,
     pub session_token: Option<String>,
+    /// Signing region. Defaults to `us-east-1` (AWS Commercial) when `None`.
+    ///
+    /// Set to `cn-northwest-1` for AWS China and to the appropriate region
+    /// code for other partitions.
     pub region: Option<String>,
     pub hosted_zone_id: Option<String>,
     pub private_zone_only: Option<bool>,
+    /// Custom Route 53 API endpoint URL. When `None`, defaults to the AWS
+    /// Commercial global endpoint (`https://route53.amazonaws.com`).
+    ///
+    /// Set this when targeting a non-commercial AWS partition:
+    ///
+    /// | Partition | Endpoint | Signing region |
+    /// |-----------|----------|----------------|
+    /// | Commercial (`aws`) | `https://route53.amazonaws.com` (default) | `us-east-1` |
+    /// | GovCloud (`aws-us-gov`) | `https://route53.us-gov.amazonaws.com` | `us-gov-west-1` |
+    /// | China (`aws-cn`) | `https://route53.amazonaws.com.cn` | `cn-northwest-1` |
+    /// | EU Sovereign Cloud (`aws-eusc`) | `https://route53.amazonaws.eu` | `eusc-de-east-1` |
+    ///
+    /// The isolated partitions (`aws-iso`, `aws-iso-b`, `aws-iso-e`,
+    /// `aws-iso-f`) are air-gapped environments; endpoints are not publicly
+    /// documented. Consult your environment's documentation.
+    ///
+    /// For the latest official endpoint list see:
+    /// <https://docs.aws.amazon.com/general/latest/gr/r53.html>
+    pub endpoint: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -55,11 +78,16 @@ impl Route53Provider {
             .clone()
             .unwrap_or_else(|| "us-east-1".to_string());
 
+        let endpoint = match config.endpoint.clone() {
+            Some(ep) => Cow::Owned(ep),
+            None => Cow::Borrowed(ROUTE53_DEFAULT_ENDPOINT),
+        };
+
         Self {
             client: Client::new(),
             config,
             region,
-            endpoint: Cow::Borrowed(ROUTE53_DEFAULT_ENDPOINT),
+            endpoint,
         }
     }
 
