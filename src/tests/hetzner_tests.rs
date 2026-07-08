@@ -290,6 +290,142 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_set_rrset_tlsa_relative_subdomain_name() {
+        let mut server = mockito::Server::new_async().await;
+        let set_records = server
+            .mock(
+                "POST",
+                "/zones/example.com/rrsets/_25._tcp.mail2/TLSA/actions/set_records",
+            )
+            .match_body(Matcher::Json(json!({
+                "records": [{"value": "3 1 1 abcd"}],
+            })))
+            .with_status(200)
+            .with_body(ok_action())
+            .create();
+
+        let change_ttl = server
+            .mock(
+                "POST",
+                "/zones/example.com/rrsets/_25._tcp.mail2/TLSA/actions/change_ttl",
+            )
+            .with_status(200)
+            .with_body(ok_action())
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .set_rrset(
+                "_25._tcp.mail2",
+                DnsRecordType::TLSA,
+                300,
+                vec![tlsa_dane_ee()],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        set_records.assert();
+        change_ttl.assert();
+    }
+
+    #[tokio::test]
+    async fn test_add_to_rrset_tlsa_relative_subdomain_name() {
+        let mut server = mockito::Server::new_async().await;
+        let add = server
+            .mock(
+                "POST",
+                "/zones/example.com/rrsets/_25._tcp.mail2/TLSA/actions/add_records",
+            )
+            .match_body(Matcher::Json(json!({
+                "records": [{"value": "2 1 1 12345678"}],
+            })))
+            .with_status(200)
+            .with_body(ok_action())
+            .create();
+
+        let change_ttl = server
+            .mock(
+                "POST",
+                "/zones/example.com/rrsets/_25._tcp.mail2/TLSA/actions/change_ttl",
+            )
+            .match_body(Matcher::Json(json!({"ttl": 600})))
+            .with_status(200)
+            .with_body(ok_action())
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .add_to_rrset(
+                "_25._tcp.mail2",
+                DnsRecordType::TLSA,
+                600,
+                vec![tlsa_dane_ta()],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "add_to_rrset returned: {result:?}");
+        add.assert();
+        change_ttl.assert();
+    }
+
+    #[tokio::test]
+    async fn test_remove_from_rrset_tlsa_relative_subdomain_name() {
+        let mut server = mockito::Server::new_async().await;
+        let remove = server
+            .mock(
+                "POST",
+                "/zones/example.com/rrsets/_25._tcp.mail2/TLSA/actions/remove_records",
+            )
+            .match_body(Matcher::Json(json!({
+                "records": [{"value": "3 1 1 abcd"}],
+            })))
+            .with_status(200)
+            .with_body(ok_action())
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .remove_from_rrset(
+                "_25._tcp.mail2",
+                DnsRecordType::TLSA,
+                vec![tlsa_dane_ee()],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "remove_from_rrset returned: {result:?}");
+        remove.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_rrset_tlsa_relative_subdomain_name() {
+        let mut server = mockito::Server::new_async().await;
+        let list = server
+            .mock("GET", "/zones/example.com/rrsets")
+            .match_query(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("name".into(), "_25._tcp.mail2".into()),
+                Matcher::UrlEncoded("type".into(), "TLSA".into()),
+                Matcher::UrlEncoded("per_page".into(), "50".into()),
+            ]))
+            .with_status(200)
+            .with_body(
+                r#"{"rrsets":[{"id":"_25._tcp.mail2/TLSA","name":"_25._tcp.mail2","type":"TLSA","ttl":300,"records":[{"value":"3 1 1 abcd"}]}],"meta":{}}"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .list_rrset("_25._tcp.mail2", DnsRecordType::TLSA, "example.com")
+            .await;
+
+        assert!(result.is_ok(), "list_rrset returned: {result:?}");
+        assert_eq!(result.unwrap(), vec![tlsa_dane_ee()]);
+        list.assert();
+    }
+
+    #[tokio::test]
     async fn test_add_to_rrset_posts_add_records_then_change_ttl() {
         let mut server = mockito::Server::new_async().await;
         let add = server
