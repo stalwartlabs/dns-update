@@ -1,7 +1,3 @@
-dns-update 0.5.5
-================================
-- Hetzner: TLSA record support via Cloud API RRsets.
-
 dns-update 0.5.4
 ================================
 - Include body snippet in deserialization failure messages.
