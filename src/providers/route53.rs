@@ -38,6 +38,7 @@ pub struct Route53Config {
     pub region: Option<String>,
     pub hosted_zone_id: Option<String>,
     pub private_zone_only: Option<bool>,
+    pub endpoint: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -55,11 +56,16 @@ impl Route53Provider {
             .clone()
             .unwrap_or_else(|| "us-east-1".to_string());
 
+        let endpoint = match config.endpoint.clone() {
+            Some(ep) => Cow::Owned(ep),
+            None => Cow::Borrowed(ROUTE53_DEFAULT_ENDPOINT),
+        };
+
         Self {
             client: Client::new(),
             config,
             region,
-            endpoint: Cow::Borrowed(ROUTE53_DEFAULT_ENDPOINT),
+            endpoint,
         }
     }
 
