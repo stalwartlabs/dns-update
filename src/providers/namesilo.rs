@@ -9,8 +9,9 @@
  * except according to those terms.
  */
 
+use crate::utils::build_caa;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
@@ -423,55 +424,4 @@ fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
         .parse()
         .map_err(|e| Error::Parse(format!("invalid CAA flag '{}': {}", parts[0], e)))?;
     Ok(DnsRecord::CAA(build_caa(flags, parts[1], parts[2])?))
-}
-
-fn build_caa(flags: u8, tag: &str, value: &str) -> crate::Result<CAARecord> {
-    let issuer_critical = flags & 0x80 != 0;
-    match tag {
-        "issue" => {
-            let (name, options) = parse_caa_options(value);
-            Ok(CAARecord::Issue {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "issuewild" => {
-            let (name, options) = parse_caa_options(value);
-            Ok(CAARecord::IssueWild {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "iodef" => Ok(CAARecord::Iodef {
-            issuer_critical,
-            url: value.to_string(),
-        }),
-        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
-    }
-}
-
-fn parse_caa_options(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }

@@ -13,8 +13,10 @@
 
 use crate::crypto::{hmac_sha256, sha256_digest};
 use crate::http::{HttpClient, HttpClientBuilder};
+use crate::utils::split_caa_value;
+use crate::utils::unquote_txt;
 use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
-use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord};
+use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord};
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::Value;
@@ -502,39 +504,6 @@ fn value_to_record(record_type: DnsRecordType, value: &str) -> crate::Result<Dns
     }
 }
 
-fn unquote_txt(content: &str) -> String {
-    let mut out = String::with_capacity(content.len());
-    let bytes = content.as_bytes();
-    let mut i = 0;
-    let mut in_quotes = false;
-    let mut any_quotes = false;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if b == b'"' {
-            any_quotes = true;
-            in_quotes = !in_quotes;
-            i += 1;
-            continue;
-        }
-        if in_quotes && b == b'\\' && i + 1 < bytes.len() {
-            let next = bytes[i + 1];
-            if next == b'"' || next == b'\\' {
-                out.push(next as char);
-                i += 2;
-                continue;
-            }
-        }
-        if !any_quotes || in_quotes {
-            out.push(b as char);
-        }
-        i += 1;
-    }
-    if !any_quotes {
-        return content.to_string();
-    }
-    out
-}
-
 fn parse_caa_value(value: &str) -> crate::Result<CAARecord> {
     let trimmed = value.trim();
     let (flags_str, rest) = trimmed
@@ -555,7 +524,7 @@ fn parse_caa_value(value: &str) -> crate::Result<CAARecord> {
         .unwrap_or(raw_value);
     match tag {
         "issue" => {
-            let (name, options) = split_caa_options(stripped);
+            let (name, options) = split_caa_value(stripped);
             Ok(CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -563,7 +532,7 @@ fn parse_caa_value(value: &str) -> crate::Result<CAARecord> {
             })
         }
         "issuewild" => {
-            let (name, options) = split_caa_options(stripped);
+            let (name, options) = split_caa_value(stripped);
             Ok(CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -576,30 +545,6 @@ fn parse_caa_value(value: &str) -> crate::Result<CAARecord> {
         }),
         other => Err(Error::Parse(format!("Unknown CAA tag: {}", other))),
     }
-}
-
-fn split_caa_options(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }
 
 fn record_type_str(record_type: DnsRecordType) -> crate::Result<&'static str> {

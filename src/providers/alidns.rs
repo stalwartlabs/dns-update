@@ -9,13 +9,14 @@
  * except according to those terms.
  */
 
+use crate::utils::split_caa_value;
 use std::time::Duration;
 
 use chrono::Utc;
 use serde::Deserialize;
 
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     crypto::{hmac_sha256, sha256_digest},
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
@@ -614,13 +615,13 @@ fn parse_caa_value(value: &str) -> crate::Result<CAARecord> {
     match tag.to_ascii_lowercase().as_str() {
         "issue" => Ok(CAARecord::Issue {
             issuer_critical,
-            name: parse_caa_name_and_options(unquoted).0,
-            options: parse_caa_name_and_options(unquoted).1,
+            name: split_caa_value(unquoted).0,
+            options: split_caa_value(unquoted).1,
         }),
         "issuewild" => Ok(CAARecord::IssueWild {
             issuer_critical,
-            name: parse_caa_name_and_options(unquoted).0,
-            options: parse_caa_name_and_options(unquoted).1,
+            name: split_caa_value(unquoted).0,
+            options: split_caa_value(unquoted).1,
         }),
         "iodef" => Ok(CAARecord::Iodef {
             issuer_critical,
@@ -628,31 +629,6 @@ fn parse_caa_value(value: &str) -> crate::Result<CAARecord> {
         }),
         other => Err(Error::Parse(format!("Unknown CAA tag '{}'", other))),
     }
-}
-
-fn parse_caa_name_and_options(unquoted: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = unquoted.split(';');
-    let name_part = parts.next().unwrap_or("").trim();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part.to_string())
-    };
-    let options = parts
-        .map(|p| p.trim())
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }
 
 #[derive(Debug)]

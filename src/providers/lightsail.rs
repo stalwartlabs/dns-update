@@ -10,6 +10,7 @@
  */
 
 use crate::crypto::{hmac_sha256, sha256_digest};
+use crate::utils::unquote_txt;
 use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
 use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, Result, SRVRecord};
 use chrono::Utc;
@@ -703,31 +704,6 @@ fn parse_target(record_type: DnsRecordType, target: &str) -> Result<DnsRecord> {
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Lightsail".to_string(),
         )),
-    }
-}
-
-fn unquote_txt(content: &str) -> String {
-    let mut out = String::new();
-    let mut chars = content.chars().peekable();
-    let mut inside = false;
-    while let Some(ch) = chars.next() {
-        match ch {
-            '"' => {
-                inside = !inside;
-            }
-            '\\' if inside => {
-                if let Some(next) = chars.next() {
-                    out.push(next);
-                }
-            }
-            _ if inside => out.push(ch),
-            _ => {}
-        }
-    }
-    if !out.is_empty() {
-        out
-    } else {
-        content.to_string()
     }
 }
 

@@ -9,6 +9,7 @@
  * except according to those terms.
  */
 
+use crate::utils::unquote_txt;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord,
     crypto::hmac_sha256,
@@ -755,26 +756,4 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
             ));
         }
     })
-}
-
-fn unquote_txt(content: &str) -> String {
-    let trimmed = content.trim();
-    let mut out = String::new();
-    let mut chars = trimmed.chars().peekable();
-    let mut in_quotes = false;
-    while let Some(ch) = chars.next() {
-        match ch {
-            '"' => {
-                in_quotes = !in_quotes;
-            }
-            '\\' => {
-                if let Some(next) = chars.next() {
-                    out.push(next);
-                }
-            }
-            c if !in_quotes && c.is_whitespace() => {}
-            c => out.push(c),
-        }
-    }
-    out
 }

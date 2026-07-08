@@ -161,6 +161,41 @@ on the builder or per-request via `.with_header`). If you need XML bodies use
   produces `"chunk1" "chunk2"` 255-byte-wise quoted+escaped TXT content.
 - `txt_chunks(content: String) -> Vec<String>`: raw 255-byte chunks, no
   quoting.
+- `strip_trailing_dot(&str) -> &str`: drops a single trailing `.` (FQDN dot).
+  Non-allocating; append `.to_string()` only where an owned `String` is
+  needed.
+- To *add* a trailing dot use `IntoFqdn::into_fqdn` (`x.into_fqdn()` ->
+  `Cow<str>`, `.into_owned()` for a `String`). Do not reintroduce local
+  `ensure_trailing_dot` / `ensure_fqdn` helpers; they were all replaced by
+  `into_fqdn`.
+- `unquote_txt(&str) -> String`: decodes wire TXT (the inverse of
+  `txt_chunks_to_text`): concatenates quoted chunks, unescapes `\"` / `\\`,
+  and passes through unquoted input verbatim.
+
+Shared record parsers / decoders (reuse these instead of re-implementing per
+provider; they are the consolidated forms of what used to be copy-pasted):
+
+- `decode_hex(&str) -> Result<Vec<u8>>`: hex string to bytes (via the `hex`
+  crate). Use for TLSA cert data.
+- `tlsa_cert_usage_from_u8(u8)`, `tlsa_selector_from_u8(u8)`,
+  `tlsa_matching_from_u8(u8)` -> `Result<Tlsa*>`: numeric wire value to enum
+  (inverse of the `From<Tlsa*> for u8` impls). Unknown values are
+  `Error::Parse`.
+- `parse_tlsa(&str) -> Result<DnsRecord>`: parses `"<usage> <selector>
+  <matching> <hex...>"` (remaining whitespace-separated fields are joined as
+  the hex blob).
+- `parse_srv(&str) -> Result<DnsRecord>`: parses `"<priority> <weight> <port>
+  <target>"`; strips one trailing dot from the target.
+- `parse_mx(&str) -> Result<DnsRecord>`: parses `"<priority> <exchange>"`;
+  strips one trailing dot from the exchange.
+- `build_caa(flags: u8, tag: &str, value: &str) -> Result<CAARecord>`: builds
+  a `CAARecord` from the wire triple (`flags & 0x80` is `issuer_critical`;
+  `issue`/`issuewild` go through `split_caa_value`, `iodef` keeps the raw
+  url). Providers whose API splits these fields differently just map onto this
+  signature at the call site.
+- `split_caa_value(&str) -> (Option<String>, Vec<KeyValue>)`: splits a CAA
+  issue/issuewild value like `"letsencrypt.org; policy=ev"` into the CA name
+  and its `key=value` options.
 
 Already-impl'd `Display` impls (use `format!("{}", record)` instead of
 hand-rolling):

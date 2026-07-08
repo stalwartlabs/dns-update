@@ -9,8 +9,9 @@
  * except according to those terms.
  */
 
+use crate::utils::build_caa;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     crypto::hmac_sha1,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
@@ -441,63 +442,13 @@ fn listed_to_record(
             port: listed.port,
         })),
         DnsRecordType::CAA => {
-            build_caa(&listed.caa_type, listed.issuer_critical, listed.value).map(DnsRecord::CAA)
+            let flags = if listed.issuer_critical != 0 { 0x80 } else { 0 };
+            build_caa(flags, &listed.caa_type, &listed.value).map(DnsRecord::CAA)
         }
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by DNSMadeEasy".into(),
         )),
     }
-}
-
-fn build_caa(tag: &str, issuer_critical_flag: u8, value: String) -> crate::Result<CAARecord> {
-    let issuer_critical = issuer_critical_flag != 0;
-    match tag {
-        "issue" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::Issue {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::IssueWild {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "iodef" => Ok(CAARecord::Iodef {
-            issuer_critical,
-            url: value,
-        }),
-        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
-    }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }
 
 fn urlencode(value: &str) -> String {

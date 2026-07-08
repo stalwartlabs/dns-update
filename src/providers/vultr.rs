@@ -9,8 +9,10 @@
  * except according to those terms.
  */
 
+use crate::utils::split_caa_value;
+use crate::utils::unquote_txt;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
@@ -389,29 +391,6 @@ fn record_from_vultr(record: VultrRecord) -> crate::Result<DnsRecord> {
     }
 }
 
-fn unquote_txt(content: &str) -> String {
-    let mut out = String::with_capacity(content.len());
-    let mut in_chunk = false;
-    let mut escape = false;
-    for ch in content.chars() {
-        if escape {
-            out.push(ch);
-            escape = false;
-            continue;
-        }
-        match ch {
-            '\\' if in_chunk => escape = true,
-            '"' => in_chunk = !in_chunk,
-            _ if in_chunk => out.push(ch),
-            _ => {}
-        }
-    }
-    if out.is_empty() && !content.is_empty() && !content.starts_with('"') {
-        return content.to_string();
-    }
-    out
-}
-
 fn parse_srv(data: &str, priority: u16) -> crate::Result<DnsRecord> {
     let mut parts = data.split_whitespace();
     let weight = parts
@@ -450,7 +429,7 @@ fn parse_caa(data: &str) -> crate::Result<DnsRecord> {
     let issuer_critical = flags & 0x80 != 0;
     let record = match tag {
         "issue" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -458,7 +437,7 @@ fn parse_caa(data: &str) -> crate::Result<DnsRecord> {
             }
         }
         "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -472,28 +451,4 @@ fn parse_caa(data: &str) -> crate::Result<DnsRecord> {
         other => return Err(Error::Parse(format!("unknown CAA tag: {other}"))),
     };
     Ok(DnsRecord::CAA(record))
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }

@@ -9,8 +9,10 @@
  * except according to those terms.
  */
 
+use crate::utils::split_caa_value;
+use crate::utils::strip_trailing_dot;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
@@ -387,10 +389,12 @@ fn parse_record(record_type: DnsRecordType, record: &GodaddyRecord) -> crate::Re
             .parse()
             .map(DnsRecord::AAAA)
             .map_err(|e| Error::Parse(format!("invalid AAAA record: {e}"))),
-        DnsRecordType::CNAME => Ok(DnsRecord::CNAME(strip_trailing_dot(&record.data))),
-        DnsRecordType::NS => Ok(DnsRecord::NS(strip_trailing_dot(&record.data))),
+        DnsRecordType::CNAME => Ok(DnsRecord::CNAME(
+            strip_trailing_dot(&record.data).to_string(),
+        )),
+        DnsRecordType::NS => Ok(DnsRecord::NS(strip_trailing_dot(&record.data).to_string())),
         DnsRecordType::MX => Ok(DnsRecord::MX(MXRecord {
-            exchange: strip_trailing_dot(&record.data),
+            exchange: strip_trailing_dot(&record.data).to_string(),
             priority: record.priority.unwrap_or(0),
         })),
         DnsRecordType::TXT => Ok(DnsRecord::TXT(record.data.clone())),
@@ -398,17 +402,13 @@ fn parse_record(record_type: DnsRecordType, record: &GodaddyRecord) -> crate::Re
             priority: record.priority.unwrap_or(0),
             weight: record.weight.unwrap_or(0),
             port: record.port.unwrap_or(0),
-            target: strip_trailing_dot(&record.data),
+            target: strip_trailing_dot(&record.data).to_string(),
         })),
         DnsRecordType::CAA => Ok(DnsRecord::CAA(parse_caa(&record.data)?)),
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by GoDaddy".to_string(),
         )),
     }
-}
-
-fn strip_trailing_dot(value: &str) -> String {
-    value.strip_suffix('.').unwrap_or(value).to_string()
 }
 
 fn parse_caa(content: &str) -> crate::Result<CAARecord> {
@@ -434,7 +434,7 @@ fn parse_caa(content: &str) -> crate::Result<CAARecord> {
     let issuer_critical = flags & 0x80 != 0;
     match tag.as_str() {
         "issue" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             Ok(CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -442,7 +442,7 @@ fn parse_caa(content: &str) -> crate::Result<CAARecord> {
             })
         }
         "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             Ok(CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -455,28 +455,4 @@ fn parse_caa(content: &str) -> crate::Result<CAARecord> {
         }),
         other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
     }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }

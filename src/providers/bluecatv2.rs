@@ -9,8 +9,9 @@
  * except according to those terms.
  */
 
+use crate::utils::split_caa_value;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
@@ -684,7 +685,7 @@ fn caa_from_parts(flags: u8, tag: &str, value: &str) -> Option<DnsRecord> {
     let issuer_critical = flags & 0x80 != 0;
     let record = match tag {
         "issue" => {
-            let (name, options) = parse_caa_value(value);
+            let (name, options) = split_caa_value(value);
             CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -692,7 +693,7 @@ fn caa_from_parts(flags: u8, tag: &str, value: &str) -> Option<DnsRecord> {
             }
         }
         "issuewild" => {
-            let (name, options) = parse_caa_value(value);
+            let (name, options) = split_caa_value(value);
             CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -706,30 +707,6 @@ fn caa_from_parts(flags: u8, tag: &str, value: &str) -> Option<DnsRecord> {
         _ => return None,
     };
     Some(DnsRecord::CAA(record))
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }
 
 fn build_payload_from_normalized(

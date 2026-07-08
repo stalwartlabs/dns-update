@@ -9,9 +9,10 @@
  * except according to those terms.
  */
 
+use crate::utils::split_caa_value;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord, TLSARecord,
+    TlsaCertUsage, TlsaMatching, TlsaSelector,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
@@ -434,7 +435,7 @@ fn autodns_parse_caa(value: &str) -> crate::Result<CAARecord> {
     let issuer_critical = flags & 0x80 != 0;
     match tag.as_str() {
         "issue" => {
-            let (name, options) = autodns_split_caa_value(inner);
+            let (name, options) = split_caa_value(inner);
             Ok(CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -442,7 +443,7 @@ fn autodns_parse_caa(value: &str) -> crate::Result<CAARecord> {
             })
         }
         "issuewild" => {
-            let (name, options) = autodns_split_caa_value(inner);
+            let (name, options) = split_caa_value(inner);
             Ok(CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -455,30 +456,6 @@ fn autodns_parse_caa(value: &str) -> crate::Result<CAARecord> {
         }),
         other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
     }
-}
-
-fn autodns_split_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut iter = value.split(';').map(str::trim);
-    let name_part = iter.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = iter
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }
 
 fn build_resource_record(name: &str, record: &DnsRecord, ttl: u32) -> ResourceRecord {

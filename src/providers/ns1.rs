@@ -9,9 +9,11 @@
  * except according to those terms.
  */
 
+use crate::utils::build_caa;
+use crate::utils::decode_hex;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord, TLSARecord, TlsaCertUsage,
+    TlsaMatching, TlsaSelector,
     http::{HttpClient, HttpClientBuilder},
 };
 use serde::{Deserialize, Serialize};
@@ -372,22 +374,9 @@ fn answer_to_record(record_type: DnsRecordType, answer: &Answer) -> crate::Resul
                 .map_err(|e| Error::Parse(format!("invalid NS1 CAA flags: {e}")))?;
             let tag = need(1)?.to_ascii_lowercase();
             let value = need(2)?.clone();
-            DnsRecord::CAA(build_caa(flags, &tag, value)?)
+            DnsRecord::CAA(build_caa(flags, &tag, &value)?)
         }
     })
-}
-
-fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
-    if !hex.len().is_multiple_of(2) {
-        return Err(Error::Parse(format!("invalid hex string: {hex}")));
-    }
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&hex[i..i + 2], 16)
-                .map_err(|e| Error::Parse(format!("invalid hex byte: {e}")))
-        })
-        .collect()
 }
 
 fn tlsa_cert_usage_from_str(value: &str) -> crate::Result<TlsaCertUsage> {
@@ -427,55 +416,4 @@ fn tlsa_matching_from_str(value: &str) -> crate::Result<TlsaMatching> {
         255 => TlsaMatching::Private,
         _ => return Err(Error::Parse(format!("unknown TLSA matching: {n}"))),
     })
-}
-
-fn build_caa(flags: u8, tag: &str, value: String) -> crate::Result<CAARecord> {
-    let issuer_critical = flags & 0x80 != 0;
-    match tag {
-        "issue" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::Issue {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::IssueWild {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "iodef" => Ok(CAARecord::Iodef {
-            issuer_critical,
-            url: value,
-        }),
-        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
-    }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }

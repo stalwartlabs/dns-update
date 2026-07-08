@@ -9,9 +9,10 @@
  * except according to those terms.
  */
 
+use crate::utils::parse_tlsa;
+use crate::utils::split_caa_value;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
@@ -543,34 +544,6 @@ fn parse_srv(content: &str, priority: u16) -> crate::Result<DnsRecord> {
     }))
 }
 
-fn parse_tlsa(content: &str) -> crate::Result<DnsRecord> {
-    let mut parts = content.split_ascii_whitespace();
-    let usage: u8 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid INWX TLSA content: {content}")))?
-        .parse()
-        .map_err(|err| Error::Parse(format!("invalid TLSA usage: {err}")))?;
-    let selector: u8 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid INWX TLSA content: {content}")))?
-        .parse()
-        .map_err(|err| Error::Parse(format!("invalid TLSA selector: {err}")))?;
-    let matching: u8 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid INWX TLSA content: {content}")))?
-        .parse()
-        .map_err(|err| Error::Parse(format!("invalid TLSA matching: {err}")))?;
-    let hex = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid INWX TLSA content: {content}")))?;
-    Ok(DnsRecord::TLSA(TLSARecord {
-        cert_usage: tlsa_cert_usage_from_u8(usage)?,
-        selector: tlsa_selector_from_u8(selector)?,
-        matching: tlsa_matching_from_u8(matching)?,
-        cert_data: decode_hex(hex)?,
-    }))
-}
-
 fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
     let (flags_str, rest) = content
         .split_once(' ')
@@ -607,71 +580,4 @@ fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
         })),
         other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
     }
-}
-
-fn split_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
-}
-
-fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
-    if !hex.len().is_multiple_of(2) {
-        return Err(Error::Parse(format!("invalid hex string: {hex}")));
-    }
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&hex[i..i + 2], 16)
-                .map_err(|e| Error::Parse(format!("invalid hex byte: {e}")))
-        })
-        .collect()
-}
-
-fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
-    Ok(match value {
-        0 => TlsaCertUsage::PkixTa,
-        1 => TlsaCertUsage::PkixEe,
-        2 => TlsaCertUsage::DaneTa,
-        3 => TlsaCertUsage::DaneEe,
-        255 => TlsaCertUsage::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {value}"))),
-    })
-}
-
-fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
-    Ok(match value {
-        0 => TlsaSelector::Full,
-        1 => TlsaSelector::Spki,
-        255 => TlsaSelector::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA selector: {value}"))),
-    })
-}
-
-fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
-    Ok(match value {
-        0 => TlsaMatching::Raw,
-        1 => TlsaMatching::Sha256,
-        2 => TlsaMatching::Sha512,
-        255 => TlsaMatching::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
-    })
 }

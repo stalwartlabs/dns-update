@@ -9,8 +9,10 @@
  * except according to those terms.
  */
 
+use crate::utils::split_caa_value;
+use crate::utils::unquote_txt;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
     utils::txt_chunks_to_text,
 };
@@ -354,27 +356,6 @@ fn parse_srv(content: &str, priority: u16) -> crate::Result<DnsRecord> {
     }))
 }
 
-fn unquote_txt(content: &str) -> String {
-    let mut out = String::with_capacity(content.len());
-    let mut chars = content.chars().peekable();
-    let mut in_quote = false;
-    while let Some(ch) = chars.next() {
-        match ch {
-            '"' => {
-                in_quote = !in_quote;
-            }
-            '\\' => {
-                if let Some(next) = chars.next() {
-                    out.push(next);
-                }
-            }
-            ' ' if !in_quote => {}
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
 fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
     let trimmed = content.trim();
     let (flags_str, rest) = trimmed
@@ -395,7 +376,7 @@ fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
     let issuer_critical = flags & 0x80 != 0;
     match tag.trim() {
         "issue" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             Ok(DnsRecord::CAA(CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -403,7 +384,7 @@ fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
             }))
         }
         "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             Ok(DnsRecord::CAA(CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -416,30 +397,6 @@ fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
         })),
         other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
     }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }
 
 impl TryFrom<DnsRecord> for SafeDnsRecordContent {

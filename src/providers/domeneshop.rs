@@ -9,8 +9,9 @@
  * except according to those terms.
  */
 
+use crate::utils::build_caa;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
@@ -439,62 +440,11 @@ impl TryFrom<ExistingDnsRecord> for DnsRecord {
             "CAA" => {
                 let flags = record.flags.unwrap_or_default();
                 let tag = record.tag.unwrap_or_default();
-                Ok(DnsRecord::CAA(build_caa(flags, tag, record.data)?))
+                Ok(DnsRecord::CAA(build_caa(flags, &tag, &record.data)?))
             }
             other => Err(Error::Parse(format!(
                 "Unsupported Domeneshop record type: {other}"
             ))),
         }
     }
-}
-
-fn build_caa(flags: u8, tag: String, value: String) -> crate::Result<CAARecord> {
-    let issuer_critical = flags & 0x80 != 0;
-    match tag.as_str() {
-        "issue" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::Issue {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::IssueWild {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "iodef" => Ok(CAARecord::Iodef {
-            issuer_critical,
-            url: value,
-        }),
-        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
-    }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }

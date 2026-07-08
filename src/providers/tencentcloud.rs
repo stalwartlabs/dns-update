@@ -9,13 +9,16 @@
  * except according to those terms.
  */
 
+use crate::utils::parse_srv;
+use crate::utils::split_caa_value;
+use crate::utils::strip_trailing_dot;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{net::AddrParseError, time::Duration};
 
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord,
     crypto::{hmac_sha256, sha256_digest},
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
@@ -508,17 +511,17 @@ impl TryFrom<DnsRecord> for TencentRecord {
             }),
             DnsRecord::CNAME(target) => Ok(TencentRecord {
                 record_type: "CNAME".to_string(),
-                value: ensure_trailing_dot(target),
+                value: target.into_fqdn().into_owned(),
                 priority: None,
             }),
             DnsRecord::NS(target) => Ok(TencentRecord {
                 record_type: "NS".to_string(),
-                value: ensure_trailing_dot(target),
+                value: target.into_fqdn().into_owned(),
                 priority: None,
             }),
             DnsRecord::MX(mx) => Ok(TencentRecord {
                 record_type: "MX".to_string(),
-                value: ensure_trailing_dot(mx.exchange),
+                value: mx.exchange.into_fqdn().into_owned(),
                 priority: Some(mx.priority),
             }),
             DnsRecord::TXT(text) => Ok(TencentRecord {
@@ -533,7 +536,7 @@ impl TryFrom<DnsRecord> for TencentRecord {
                     srv.priority,
                     srv.weight,
                     srv.port,
-                    ensure_trailing_dot(srv.target)
+                    srv.target.into_fqdn().into_owned()
                 ),
                 priority: None,
             }),
@@ -546,14 +549,6 @@ impl TryFrom<DnsRecord> for TencentRecord {
                 "TLSA records are not supported by TencentCloud DNSPod".to_string(),
             )),
         }
-    }
-}
-
-fn ensure_trailing_dot(value: String) -> String {
-    if value.ends_with('.') {
-        value
-    } else {
-        format!("{}.", value)
     }
 }
 
@@ -633,10 +628,10 @@ fn parse_record(record_type: DnsRecordType, item: &RecordListItem) -> crate::Res
         DnsRecordType::AAAA => DnsRecord::AAAA(value.parse().map_err(|e: AddrParseError| {
             Error::Parse(format!("invalid AAAA value '{value}': {e}"))
         })?),
-        DnsRecordType::CNAME => DnsRecord::CNAME(strip_trailing_dot(value)),
-        DnsRecordType::NS => DnsRecord::NS(strip_trailing_dot(value)),
+        DnsRecordType::CNAME => DnsRecord::CNAME(strip_trailing_dot(value).to_string()),
+        DnsRecordType::NS => DnsRecord::NS(strip_trailing_dot(value).to_string()),
         DnsRecordType::MX => DnsRecord::MX(MXRecord {
-            exchange: strip_trailing_dot(value),
+            exchange: strip_trailing_dot(value).to_string(),
             priority: item.mx.unwrap_or(0),
         }),
         DnsRecordType::TXT => DnsRecord::TXT(value.to_string()),
@@ -648,38 +643,6 @@ fn parse_record(record_type: DnsRecordType, item: &RecordListItem) -> crate::Res
             ));
         }
     })
-}
-
-fn strip_trailing_dot(value: &str) -> String {
-    value.trim_end_matches('.').to_string()
-}
-
-fn parse_srv(value: &str) -> crate::Result<DnsRecord> {
-    let mut parts = value.split_whitespace();
-    let priority = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV priority in '{value}': {e}")))?;
-    let weight = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV weight in '{value}': {e}")))?;
-    let port = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV port in '{value}': {e}")))?;
-    let target = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?;
-    Ok(DnsRecord::SRV(SRVRecord {
-        priority,
-        weight,
-        port,
-        target: strip_trailing_dot(target),
-    }))
 }
 
 fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
@@ -706,7 +669,7 @@ fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
     let issuer_critical = flags & 0x80 != 0;
     match tag.as_str() {
         "issue" => {
-            let (name, options) = parse_caa_kv(&unquoted);
+            let (name, options) = split_caa_value(&unquoted);
             Ok(DnsRecord::CAA(CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -714,7 +677,7 @@ fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
             }))
         }
         "issuewild" => {
-            let (name, options) = parse_caa_kv(&unquoted);
+            let (name, options) = split_caa_value(&unquoted);
             Ok(DnsRecord::CAA(CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -727,28 +690,4 @@ fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
         })),
         other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
     }
-}
-
-fn parse_caa_kv(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }

@@ -9,8 +9,10 @@
  * except according to those terms.
  */
 
+use crate::utils::build_caa;
+use crate::utils::unquote_txt;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     crypto::hmac_sha1,
     http::{HttpClient, HttpClientBuilder},
     utils::{strip_origin_from_name, txt_chunks_to_text},
@@ -544,86 +546,10 @@ fn round_robin_to_record(
             let tag = entry
                 .tag
                 .ok_or_else(|| Error::Parse("Constellix CAA record missing tag".into()))?;
-            Ok(DnsRecord::CAA(build_caa(flags, &tag, value)?))
+            Ok(DnsRecord::CAA(build_caa(flags, &tag, &value)?))
         }
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Constellix".into(),
         )),
     }
-}
-
-fn unquote_txt(content: &str) -> String {
-    let mut out = String::with_capacity(content.len());
-    let chars = content.chars().peekable();
-    let mut in_quote = false;
-    let mut escape = false;
-    for ch in chars {
-        if escape {
-            out.push(ch);
-            escape = false;
-            continue;
-        }
-        match ch {
-            '\\' if in_quote => escape = true,
-            '"' => in_quote = !in_quote,
-            _ if in_quote => out.push(ch),
-            _ => {}
-        }
-    }
-    if !out.is_empty() || content.contains('"') {
-        out
-    } else {
-        content.to_string()
-    }
-}
-
-fn build_caa(flags: u8, tag: &str, value: String) -> crate::Result<CAARecord> {
-    let issuer_critical = flags & 0x80 != 0;
-    match tag {
-        "issue" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::Issue {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::IssueWild {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "iodef" => Ok(CAARecord::Iodef {
-            issuer_critical,
-            url: value,
-        }),
-        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
-    }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }

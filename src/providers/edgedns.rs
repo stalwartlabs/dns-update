@@ -11,11 +11,10 @@
 
 use crate::crypto::{hmac_sha256, sha256_digest};
 use crate::http::{HttpClient, HttpClientBuilder};
+use crate::utils::split_caa_value;
+use crate::utils::strip_trailing_dot;
 use crate::utils::txt_chunks_to_text;
-use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue as DnsKeyValue, MXRecord,
-    Result, SRVRecord,
-};
+use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, Result, SRVRecord};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use chrono::Utc;
@@ -600,8 +599,8 @@ fn rdata_to_record(record_type: DnsRecordType, entry: &str) -> Result<DnsRecord>
             .parse()
             .map(DnsRecord::AAAA)
             .map_err(|e| Error::Parse(format!("edgedns AAAA rdata: {e}"))),
-        DnsRecordType::CNAME => Ok(DnsRecord::CNAME(strip_trailing_dot(entry))),
-        DnsRecordType::NS => Ok(DnsRecord::NS(strip_trailing_dot(entry))),
+        DnsRecordType::CNAME => Ok(DnsRecord::CNAME(strip_trailing_dot(entry).to_string())),
+        DnsRecordType::NS => Ok(DnsRecord::NS(strip_trailing_dot(entry).to_string())),
         DnsRecordType::MX => {
             let (priority_str, exchange) = entry
                 .split_once(' ')
@@ -611,7 +610,7 @@ fn rdata_to_record(record_type: DnsRecordType, entry: &str) -> Result<DnsRecord>
                 .map_err(|e| Error::Parse(format!("edgedns MX priority: {e}")))?;
             Ok(DnsRecord::MX(MXRecord {
                 priority,
-                exchange: strip_trailing_dot(exchange.trim()),
+                exchange: strip_trailing_dot(exchange.trim()).to_string(),
             }))
         }
         DnsRecordType::TXT => Ok(DnsRecord::TXT(parse_txt_rdata(entry))),
@@ -639,7 +638,7 @@ fn rdata_to_record(record_type: DnsRecordType, entry: &str) -> Result<DnsRecord>
                 priority,
                 weight,
                 port,
-                target: strip_trailing_dot(target),
+                target: strip_trailing_dot(target).to_string(),
             }))
         }
         DnsRecordType::CAA => parse_caa_rdata(entry),
@@ -647,10 +646,6 @@ fn rdata_to_record(record_type: DnsRecordType, entry: &str) -> Result<DnsRecord>
             "TLSA records are not supported by EdgeDNS".to_string(),
         )),
     }
-}
-
-fn strip_trailing_dot(value: &str) -> String {
-    value.trim_end_matches('.').to_string()
 }
 
 fn parse_txt_rdata(entry: &str) -> String {
@@ -701,7 +696,7 @@ fn parse_caa_rdata(entry: &str) -> Result<DnsRecord> {
         .to_string();
     match tag {
         "issue" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             Ok(DnsRecord::CAA(CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -709,7 +704,7 @@ fn parse_caa_rdata(entry: &str) -> Result<DnsRecord> {
             }))
         }
         "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             Ok(DnsRecord::CAA(CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -724,24 +719,4 @@ fn parse_caa_rdata(entry: &str) -> Result<DnsRecord> {
             "edgedns CAA tag unsupported: {other}"
         ))),
     }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<DnsKeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let head = parts.next().unwrap_or("").to_string();
-    let name = if head.is_empty() { None } else { Some(head) };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => DnsKeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => DnsKeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }

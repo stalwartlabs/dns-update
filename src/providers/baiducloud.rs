@@ -10,11 +10,10 @@
  */
 
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord, TLSARecord,
-    TlsaCertUsage, TlsaMatching, TlsaSelector,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord,
     crypto::hmac_sha256,
     http::{HttpClient, HttpClientBuilder, HttpRequest},
-    utils::txt_chunks,
+    utils::{parse_srv, parse_tlsa, txt_chunks},
 };
 use chrono::Utc;
 use reqwest::Method;
@@ -484,14 +483,6 @@ fn generate_client_token() -> String {
     format!("dnsupdate-{}", now.timestamp_micros())
 }
 
-fn ensure_fqdn(name: &str) -> String {
-    if name.ends_with('.') {
-        name.to_string()
-    } else {
-        format!("{}.", name)
-    }
-}
-
 fn render_record(record: &DnsRecord) -> crate::Result<Vec<WireRecord>> {
     match record {
         DnsRecord::A(addr) => Ok(vec![WireRecord {
@@ -506,17 +497,17 @@ fn render_record(record: &DnsRecord) -> crate::Result<Vec<WireRecord>> {
         }]),
         DnsRecord::CNAME(name) => Ok(vec![WireRecord {
             rr_type: "CNAME",
-            value: ensure_fqdn(name),
+            value: name.into_fqdn().into_owned(),
             priority: None,
         }]),
         DnsRecord::NS(name) => Ok(vec![WireRecord {
             rr_type: "NS",
-            value: ensure_fqdn(name),
+            value: name.into_fqdn().into_owned(),
             priority: None,
         }]),
         DnsRecord::MX(mx) => Ok(vec![WireRecord {
             rr_type: "MX",
-            value: ensure_fqdn(&mx.exchange),
+            value: (&mx.exchange).into_fqdn().into_owned(),
             priority: Some(mx.priority),
         }]),
         DnsRecord::TXT(text) => Ok(txt_chunks(text.clone())
@@ -534,7 +525,7 @@ fn render_record(record: &DnsRecord) -> crate::Result<Vec<WireRecord>> {
                 srv.priority,
                 srv.weight,
                 srv.port,
-                ensure_fqdn(&srv.target)
+                (&srv.target).into_fqdn().into_owned()
             ),
             priority: None,
         }]),
@@ -622,39 +613,13 @@ fn parse_baidu_record(record: &BaiduRecord) -> crate::Result<DnsRecord> {
             }))
         }
         "TXT" => Ok(DnsRecord::TXT(record.value.clone())),
-        "SRV" => parse_srv_value(&record.value).map(DnsRecord::SRV),
+        "SRV" => parse_srv(&record.value),
         "CAA" => parse_caa_value(&record.value).map(DnsRecord::CAA),
-        "TLSA" => parse_tlsa_value(&record.value).map(DnsRecord::TLSA),
+        "TLSA" => parse_tlsa(&record.value),
         other => Err(Error::Parse(format!(
             "Unknown baiducloud record type: {other}"
         ))),
     }
-}
-
-fn parse_srv_value(value: &str) -> crate::Result<SRVRecord> {
-    let mut parts = value.split_ascii_whitespace();
-    let priority = parts
-        .next()
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| Error::Parse(format!("SRV priority missing: {value}")))?;
-    let weight = parts
-        .next()
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| Error::Parse(format!("SRV weight missing: {value}")))?;
-    let port = parts
-        .next()
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| Error::Parse(format!("SRV port missing: {value}")))?;
-    let target = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("SRV target missing: {value}")))?
-        .to_string();
-    Ok(SRVRecord {
-        priority,
-        weight,
-        port,
-        target,
-    })
 }
 
 fn parse_caa_value(value: &str) -> crate::Result<CAARecord> {
@@ -695,59 +660,5 @@ fn parse_caa_value(value: &str) -> crate::Result<CAARecord> {
             url: trimmed,
         }),
         other => Err(Error::Parse(format!("Unknown CAA tag: {other}"))),
-    }
-}
-
-fn parse_tlsa_value(value: &str) -> crate::Result<TLSARecord> {
-    let mut parts = value.split_ascii_whitespace();
-    let usage_byte: u8 = parts
-        .next()
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| Error::Parse(format!("TLSA usage missing: {value}")))?;
-    let selector_byte: u8 = parts
-        .next()
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| Error::Parse(format!("TLSA selector missing: {value}")))?;
-    let matching_byte: u8 = parts
-        .next()
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| Error::Parse(format!("TLSA matching missing: {value}")))?;
-    let cert_hex = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("TLSA cert data missing: {value}")))?;
-    let cert_data =
-        hex::decode(cert_hex).map_err(|err| Error::Parse(format!("TLSA hex decode: {err}")))?;
-    Ok(TLSARecord {
-        cert_usage: tlsa_usage_from_u8(usage_byte),
-        selector: tlsa_selector_from_u8(selector_byte),
-        matching: tlsa_matching_from_u8(matching_byte),
-        cert_data,
-    })
-}
-
-fn tlsa_usage_from_u8(value: u8) -> TlsaCertUsage {
-    match value {
-        0 => TlsaCertUsage::PkixTa,
-        1 => TlsaCertUsage::PkixEe,
-        2 => TlsaCertUsage::DaneTa,
-        3 => TlsaCertUsage::DaneEe,
-        _ => TlsaCertUsage::Private,
-    }
-}
-
-fn tlsa_selector_from_u8(value: u8) -> TlsaSelector {
-    match value {
-        0 => TlsaSelector::Full,
-        1 => TlsaSelector::Spki,
-        _ => TlsaSelector::Private,
-    }
-}
-
-fn tlsa_matching_from_u8(value: u8) -> TlsaMatching {
-    match value {
-        0 => TlsaMatching::Raw,
-        1 => TlsaMatching::Sha256,
-        2 => TlsaMatching::Sha512,
-        _ => TlsaMatching::Private,
     }
 }

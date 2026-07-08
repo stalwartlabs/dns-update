@@ -9,8 +9,10 @@
  * except according to those terms.
  */
 
+use crate::utils::split_caa_value;
+use crate::utils::unquote_txt;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     crypto::hmac_sha256,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
@@ -422,14 +424,6 @@ fn parse_listed_record(raw: &DnsRecordResponse) -> crate::Result<Option<DnsRecor
     }))
 }
 
-fn unquote_txt(content: &str) -> String {
-    let trimmed = content
-        .strip_prefix('"')
-        .and_then(|s| s.strip_suffix('"'))
-        .unwrap_or(content);
-    trimmed.replace("\\\"", "\"")
-}
-
 fn parse_srv_content(content: &str, priority: u16) -> Option<SRVRecord> {
     let mut parts = content.split_whitespace();
     let weight: u16 = parts.next()?.parse().ok()?;
@@ -461,7 +455,7 @@ fn parse_caa_content(content: &str) -> Option<CAARecord> {
         .to_string();
     Some(match tag {
         "issue" => {
-            let (name, options) = parse_caa_value(&raw_value);
+            let (name, options) = split_caa_value(&raw_value);
             CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -469,7 +463,7 @@ fn parse_caa_content(content: &str) -> Option<CAARecord> {
             }
         }
         "issuewild" => {
-            let (name, options) = parse_caa_value(&raw_value);
+            let (name, options) = split_caa_value(&raw_value);
             CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -482,28 +476,4 @@ fn parse_caa_content(content: &str) -> Option<CAARecord> {
         },
         _ => return None,
     })
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }

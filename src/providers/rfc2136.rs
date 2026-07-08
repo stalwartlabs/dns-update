@@ -9,10 +9,12 @@
  * except according to those terms.
  */
 
+use crate::utils::split_caa_value;
+use crate::utils::strip_trailing_dot;
 use crate::utils::txt_chunks;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue as DnsKeyValue, MXRecord,
-    SRVRecord, TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord, TLSARecord,
+    TlsaCertUsage, TlsaMatching, TlsaSelector,
 };
 use hickory_net::NetError;
 use hickory_net::client::{Client, ClientHandle};
@@ -211,11 +213,11 @@ fn rdata_to_dns_record(data: &RData) -> crate::Result<DnsRecord> {
     Ok(match data {
         RData::A(a) => DnsRecord::A(a.0),
         RData::AAAA(aaaa) => DnsRecord::AAAA(aaaa.0),
-        RData::CNAME(cname) => DnsRecord::CNAME(strip_trailing_dot(&cname.0.to_utf8())),
-        RData::NS(ns) => DnsRecord::NS(strip_trailing_dot(&ns.0.to_utf8())),
+        RData::CNAME(cname) => DnsRecord::CNAME(strip_trailing_dot(&cname.0.to_utf8()).to_string()),
+        RData::NS(ns) => DnsRecord::NS(strip_trailing_dot(&ns.0.to_utf8()).to_string()),
         RData::MX(mx) => DnsRecord::MX(MXRecord {
             priority: mx.preference,
-            exchange: strip_trailing_dot(&mx.exchange.to_utf8()),
+            exchange: strip_trailing_dot(&mx.exchange.to_utf8()).to_string(),
         }),
         RData::TXT(txt) => {
             let combined: String = txt
@@ -229,7 +231,7 @@ fn rdata_to_dns_record(data: &RData) -> crate::Result<DnsRecord> {
             priority: srv.priority,
             weight: srv.weight,
             port: srv.port,
-            target: strip_trailing_dot(&srv.target.to_utf8()),
+            target: strip_trailing_dot(&srv.target.to_utf8()).to_string(),
         }),
         RData::TLSA(tlsa) => DnsRecord::TLSA(TLSARecord {
             cert_usage: tlsa_cert_usage_from(tlsa.cert_usage)?,
@@ -247,16 +249,12 @@ fn rdata_to_dns_record(data: &RData) -> crate::Result<DnsRecord> {
     })
 }
 
-fn strip_trailing_dot(s: &str) -> String {
-    s.strip_suffix('.').unwrap_or(s).to_string()
-}
-
 fn caa_to_record(caa: &CAA) -> crate::Result<CAARecord> {
     let issuer_critical = caa.issuer_critical;
     let value_text = String::from_utf8_lossy(&caa.value).into_owned();
     match caa.tag.as_str() {
         "issue" => {
-            let (name, options) = parse_caa_value(&value_text);
+            let (name, options) = split_caa_value(&value_text);
             Ok(CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -264,7 +262,7 @@ fn caa_to_record(caa: &CAA) -> crate::Result<CAARecord> {
             })
         }
         "issuewild" => {
-            let (name, options) = parse_caa_value(&value_text);
+            let (name, options) = split_caa_value(&value_text);
             Ok(CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -279,30 +277,6 @@ fn caa_to_record(caa: &CAA) -> crate::Result<CAARecord> {
             "Unsupported CAA tag for list_rrset: {other}"
         ))),
     }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<DnsKeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => DnsKeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => DnsKeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }
 
 fn tlsa_cert_usage_from(usage: CertUsage) -> crate::Result<TlsaCertUsage> {

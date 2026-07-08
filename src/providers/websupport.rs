@@ -9,8 +9,9 @@
  * except according to those terms.
  */
 
+use crate::utils::split_caa_value;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     crypto::hmac_sha1,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
@@ -533,7 +534,7 @@ fn parse_caa(raw: &str) -> crate::Result<CAARecord> {
         .to_string();
     match tag {
         "issue" => {
-            let (name, options) = parse_caa_issue_value(&value_unquoted);
+            let (name, options) = split_caa_value(&value_unquoted);
             Ok(CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -541,7 +542,7 @@ fn parse_caa(raw: &str) -> crate::Result<CAARecord> {
             })
         }
         "issuewild" => {
-            let (name, options) = parse_caa_issue_value(&value_unquoted);
+            let (name, options) = split_caa_value(&value_unquoted);
             Ok(CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -554,28 +555,4 @@ fn parse_caa(raw: &str) -> crate::Result<CAARecord> {
         }),
         other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
     }
-}
-
-fn parse_caa_issue_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }

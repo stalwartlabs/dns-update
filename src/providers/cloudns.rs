@@ -9,8 +9,9 @@
  * except according to those terms.
  */
 
+use crate::utils::build_caa;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
@@ -210,19 +211,19 @@ impl ClouDnsProvider {
         let records: HashMap<String, ClouDnsRecord> = match serde_json::from_str(body) {
             Ok(records) => records,
             Err(err) => {
-                if let Ok(resp) = serde_json::from_str::<ApiResponse>(body) {
-                    if let Some(status) = resp.status.as_deref() {
-                        if status != "Success" {
-                            return Err(Error::Api(format!(
-                                "ClouDNS list-records failed: {status} {}",
-                                resp.status_description.unwrap_or_default(),
-                            )));
-                        }
-                    }
-                }
-                return Err(Error::Serialize(format!(
-                    "Failed to parse ClouDNS records: {err}"
-                )));
+                return if let Ok(resp) = serde_json::from_str::<ApiResponse>(body)
+                    && let Some(status) = resp.status.as_deref()
+                    && status != "Success"
+                {
+                    Err(Error::Api(format!(
+                        "ClouDNS list-records failed: {status} {}",
+                        resp.status_description.unwrap_or_default(),
+                    )))
+                } else {
+                    Err(Error::Serialize(format!(
+                        "Failed to parse ClouDNS records: {err}"
+                    )))
+                };
             }
         };
         Ok(records
@@ -557,63 +558,12 @@ fn record_to_dns_record(record: ClouDnsRecord) -> crate::Result<DnsRecord> {
                 .caa_value
                 .clone()
                 .ok_or_else(|| Error::Parse("ClouDNS CAA missing caa_value".to_string()))?;
-            Ok(DnsRecord::CAA(build_caa(flags, &tag, value)?))
+            Ok(DnsRecord::CAA(build_caa(flags, &tag, &value)?))
         }
         other => Err(Error::Parse(format!(
             "unsupported ClouDNS record type: {other}"
         ))),
     }
-}
-
-fn build_caa(flags: u8, tag: &str, value: String) -> crate::Result<CAARecord> {
-    let issuer_critical = flags & 0x80 != 0;
-    match tag {
-        "issue" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::Issue {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::IssueWild {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "iodef" => Ok(CAARecord::Iodef {
-            issuer_critical,
-            url: value,
-        }),
-        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
-    }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }
 
 fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {

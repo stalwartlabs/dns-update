@@ -9,9 +9,10 @@
  * except according to those terms.
  */
 
+use crate::utils::build_caa;
+use crate::utils::parse_tlsa;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
@@ -387,9 +388,9 @@ impl TryFrom<BunnyRecordContent> for DnsRecord {
                 let tag = content
                     .tag
                     .ok_or_else(|| Error::Parse("CAA record missing Tag field".to_string()))?;
-                DnsRecord::CAA(build_caa(content.flags, &tag, content.value)?)
+                DnsRecord::CAA(build_caa(content.flags, &tag, &content.value)?)
             }
-            BUNNY_TYPE_TLSA => DnsRecord::TLSA(parse_tlsa(&content.value)?),
+            BUNNY_TYPE_TLSA => parse_tlsa(&content.value)?,
             other => {
                 return Err(Error::Parse(format!(
                     "unsupported Bunny record type: {other}"
@@ -397,136 +398,6 @@ impl TryFrom<BunnyRecordContent> for DnsRecord {
             }
         })
     }
-}
-
-fn build_caa(flags: u8, tag: &str, value: String) -> crate::Result<CAARecord> {
-    let issuer_critical = flags & 0x80 != 0;
-    match tag {
-        "issue" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::Issue {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::IssueWild {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "iodef" => Ok(CAARecord::Iodef {
-            issuer_critical,
-            url: value,
-        }),
-        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
-    }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
-}
-
-fn parse_tlsa(value: &str) -> crate::Result<TLSARecord> {
-    let mut parts = value.split_whitespace();
-    let usage = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("TLSA missing usage field: {value:?}")))?;
-    let selector = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("TLSA missing selector field: {value:?}")))?;
-    let matching = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("TLSA missing matching field: {value:?}")))?;
-    let cert_hex = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("TLSA missing certificate data: {value:?}")))?;
-    if parts.next().is_some() {
-        return Err(Error::Parse(format!(
-            "TLSA unexpected extra fields: {value:?}"
-        )));
-    }
-    let usage = usage
-        .parse::<u8>()
-        .map_err(|e| Error::Parse(format!("TLSA invalid usage {usage:?}: {e}")))?;
-    let selector = selector
-        .parse::<u8>()
-        .map_err(|e| Error::Parse(format!("TLSA invalid selector {selector:?}: {e}")))?;
-    let matching = matching
-        .parse::<u8>()
-        .map_err(|e| Error::Parse(format!("TLSA invalid matching {matching:?}: {e}")))?;
-    Ok(TLSARecord {
-        cert_usage: tlsa_cert_usage_from_u8(usage)?,
-        selector: tlsa_selector_from_u8(selector)?,
-        matching: tlsa_matching_from_u8(matching)?,
-        cert_data: decode_hex(cert_hex)?,
-    })
-}
-
-fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
-    Ok(match value {
-        0 => TlsaCertUsage::PkixTa,
-        1 => TlsaCertUsage::PkixEe,
-        2 => TlsaCertUsage::DaneTa,
-        3 => TlsaCertUsage::DaneEe,
-        255 => TlsaCertUsage::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {value}"))),
-    })
-}
-
-fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
-    Ok(match value {
-        0 => TlsaSelector::Full,
-        1 => TlsaSelector::Spki,
-        255 => TlsaSelector::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA selector: {value}"))),
-    })
-}
-
-fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
-    Ok(match value {
-        0 => TlsaMatching::Raw,
-        1 => TlsaMatching::Sha256,
-        2 => TlsaMatching::Sha512,
-        255 => TlsaMatching::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
-    })
-}
-
-fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
-    if !hex.len().is_multiple_of(2) {
-        return Err(Error::Parse(format!("invalid hex string: {hex}")));
-    }
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&hex[i..i + 2], 16)
-                .map_err(|e| Error::Parse(format!("invalid hex byte: {e}")))
-        })
-        .collect()
 }
 
 #[derive(Serialize, Debug)]

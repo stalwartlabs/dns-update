@@ -9,8 +9,9 @@
  * except according to those terms.
  */
 
+use crate::utils::build_caa;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
@@ -477,7 +478,7 @@ fn value_to_record(record_type: DnsRecordType, value: RecordValue) -> crate::Res
         )),
         DnsRecordType::CAA => {
             let tag = value.tag.unwrap_or_default();
-            build_caa(tag, value.target).map(DnsRecord::CAA)
+            build_caa(0, &tag, &value.target).map(DnsRecord::CAA)
         }
     }
 }
@@ -533,54 +534,4 @@ fn published_name(record: &DomainRecord) -> String {
         }
         _ => record.name.clone(),
     }
-}
-
-fn build_caa(tag: String, value: String) -> crate::Result<CAARecord> {
-    match tag.as_str() {
-        "issue" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::Issue {
-                issuer_critical: false,
-                name,
-                options,
-            })
-        }
-        "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::IssueWild {
-                issuer_critical: false,
-                name,
-                options,
-            })
-        }
-        "iodef" => Ok(CAARecord::Iodef {
-            issuer_critical: false,
-            url: value,
-        }),
-        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
-    }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }

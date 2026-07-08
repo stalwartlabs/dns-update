@@ -9,8 +9,11 @@
  * except according to those terms.
  */
 
+use crate::utils::split_caa_value;
+use crate::utils::strip_trailing_dot;
+use crate::utils::{parse_mx, parse_srv};
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn,
     crypto::{hmac_sha256, sha256_digest},
     http::{HttpClient, HttpClientBuilder, HttpRequest},
     utils::txt_chunks_to_text,
@@ -140,7 +143,7 @@ impl HuaweiCloudProvider {
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
         reject_tlsa(record_type)?;
-        let name_fqdn = ensure_fqdn(&name.into_name());
+        let name_fqdn = name.into_fqdn().into_owned();
         let zone_id = self.resolve_zone_id(origin).await?;
 
         let existing = self
@@ -184,7 +187,7 @@ impl HuaweiCloudProvider {
         if records.is_empty() {
             return Ok(());
         }
-        let name_fqdn = ensure_fqdn(&name.into_name());
+        let name_fqdn = name.into_fqdn().into_owned();
         let zone_id = self.resolve_zone_id(origin).await?;
         let new_values = render_records(&records)?;
 
@@ -221,7 +224,7 @@ impl HuaweiCloudProvider {
         if records.is_empty() {
             return Ok(());
         }
-        let name_fqdn = ensure_fqdn(&name.into_name());
+        let name_fqdn = name.into_fqdn().into_owned();
         let zone_id = self.resolve_zone_id(origin).await?;
         let to_remove = render_records(&records)?;
 
@@ -262,7 +265,7 @@ impl HuaweiCloudProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
         reject_tlsa(record_type)?;
-        let name_fqdn = ensure_fqdn(&name.into_name());
+        let name_fqdn = name.into_fqdn().into_owned();
         let zone_id = match self.resolve_zone_id(origin).await {
             Ok(id) => id,
             Err(Error::NotFound) => return Ok(Vec::new()),
@@ -336,7 +339,7 @@ impl HuaweiCloudProvider {
     }
 
     async fn resolve_zone_id(&self, origin: impl IntoFqdn<'_>) -> crate::Result<String> {
-        let zone_name = ensure_fqdn(&origin.into_name());
+        let zone_name = origin.into_fqdn().into_owned();
         let mut marker: Option<String> = None;
         loop {
             let mut query = format!("limit={}&name={}", PAGE_LIMIT, zone_name);
@@ -563,14 +566,6 @@ fn uri_encode(s: &str, encode_slash: bool) -> String {
     out
 }
 
-fn ensure_fqdn(name: &str) -> String {
-    if name.ends_with('.') {
-        name.to_string()
-    } else {
-        format!("{}.", name)
-    }
-}
-
 fn extract_marker(url: &str) -> Option<String> {
     let query = url.split_once('?').map(|(_, q)| q).unwrap_or(url);
     for pair in query.split('&') {
@@ -616,9 +611,13 @@ fn render_record(record: &DnsRecord) -> crate::Result<String> {
     match record {
         DnsRecord::A(addr) => Ok(addr.to_string()),
         DnsRecord::AAAA(addr) => Ok(addr.to_string()),
-        DnsRecord::CNAME(name) => Ok(ensure_fqdn(name)),
-        DnsRecord::NS(name) => Ok(ensure_fqdn(name)),
-        DnsRecord::MX(mx) => Ok(format!("{} {}", mx.priority, ensure_fqdn(&mx.exchange))),
+        DnsRecord::CNAME(name) => Ok(name.into_fqdn().into_owned()),
+        DnsRecord::NS(name) => Ok(name.into_fqdn().into_owned()),
+        DnsRecord::MX(mx) => Ok(format!(
+            "{} {}",
+            mx.priority,
+            (&mx.exchange).into_fqdn().into_owned()
+        )),
         DnsRecord::TXT(text) => {
             let mut out = String::with_capacity(text.len() + 4);
             txt_chunks_to_text(&mut out, text, " ");
@@ -629,7 +628,7 @@ fn render_record(record: &DnsRecord) -> crate::Result<String> {
             srv.priority,
             srv.weight,
             srv.port,
-            ensure_fqdn(&srv.target)
+            (&srv.target).into_fqdn().into_owned()
         )),
         DnsRecord::CAA(caa) => Ok(caa.clone().to_string()),
         DnsRecord::TLSA(_) => Err(Error::Unsupported(
@@ -646,8 +645,8 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
         DnsRecordType::AAAA => DnsRecord::AAAA(value.parse().map_err(|e: AddrParseError| {
             Error::Parse(format!("invalid AAAA value '{value}': {e}"))
         })?),
-        DnsRecordType::CNAME => DnsRecord::CNAME(strip_trailing_dot(value)),
-        DnsRecordType::NS => DnsRecord::NS(strip_trailing_dot(value)),
+        DnsRecordType::CNAME => DnsRecord::CNAME(strip_trailing_dot(value).to_string()),
+        DnsRecordType::NS => DnsRecord::NS(strip_trailing_dot(value).to_string()),
         DnsRecordType::MX => parse_mx(value)?,
         DnsRecordType::TXT => DnsRecord::TXT(parse_txt(value)),
         DnsRecordType::SRV => parse_srv(value)?,
@@ -658,51 +657,6 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
             ));
         }
     })
-}
-
-fn parse_mx(value: &str) -> crate::Result<DnsRecord> {
-    let mut parts = value.splitn(2, char::is_whitespace);
-    let priority = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid MX value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid MX priority in '{value}': {e}")))?;
-    let exchange = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid MX value '{value}'")))?
-        .trim();
-    Ok(DnsRecord::MX(MXRecord {
-        priority,
-        exchange: strip_trailing_dot(exchange),
-    }))
-}
-
-fn parse_srv(value: &str) -> crate::Result<DnsRecord> {
-    let mut parts = value.split_whitespace();
-    let priority = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV priority in '{value}': {e}")))?;
-    let weight = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV weight in '{value}': {e}")))?;
-    let port = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV port in '{value}': {e}")))?;
-    let target = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?;
-    Ok(DnsRecord::SRV(SRVRecord {
-        priority,
-        weight,
-        port,
-        target: strip_trailing_dot(target),
-    }))
 }
 
 fn parse_txt(value: &str) -> String {
@@ -760,7 +714,7 @@ fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
     let issuer_critical = flags & 0x80 != 0;
     match tag.as_str() {
         "issue" => {
-            let (name, options) = parse_caa_kv(&unquoted);
+            let (name, options) = split_caa_value(&unquoted);
             Ok(DnsRecord::CAA(CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -768,7 +722,7 @@ fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
             }))
         }
         "issuewild" => {
-            let (name, options) = parse_caa_kv(&unquoted);
+            let (name, options) = split_caa_value(&unquoted);
             Ok(DnsRecord::CAA(CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -781,32 +735,4 @@ fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
         })),
         other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
     }
-}
-
-fn parse_caa_kv(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
-}
-
-fn strip_trailing_dot(value: &str) -> String {
-    value.strip_suffix('.').unwrap_or(value).to_string()
 }

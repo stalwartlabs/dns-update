@@ -9,8 +9,10 @@
  * except according to those terms.
  */
 
+use crate::utils::split_caa_value;
+use crate::utils::unquote_txt;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
     utils::txt_chunks_to_text,
 };
@@ -425,33 +427,6 @@ fn record_from_api(record: &Record, record_type: DnsRecordType) -> crate::Result
     }
 }
 
-fn unquote_txt(content: &str) -> String {
-    let mut out = String::with_capacity(content.len());
-    let mut in_quotes = false;
-    let mut escape = false;
-    for ch in content.chars() {
-        if escape {
-            out.push(ch);
-            escape = false;
-            continue;
-        }
-        match ch {
-            '\\' if in_quotes => escape = true,
-            '"' => in_quotes = !in_quotes,
-            _ => {
-                if in_quotes {
-                    out.push(ch);
-                }
-            }
-        }
-    }
-    if out.is_empty() && !content.contains('"') {
-        content.to_string()
-    } else {
-        out
-    }
-}
-
 fn parse_srv(content: &str, priority: u16) -> crate::Result<SRVRecord> {
     let mut parts = content.split_whitespace();
     let weight = parts
@@ -495,7 +470,7 @@ fn parse_caa(content: &str) -> crate::Result<CAARecord> {
     let issuer_critical = flags & 0x80 != 0;
     match tag {
         "issue" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             Ok(CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -503,7 +478,7 @@ fn parse_caa(content: &str) -> crate::Result<CAARecord> {
             })
         }
         "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             Ok(CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -516,28 +491,4 @@ fn parse_caa(content: &str) -> crate::Result<CAARecord> {
         }),
         other => Err(Error::Parse(format!("unknown IONOS CAA tag: {other}"))),
     }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }
