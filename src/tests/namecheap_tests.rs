@@ -493,11 +493,7 @@ mod tests {
             .with_body(body)
             .create();
 
-        let long = format!(
-            "v=DKIM1; k=rsa; p={}{}",
-            "A".repeat(200),
-            "B".repeat(220),
-        );
+        let long = format!("v=DKIM1; k=rsa; p={}{}", "A".repeat(200), "B".repeat(220),);
 
         let long_for_match = long.clone();
         let set = server

@@ -9,9 +9,11 @@
  * except according to those terms.
  */
 
+use crate::utils::parse_tlsa;
+use crate::utils::split_caa_value;
+use crate::utils::unquote_txt;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
     utils::{strip_origin_from_name, txt_chunks_to_text},
 };
@@ -388,28 +390,11 @@ fn filter_records(
         .collect()
 }
 
-fn ensure_trailing_dot(value: &str) -> String {
-    if value.ends_with('.') {
-        value.to_string()
-    } else {
-        format!("{value}.")
-    }
-}
-
 fn is_dkim_owner(record_type: &str, source: &str) -> bool {
     record_type.eq_ignore_ascii_case("TXT")
         && source
             .split('.')
             .any(|label| label.eq_ignore_ascii_case("_domainkey"))
-}
-
-fn unquote_txt(target: &str) -> String {
-    target
-        .split('"')
-        .filter(|s| !s.trim().is_empty())
-        .flat_map(|chunk| chunk.chars())
-        .filter(|c| *c != ' ')
-        .collect()
 }
 
 fn normalize_txt_wire(target: &str) -> String {
@@ -508,11 +493,15 @@ fn encode_record(record: &DnsRecord) -> crate::Result<(&'static str, String, Opt
     Ok(match record {
         DnsRecord::A(addr) => ("A", addr.to_string(), None),
         DnsRecord::AAAA(addr) => ("AAAA", addr.to_string(), None),
-        DnsRecord::CNAME(value) => ("CNAME", ensure_trailing_dot(value), None),
-        DnsRecord::NS(value) => ("NS", ensure_trailing_dot(value), None),
+        DnsRecord::CNAME(value) => ("CNAME", value.into_fqdn().into_owned(), None),
+        DnsRecord::NS(value) => ("NS", value.into_fqdn().into_owned(), None),
         DnsRecord::MX(mx) => (
             "MX",
-            format!("{} {}", mx.priority, ensure_trailing_dot(&mx.exchange)),
+            format!(
+                "{} {}",
+                mx.priority,
+                (&mx.exchange).into_fqdn().into_owned()
+            ),
             None,
         ),
         DnsRecord::TXT(value) => ("TXT", encode_txt_value(value), None),
@@ -523,7 +512,7 @@ fn encode_record(record: &DnsRecord) -> crate::Result<(&'static str, String, Opt
                 srv.priority,
                 srv.weight,
                 srv.port,
-                ensure_trailing_dot(&srv.target),
+                (&srv.target).into_fqdn().into_owned(),
             ),
             None,
         ),
@@ -575,7 +564,7 @@ fn decode_existing(
         DnsRecordType::TXT => DnsRecord::TXT(unquote_txt(&record.target)),
         DnsRecordType::SRV => DnsRecord::SRV(parse_srv(&record.target)?),
         DnsRecordType::CAA => DnsRecord::CAA(parse_caa(&record.target)?),
-        DnsRecordType::TLSA => DnsRecord::TLSA(parse_tlsa(&record.target)?),
+        DnsRecordType::TLSA => parse_tlsa(&record.target)?,
     })
 }
 
@@ -626,7 +615,7 @@ fn parse_caa(target: &str) -> crate::Result<CAARecord> {
     let issuer_critical = flags & 0x80 != 0;
     match tag {
         "issue" | "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             if tag == "issue" {
                 Ok(CAARecord::Issue {
                     issuer_critical,
@@ -647,97 +636,4 @@ fn parse_caa(target: &str) -> crate::Result<CAARecord> {
         }),
         other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
     }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
-}
-
-fn parse_tlsa(target: &str) -> crate::Result<TLSARecord> {
-    let mut parts = target.split_whitespace();
-
-    let cert_usage = parts
-        .next()
-        .and_then(|s| s.parse::<u8>().ok())
-        .and_then(tlsa_cert_usage_from_u8)
-        .ok_or_else(|| Error::Parse(format!("invalid TLSA cert usage in {target}")))?;
-
-    let selector = parts
-        .next()
-        .and_then(|s| s.parse::<u8>().ok())
-        .and_then(tlsa_selector_from_u8)
-        .ok_or_else(|| Error::Parse(format!("invalid TLSA selector in {target}")))?;
-
-    let matching = parts
-        .next()
-        .and_then(|s| s.parse::<u8>().ok())
-        .and_then(tlsa_matching_from_u8)
-        .ok_or_else(|| Error::Parse(format!("invalid TLSA matching type in {target}")))?;
-
-    let cert_data_hex = parts.collect::<String>();
-    if cert_data_hex.is_empty() {
-        return Err(Error::Parse(format!(
-            "missing TLSA certificate data in {target}"
-        )));
-    }
-
-    let cert_data = hex::decode(&cert_data_hex)
-        .map_err(|e| Error::Parse(format!("invalid TLSA certificate data in {target}: {e}")))?;
-
-    Ok(TLSARecord {
-        cert_usage,
-        selector,
-        matching,
-        cert_data,
-    })
-}
-
-fn tlsa_cert_usage_from_u8(value: u8) -> Option<TlsaCertUsage> {
-    Some(match value {
-        0 => TlsaCertUsage::PkixTa,
-        1 => TlsaCertUsage::PkixEe,
-        2 => TlsaCertUsage::DaneTa,
-        3 => TlsaCertUsage::DaneEe,
-        255 => TlsaCertUsage::Private,
-        _ => return None,
-    })
-}
-
-fn tlsa_selector_from_u8(value: u8) -> Option<TlsaSelector> {
-    Some(match value {
-        0 => TlsaSelector::Full,
-        1 => TlsaSelector::Spki,
-        255 => TlsaSelector::Private,
-        _ => return None,
-    })
-}
-
-fn tlsa_matching_from_u8(value: u8) -> Option<TlsaMatching> {
-    Some(match value {
-        0 => TlsaMatching::Raw,
-        1 => TlsaMatching::Sha256,
-        2 => TlsaMatching::Sha512,
-        255 => TlsaMatching::Private,
-        _ => return None,
-    })
 }

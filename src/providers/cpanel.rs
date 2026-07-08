@@ -9,8 +9,11 @@
  * except according to those terms.
  */
 
+use crate::utils::build_caa;
+use crate::utils::strip_trailing_dot;
+use crate::utils::unquote_txt;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
     utils::txt_chunks_to_text,
 };
@@ -446,9 +449,12 @@ fn encode_record_data(record: &DnsRecord) -> crate::Result<Vec<String>> {
     Ok(match record {
         DnsRecord::A(addr) => vec![addr.to_string()],
         DnsRecord::AAAA(addr) => vec![addr.to_string()],
-        DnsRecord::CNAME(value) => vec![ensure_trailing_dot(value)],
-        DnsRecord::NS(value) => vec![ensure_trailing_dot(value)],
-        DnsRecord::MX(mx) => vec![mx.priority.to_string(), ensure_trailing_dot(&mx.exchange)],
+        DnsRecord::CNAME(value) => vec![value.into_fqdn().into_owned()],
+        DnsRecord::NS(value) => vec![value.into_fqdn().into_owned()],
+        DnsRecord::MX(mx) => vec![
+            mx.priority.to_string(),
+            (&mx.exchange).into_fqdn().into_owned(),
+        ],
         DnsRecord::TXT(value) => {
             if value.len() <= 255 && !value.contains('"') && !value.contains('\\') {
                 vec![value.clone()]
@@ -462,7 +468,7 @@ fn encode_record_data(record: &DnsRecord) -> crate::Result<Vec<String>> {
             srv.priority.to_string(),
             srv.weight.to_string(),
             srv.port.to_string(),
-            ensure_trailing_dot(&srv.target),
+            (&srv.target).into_fqdn().into_owned(),
         ],
         DnsRecord::CAA(caa) => {
             let (flags, tag, value) = caa.clone().decompose();
@@ -474,14 +480,6 @@ fn encode_record_data(record: &DnsRecord) -> crate::Result<Vec<String>> {
             ));
         }
     })
-}
-
-fn ensure_trailing_dot(value: &str) -> String {
-    if value.ends_with('.') {
-        value.to_string()
-    } else {
-        format!("{value}.")
-    }
 }
 
 fn extract_zone_serial(zone: &[ZoneRecord], domain: &str) -> crate::Result<u32> {
@@ -570,16 +568,22 @@ fn decode_to_dns_record(record_type: DnsRecordType, fields: &[String]) -> crate:
                 .map(DnsRecord::AAAA)
                 .map_err(|err| Error::Parse(format!("invalid AAAA address: {err}")))
         }
-        DnsRecordType::CNAME => Ok(DnsRecord::CNAME(strip_trailing_dot(
-            fields
-                .first()
-                .ok_or_else(|| Error::Parse("missing CNAME rdata".to_string()))?,
-        ))),
-        DnsRecordType::NS => Ok(DnsRecord::NS(strip_trailing_dot(
-            fields
-                .first()
-                .ok_or_else(|| Error::Parse("missing NS rdata".to_string()))?,
-        ))),
+        DnsRecordType::CNAME => Ok(DnsRecord::CNAME(
+            strip_trailing_dot(
+                fields
+                    .first()
+                    .ok_or_else(|| Error::Parse("missing CNAME rdata".to_string()))?,
+            )
+            .to_string(),
+        )),
+        DnsRecordType::NS => Ok(DnsRecord::NS(
+            strip_trailing_dot(
+                fields
+                    .first()
+                    .ok_or_else(|| Error::Parse("missing NS rdata".to_string()))?,
+            )
+            .to_string(),
+        )),
         DnsRecordType::MX => {
             if fields.len() < 2 {
                 return Err(Error::Parse("MX record requires 2 fields".to_string()));
@@ -589,7 +593,7 @@ fn decode_to_dns_record(record_type: DnsRecordType, fields: &[String]) -> crate:
                 .map_err(|err| Error::Parse(format!("invalid MX priority: {err}")))?;
             Ok(DnsRecord::MX(MXRecord {
                 priority,
-                exchange: strip_trailing_dot(&fields[1]),
+                exchange: strip_trailing_dot(&fields[1]).to_string(),
             }))
         }
         DnsRecordType::TXT => {
@@ -615,7 +619,7 @@ fn decode_to_dns_record(record_type: DnsRecordType, fields: &[String]) -> crate:
                 priority,
                 weight,
                 port,
-                target: strip_trailing_dot(&fields[3]),
+                target: strip_trailing_dot(&fields[3]).to_string(),
             }))
         }
         DnsRecordType::CAA => {
@@ -631,80 +635,4 @@ fn decode_to_dns_record(record_type: DnsRecordType, fields: &[String]) -> crate:
             "TLSA records are not supported by cPanel".to_string(),
         )),
     }
-}
-
-fn strip_trailing_dot(value: &str) -> String {
-    value.strip_suffix('.').unwrap_or(value).to_string()
-}
-
-fn unquote_txt(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    let mut chars = value.chars().peekable();
-    let mut in_quotes = false;
-    while let Some(ch) = chars.next() {
-        match ch {
-            '"' => {
-                in_quotes = !in_quotes;
-            }
-            '\\' => {
-                if let Some(next) = chars.next() {
-                    out.push(next);
-                }
-            }
-            ' ' if !in_quotes => {}
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
-fn build_caa(flags: u8, tag: &str, value: &str) -> crate::Result<CAARecord> {
-    let issuer_critical = flags & 0x80 != 0;
-    match tag {
-        "issue" => {
-            let (name, options) = parse_caa_value(value);
-            Ok(CAARecord::Issue {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "issuewild" => {
-            let (name, options) = parse_caa_value(value);
-            Ok(CAARecord::IssueWild {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "iodef" => Ok(CAARecord::Iodef {
-            issuer_critical,
-            url: value.to_string(),
-        }),
-        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
-    }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }

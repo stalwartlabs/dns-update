@@ -13,8 +13,9 @@
 
 use crate::http::{HttpClient, HttpClientBuilder};
 use crate::jwt::{JwtSignAlgorithm, sign_jwt};
+use crate::utils::split_caa_value;
 use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
-use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord};
+use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STD};
 use serde::Deserialize;
 use serde_json::Value;
@@ -726,7 +727,7 @@ fn parse_caa_rrdata(text: &str) -> crate::Result<DnsRecord> {
 
     Ok(DnsRecord::CAA(match tag {
         "issue" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -734,7 +735,7 @@ fn parse_caa_rrdata(text: &str) -> crate::Result<DnsRecord> {
             }
         }
         "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -749,30 +750,6 @@ fn parse_caa_rrdata(text: &str) -> crate::Result<DnsRecord> {
             return Err(Error::Parse(format!("unknown CAA tag: {other}")));
         }
     }))
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }
 
 fn decode_service_account_key(encoded: &str) -> crate::Result<ServiceAccountKey> {

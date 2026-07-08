@@ -314,6 +314,189 @@ impl From<TlsaMatching> for u8 {
     }
 }
 
+pub(crate) fn strip_trailing_dot(value: &str) -> &str {
+    value.strip_suffix('.').unwrap_or(value)
+}
+
+pub(crate) fn parse_srv(value: &str) -> crate::Result<DnsRecord> {
+    let mut parts = value.split_whitespace();
+    let priority = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid SRV priority in '{value}': {e}")))?;
+    let weight = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid SRV weight in '{value}': {e}")))?;
+    let port = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid SRV port in '{value}': {e}")))?;
+    let target = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?;
+    Ok(DnsRecord::SRV(SRVRecord {
+        priority,
+        weight,
+        port,
+        target: strip_trailing_dot(target).to_string(),
+    }))
+}
+
+pub(crate) fn parse_mx(value: &str) -> crate::Result<DnsRecord> {
+    let mut parts = value.splitn(2, char::is_whitespace);
+    let priority = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid MX value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid MX priority in '{value}': {e}")))?;
+    let exchange = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid MX value '{value}'")))?
+        .trim();
+    Ok(DnsRecord::MX(MXRecord {
+        priority,
+        exchange: strip_trailing_dot(exchange).to_string(),
+    }))
+}
+
+pub(crate) fn parse_tlsa(value: &str) -> crate::Result<DnsRecord> {
+    let mut parts = value.split_whitespace();
+    let usage: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid TLSA usage in '{value}': {e}")))?;
+    let selector: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid TLSA selector in '{value}': {e}")))?;
+    let matching: u8 = parts
+        .next()
+        .ok_or_else(|| Error::Parse(format!("invalid TLSA value '{value}'")))?
+        .parse()
+        .map_err(|e| Error::Parse(format!("invalid TLSA matching in '{value}': {e}")))?;
+    let hex: String = parts.collect();
+    if hex.is_empty() {
+        return Err(Error::Parse(format!("invalid TLSA value '{value}'")));
+    }
+    Ok(DnsRecord::TLSA(TLSARecord {
+        cert_usage: tlsa_cert_usage_from_u8(usage)?,
+        selector: tlsa_selector_from_u8(selector)?,
+        matching: tlsa_matching_from_u8(matching)?,
+        cert_data: decode_hex(&hex)?,
+    }))
+}
+
+pub(crate) fn unquote_txt(content: &str) -> String {
+    if !content.contains('"') {
+        return content.to_string();
+    }
+    let mut out = String::with_capacity(content.len());
+    let mut in_quotes = false;
+    let mut escaped = false;
+    for ch in content.chars() {
+        if escaped {
+            out.push(ch);
+            escaped = false;
+        } else if in_quotes && ch == '\\' {
+            escaped = true;
+        } else if ch == '"' {
+            in_quotes = !in_quotes;
+        } else if in_quotes {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+pub(crate) fn build_caa(flags: u8, tag: &str, value: &str) -> crate::Result<CAARecord> {
+    let issuer_critical = flags & 0x80 != 0;
+    match tag {
+        "issue" => {
+            let (name, options) = split_caa_value(value);
+            Ok(CAARecord::Issue {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "issuewild" => {
+            let (name, options) = split_caa_value(value);
+            Ok(CAARecord::IssueWild {
+                issuer_critical,
+                name,
+                options,
+            })
+        }
+        "iodef" => Ok(CAARecord::Iodef {
+            issuer_critical,
+            url: value.to_string(),
+        }),
+        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
+    }
+}
+
+pub(crate) fn split_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
+    let mut parts = value.split(';').map(str::trim);
+    let name = match parts.next().unwrap_or("") {
+        "" => None,
+        head => Some(head.to_string()),
+    };
+    let options = parts
+        .filter(|p| !p.is_empty())
+        .map(|p| match p.split_once('=') {
+            Some((k, v)) => KeyValue {
+                key: k.trim().to_string(),
+                value: v.trim().to_string(),
+            },
+            None => KeyValue {
+                key: p.trim().to_string(),
+                value: String::new(),
+            },
+        })
+        .collect();
+    (name, options)
+}
+
+pub(crate) fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
+    Ok(match value {
+        0 => TlsaCertUsage::PkixTa,
+        1 => TlsaCertUsage::PkixEe,
+        2 => TlsaCertUsage::DaneTa,
+        3 => TlsaCertUsage::DaneEe,
+        255 => TlsaCertUsage::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {value}"))),
+    })
+}
+
+pub(crate) fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
+    Ok(match value {
+        0 => TlsaSelector::Full,
+        1 => TlsaSelector::Spki,
+        255 => TlsaSelector::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA selector: {value}"))),
+    })
+}
+
+pub(crate) fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
+    Ok(match value {
+        0 => TlsaMatching::Raw,
+        1 => TlsaMatching::Sha256,
+        2 => TlsaMatching::Sha512,
+        255 => TlsaMatching::Private,
+        _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
+    })
+}
+
+pub(crate) fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
+    hex::decode(hex).map_err(|e| Error::Parse(format!("invalid hex string: {e}")))
+}
+
 impl<'x> IntoFqdn<'x> for &'x str {
     fn into_fqdn(self) -> Cow<'x, str> {
         if self.ends_with('.') {

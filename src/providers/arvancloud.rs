@@ -9,6 +9,7 @@
  * except according to those terms.
  */
 
+use crate::utils::strip_trailing_dot;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn,
     http::{HttpClient, HttpClientBuilder},
@@ -499,10 +500,6 @@ fn normalize_value(wire_type: &str, mut value: Value) -> Value {
     }
 }
 
-fn strip_trailing_dot(s: &str) -> String {
-    s.strip_suffix('.').unwrap_or(s).to_string()
-}
-
 fn listed_to_dns_record(record_type: DnsRecordType, value: &Value) -> Option<DnsRecord> {
     use crate::{CAARecord, KeyValue, MXRecord, SRVRecord, TLSARecord};
 
@@ -519,17 +516,17 @@ fn listed_to_dns_record(record_type: DnsRecordType, value: &Value) -> Option<Dns
         }
         DnsRecordType::CNAME => {
             let host = value.get("host")?.as_str()?;
-            Some(DnsRecord::CNAME(strip_trailing_dot(host)))
+            Some(DnsRecord::CNAME(strip_trailing_dot(host).to_string()))
         }
         DnsRecordType::NS => {
             let host = value.get("host")?.as_str()?;
-            Some(DnsRecord::NS(strip_trailing_dot(host)))
+            Some(DnsRecord::NS(strip_trailing_dot(host).to_string()))
         }
         DnsRecordType::MX => {
             let host = value.get("host")?.as_str()?;
             let priority = value.get("priority")?.as_u64()? as u16;
             Some(DnsRecord::MX(MXRecord {
-                exchange: strip_trailing_dot(host),
+                exchange: strip_trailing_dot(host).to_string(),
                 priority,
             }))
         }
@@ -543,7 +540,7 @@ fn listed_to_dns_record(record_type: DnsRecordType, value: &Value) -> Option<Dns
             let weight = value.get("weight")?.as_u64()? as u16;
             let port = value.get("port")?.as_u64()? as u16;
             Some(DnsRecord::SRV(SRVRecord {
-                target: strip_trailing_dot(target),
+                target: strip_trailing_dot(target).to_string(),
                 priority,
                 weight,
                 port,

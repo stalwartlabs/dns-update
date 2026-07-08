@@ -365,7 +365,7 @@ mod tests {
             result,
             vec![DnsRecord::MX(MXRecord {
                 priority: 10,
-                exchange: "mail.example.com.".to_string(),
+                exchange: "mail.example.com".to_string(),
             })]
         );
 
@@ -391,7 +391,7 @@ mod tests {
                 priority: 10,
                 weight: 20,
                 port: 5060,
-                target: "sip.example.com.".to_string(),
+                target: "sip.example.com".to_string(),
             })]
         );
 

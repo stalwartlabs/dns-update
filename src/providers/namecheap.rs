@@ -9,8 +9,10 @@
  * except according to those terms.
  */
 
+use crate::utils::split_caa_value;
+use crate::utils::strip_trailing_dot;
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
@@ -467,7 +469,7 @@ fn build_hosts_for_record(
         DnsRecord::CNAME(content) => hosts.push(Host {
             name: subdomain.to_string(),
             record_type: type_str,
-            address: strip_trailing_dot(&content),
+            address: strip_trailing_dot(&content).to_string(),
             mx_pref,
             ttl: ttl_str,
             caa_flag: None,
@@ -476,7 +478,7 @@ fn build_hosts_for_record(
         DnsRecord::NS(content) => hosts.push(Host {
             name: subdomain.to_string(),
             record_type: type_str,
-            address: strip_trailing_dot(&content),
+            address: strip_trailing_dot(&content).to_string(),
             mx_pref,
             ttl: ttl_str,
             caa_flag: None,
@@ -485,7 +487,7 @@ fn build_hosts_for_record(
         DnsRecord::MX(mx) => hosts.push(Host {
             name: subdomain.to_string(),
             record_type: type_str,
-            address: strip_trailing_dot(&mx.exchange),
+            address: strip_trailing_dot(&mx.exchange).to_string(),
             mx_pref: mx.priority.to_string(),
             ttl: ttl_str,
             caa_flag: None,
@@ -544,8 +546,8 @@ fn host_to_dns_record(host: &Host, record_type: DnsRecordType) -> crate::Result<
                 .map_err(|err| Error::Parse(format!("invalid AAAA address: {err}")))?;
             DnsRecord::AAAA(addr)
         }
-        DnsRecordType::CNAME => DnsRecord::CNAME(strip_trailing_dot(&host.address)),
-        DnsRecordType::NS => DnsRecord::NS(strip_trailing_dot(&host.address)),
+        DnsRecordType::CNAME => DnsRecord::CNAME(strip_trailing_dot(&host.address).to_string()),
+        DnsRecordType::NS => DnsRecord::NS(strip_trailing_dot(&host.address).to_string()),
         DnsRecordType::MX => {
             let priority: u16 = if host.mx_pref.is_empty() {
                 10
@@ -556,7 +558,7 @@ fn host_to_dns_record(host: &Host, record_type: DnsRecordType) -> crate::Result<
             };
             DnsRecord::MX(MXRecord {
                 priority,
-                exchange: strip_trailing_dot(&host.address),
+                exchange: strip_trailing_dot(&host.address).to_string(),
             })
         }
         DnsRecordType::TXT => DnsRecord::TXT(host.address.clone()),
@@ -572,10 +574,6 @@ fn host_to_dns_record(host: &Host, record_type: DnsRecordType) -> crate::Result<
             ));
         }
     }))
-}
-
-fn strip_trailing_dot(value: &str) -> String {
-    value.strip_suffix('.').unwrap_or(value).to_string()
 }
 
 fn parse_caa_address(value: &str) -> crate::Result<CAARecord> {
@@ -595,7 +593,7 @@ fn parse_caa_address(value: &str) -> crate::Result<CAARecord> {
     let unquoted = unquote_caa_value(value_token);
     match tag_token {
         "issue" => {
-            let (name, options) = parse_caa_value_parts(&unquoted);
+            let (name, options) = split_caa_value(&unquoted);
             Ok(CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -603,7 +601,7 @@ fn parse_caa_address(value: &str) -> crate::Result<CAARecord> {
             })
         }
         "issuewild" => {
-            let (name, options) = parse_caa_value_parts(&unquoted);
+            let (name, options) = split_caa_value(&unquoted);
             Ok(CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -625,28 +623,4 @@ fn unquote_caa_value(value: &str) -> String {
         .and_then(|s| s.strip_suffix('"'))
         .unwrap_or(trimmed)
         .to_string()
-}
-
-fn parse_caa_value_parts(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }

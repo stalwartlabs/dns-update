@@ -9,9 +9,13 @@
  * except according to those terms.
  */
 
+use crate::utils::build_caa;
+use crate::utils::strip_trailing_dot;
+use crate::utils::{
+    decode_hex, tlsa_cert_usage_from_u8, tlsa_matching_from_u8, tlsa_selector_from_u8,
+};
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord, TLSARecord,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
@@ -509,14 +513,14 @@ fn build_payload(host: &str, record: DnsRecord, ttl: u32) -> crate::Result<Recor
             payload.data = addr.to_string();
         }
         DnsRecord::CNAME(content) => {
-            payload.data = ensure_trailing_dot(content);
+            payload.data = content.into_fqdn().into_owned();
         }
         DnsRecord::NS(content) => {
-            payload.data = ensure_trailing_dot(content);
+            payload.data = content.into_fqdn().into_owned();
         }
         DnsRecord::MX(mx) => {
             payload.mx_priority = Some(mx.priority);
-            payload.data = ensure_trailing_dot(mx.exchange);
+            payload.data = mx.exchange.into_fqdn().into_owned();
         }
         DnsRecord::TXT(content) => {
             payload.data = content;
@@ -525,7 +529,7 @@ fn build_payload(host: &str, record: DnsRecord, ttl: u32) -> crate::Result<Recor
             payload.srv_priority = Some(srv.priority);
             payload.srv_weight = Some(srv.weight);
             payload.srv_port = Some(srv.port);
-            payload.data = ensure_trailing_dot(srv.target);
+            payload.data = srv.target.into_fqdn().into_owned();
         }
         DnsRecord::TLSA(tlsa) => {
             payload.tlsa_usage = Some(u8::from(tlsa.cert_usage));
@@ -544,17 +548,6 @@ fn build_payload(host: &str, record: DnsRecord, ttl: u32) -> crate::Result<Recor
     Ok(payload)
 }
 
-fn ensure_trailing_dot(mut value: String) -> String {
-    if !value.ends_with('.') {
-        value.push('.');
-    }
-    value
-}
-
-fn strip_trailing_dot(value: &str) -> String {
-    value.strip_suffix('.').unwrap_or(value).to_string()
-}
-
 fn payload_to_record(payload: RecordPayload) -> crate::Result<DnsRecord> {
     let upper = payload.record_type.to_ascii_uppercase();
     Ok(match upper.as_str() {
@@ -570,18 +563,18 @@ fn payload_to_record(payload: RecordPayload) -> crate::Result<DnsRecord> {
                 .parse::<Ipv6Addr>()
                 .map_err(|e| Error::Parse(format!("Invalid AAAA record: {e}")))?,
         ),
-        "CNAME" => DnsRecord::CNAME(strip_trailing_dot(&payload.data)),
-        "NS" => DnsRecord::NS(strip_trailing_dot(&payload.data)),
+        "CNAME" => DnsRecord::CNAME(strip_trailing_dot(&payload.data).to_string()),
+        "NS" => DnsRecord::NS(strip_trailing_dot(&payload.data).to_string()),
         "MX" => DnsRecord::MX(MXRecord {
             priority: payload.mx_priority.unwrap_or(0),
-            exchange: strip_trailing_dot(&payload.data),
+            exchange: strip_trailing_dot(&payload.data).to_string(),
         }),
         "TXT" => DnsRecord::TXT(payload.data),
         "SRV" => DnsRecord::SRV(SRVRecord {
             priority: payload.srv_priority.unwrap_or(0),
             weight: payload.srv_weight.unwrap_or(0),
             port: payload.srv_port.unwrap_or(0),
-            target: strip_trailing_dot(&payload.data),
+            target: strip_trailing_dot(&payload.data).to_string(),
         }),
         "TLSA" => DnsRecord::TLSA(TLSARecord {
             cert_usage: tlsa_cert_usage_from_u8(payload.tlsa_usage.unwrap_or(0))?,
@@ -591,8 +584,8 @@ fn payload_to_record(payload: RecordPayload) -> crate::Result<DnsRecord> {
         }),
         "CAA" => DnsRecord::CAA(build_caa(
             payload.caa_flags.unwrap_or(0),
-            payload.caa_tag.unwrap_or_default(),
-            payload.data,
+            &payload.caa_tag.unwrap_or_default(),
+            &payload.data,
         )?),
         other => {
             return Err(Error::Api(format!(
@@ -600,98 +593,4 @@ fn payload_to_record(payload: RecordPayload) -> crate::Result<DnsRecord> {
             )));
         }
     })
-}
-
-fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
-    if !hex.len().is_multiple_of(2) {
-        return Err(Error::Parse(format!("Invalid hex string: {hex}")));
-    }
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&hex[i..i + 2], 16)
-                .map_err(|e| Error::Parse(format!("Invalid hex byte: {e}")))
-        })
-        .collect()
-}
-
-fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
-    Ok(match value {
-        0 => TlsaCertUsage::PkixTa,
-        1 => TlsaCertUsage::PkixEe,
-        2 => TlsaCertUsage::DaneTa,
-        3 => TlsaCertUsage::DaneEe,
-        255 => TlsaCertUsage::Private,
-        _ => return Err(Error::Parse(format!("Unknown TLSA cert usage: {value}"))),
-    })
-}
-
-fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
-    Ok(match value {
-        0 => TlsaSelector::Full,
-        1 => TlsaSelector::Spki,
-        255 => TlsaSelector::Private,
-        _ => return Err(Error::Parse(format!("Unknown TLSA selector: {value}"))),
-    })
-}
-
-fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
-    Ok(match value {
-        0 => TlsaMatching::Raw,
-        1 => TlsaMatching::Sha256,
-        2 => TlsaMatching::Sha512,
-        255 => TlsaMatching::Private,
-        _ => return Err(Error::Parse(format!("Unknown TLSA matching: {value}"))),
-    })
-}
-
-fn build_caa(flags: u8, tag: String, value: String) -> crate::Result<CAARecord> {
-    let issuer_critical = flags & 0x80 != 0;
-    match tag.as_str() {
-        "issue" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::Issue {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
-            Ok(CAARecord::IssueWild {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "iodef" => Ok(CAARecord::Iodef {
-            issuer_critical,
-            url: value,
-        }),
-        other => Err(Error::Parse(format!("Unknown CAA tag: {other}"))),
-    }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }

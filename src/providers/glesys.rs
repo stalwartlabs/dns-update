@@ -9,8 +9,11 @@
  * except according to those terms.
  */
 
+use crate::utils::split_caa_value;
+use crate::utils::strip_trailing_dot;
+use crate::utils::{parse_mx, parse_srv};
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
@@ -190,7 +193,10 @@ impl GlesysProvider {
         let mut to_add: Vec<String> = Vec::new();
 
         for data in desired {
-            if let Some(idx) = existing_pool.iter().position(|r| r.data == data) {
+            if let Some(idx) = existing_pool
+                .iter()
+                .position(|r| data_matches(record_type, &r.data, &data))
+            {
                 existing_pool.swap_remove(idx);
             } else {
                 to_add.push(data);
@@ -224,7 +230,10 @@ impl GlesysProvider {
         let existing = self.list_at(&zone, &host, record_type).await?;
 
         for data in desired {
-            if existing.iter().any(|r| r.data == data) {
+            if existing
+                .iter()
+                .any(|r| data_matches(record_type, &r.data, &data))
+            {
                 continue;
             }
             self.add_record(&zone, &host, rr_type, &data, ttl).await?;
@@ -248,7 +257,10 @@ impl GlesysProvider {
         let existing = self.list_at(&zone, &host, record_type).await?;
 
         for data in to_remove {
-            if let Some(entry) = existing.iter().find(|r| r.data == data) {
+            if let Some(entry) = existing
+                .iter()
+                .find(|r| data_matches(record_type, &r.data, &data))
+            {
                 self.delete_record_by_id(entry.recordid).await?;
             }
         }
@@ -268,6 +280,15 @@ impl GlesysProvider {
             .into_iter()
             .map(|r| parse_record(record_type, &r.data))
             .collect()
+    }
+}
+
+fn data_matches(record_type: DnsRecordType, listed: &str, desired: &str) -> bool {
+    match record_type {
+        DnsRecordType::CNAME | DnsRecordType::NS | DnsRecordType::MX | DnsRecordType::SRV => {
+            strip_trailing_dot(listed) == strip_trailing_dot(desired)
+        }
+        _ => listed == desired,
     }
 }
 
@@ -332,52 +353,6 @@ fn parse_record(record_type: DnsRecordType, content: &str) -> crate::Result<DnsR
     }
 }
 
-fn parse_mx(content: &str) -> crate::Result<DnsRecord> {
-    let mut parts = content.splitn(2, char::is_whitespace);
-    let prio = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid MX record: {content}")))?;
-    let exchange = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid MX record: {content}")))?
-        .trim();
-    let priority: u16 = prio
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid MX priority {prio}: {e}")))?;
-    Ok(DnsRecord::MX(MXRecord {
-        priority,
-        exchange: exchange.to_string(),
-    }))
-}
-
-fn parse_srv(content: &str) -> crate::Result<DnsRecord> {
-    let mut parts = content.split_whitespace();
-    let priority: u16 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV record: {content}")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV priority: {e}")))?;
-    let weight: u16 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV record: {content}")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV weight: {e}")))?;
-    let port: u16 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV record: {content}")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV port: {e}")))?;
-    let target = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV record: {content}")))?;
-    Ok(DnsRecord::SRV(SRVRecord {
-        priority,
-        weight,
-        port,
-        target: target.to_string(),
-    }))
-}
-
 fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
     let mut parts = content.splitn(3, char::is_whitespace);
     let flags: u8 = parts
@@ -403,7 +378,7 @@ fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
     let issuer_critical = flags & 0x80 != 0;
     match tag.as_str() {
         "issue" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             Ok(DnsRecord::CAA(CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -411,7 +386,7 @@ fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
             }))
         }
         "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             Ok(DnsRecord::CAA(CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -426,26 +401,38 @@ fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
     }
 }
 
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn data_matches_ignores_trailing_dot_for_hostnames() {
+        assert!(data_matches(
+            DnsRecordType::CNAME,
+            "host.example.com.",
+            "host.example.com"
+        ));
+        assert!(data_matches(
+            DnsRecordType::NS,
+            "ns1.example.com",
+            "ns1.example.com."
+        ));
+        assert!(data_matches(
+            DnsRecordType::MX,
+            "10 mail.example.com.",
+            "10 mail.example.com"
+        ));
+        assert!(data_matches(
+            DnsRecordType::SRV,
+            "10 20 5060 sip.example.com.",
+            "10 20 5060 sip.example.com"
+        ));
+        assert!(data_matches(DnsRecordType::A, "1.2.3.4", "1.2.3.4"));
+        assert!(!data_matches(DnsRecordType::A, "1.2.3.4", "1.2.3.5"));
+        assert!(!data_matches(
+            DnsRecordType::MX,
+            "10 mail.example.com.",
+            "20 mail.example.com"
+        ));
+    }
 }

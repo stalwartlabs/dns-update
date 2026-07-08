@@ -9,9 +9,12 @@
  * except according to those terms.
  */
 
+use crate::utils::split_caa_value;
+use crate::utils::strip_trailing_dot;
+use crate::utils::unquote_txt;
+use crate::utils::{parse_mx, parse_srv, parse_tlsa};
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue as DnsKeyValue, MXRecord,
-    SRVRecord, TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn,
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
@@ -419,128 +422,6 @@ fn parse_record(record_type: DnsRecordType, content: &str) -> crate::Result<DnsR
     }
 }
 
-fn strip_trailing_dot(s: &str) -> &str {
-    s.strip_suffix('.').unwrap_or(s)
-}
-
-fn unquote_txt(content: &str) -> String {
-    let trimmed = content
-        .strip_prefix('"')
-        .and_then(|s| s.strip_suffix('"'))
-        .unwrap_or(content);
-    trimmed.replace("\\\"", "\"")
-}
-
-fn parse_mx(content: &str) -> crate::Result<DnsRecord> {
-    let (prio, exchange) = content
-        .split_once(' ')
-        .ok_or_else(|| Error::Parse(format!("invalid MX record: {content}")))?;
-    let priority: u16 = prio
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid MX priority {prio}: {e}")))?;
-    Ok(DnsRecord::MX(MXRecord {
-        priority,
-        exchange: strip_trailing_dot(exchange.trim()).to_string(),
-    }))
-}
-
-fn parse_srv(content: &str) -> crate::Result<DnsRecord> {
-    let mut parts = content.split_whitespace();
-    let priority: u16 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV record: {content}")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV priority: {e}")))?;
-    let weight: u16 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV record: {content}")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV weight: {e}")))?;
-    let port: u16 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV record: {content}")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV port: {e}")))?;
-    let target = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV record: {content}")))?;
-    Ok(DnsRecord::SRV(SRVRecord {
-        priority,
-        weight,
-        port,
-        target: strip_trailing_dot(target).to_string(),
-    }))
-}
-
-fn parse_tlsa(content: &str) -> crate::Result<DnsRecord> {
-    let mut parts = content.split_whitespace();
-    let usage: u8 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid TLSA record: {content}")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid TLSA usage: {e}")))?;
-    let selector: u8 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid TLSA record: {content}")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid TLSA selector: {e}")))?;
-    let matching: u8 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid TLSA record: {content}")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid TLSA matching: {e}")))?;
-    let hex: String = parts.collect::<Vec<_>>().join("");
-    Ok(DnsRecord::TLSA(TLSARecord {
-        cert_usage: tlsa_cert_usage_from_u8(usage)?,
-        selector: tlsa_selector_from_u8(selector)?,
-        matching: tlsa_matching_from_u8(matching)?,
-        cert_data: decode_hex(&hex)?,
-    }))
-}
-
-fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
-    Ok(match value {
-        0 => TlsaCertUsage::PkixTa,
-        1 => TlsaCertUsage::PkixEe,
-        2 => TlsaCertUsage::DaneTa,
-        3 => TlsaCertUsage::DaneEe,
-        255 => TlsaCertUsage::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {value}"))),
-    })
-}
-
-fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
-    Ok(match value {
-        0 => TlsaSelector::Full,
-        1 => TlsaSelector::Spki,
-        255 => TlsaSelector::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA selector: {value}"))),
-    })
-}
-
-fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
-    Ok(match value {
-        0 => TlsaMatching::Raw,
-        1 => TlsaMatching::Sha256,
-        2 => TlsaMatching::Sha512,
-        255 => TlsaMatching::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
-    })
-}
-
-fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
-    if !hex.len().is_multiple_of(2) {
-        return Err(Error::Parse(format!("invalid hex string: {hex}")));
-    }
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&hex[i..i + 2], 16)
-                .map_err(|e| Error::Parse(format!("invalid hex byte: {e}")))
-        })
-        .collect()
-}
-
 fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
     let mut parts = content.splitn(3, ' ');
     let flags: u8 = parts
@@ -564,7 +445,7 @@ fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
     let issuer_critical = flags & 0x80 != 0;
     match tag.as_str() {
         "issue" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             Ok(DnsRecord::CAA(CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -572,7 +453,7 @@ fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
             }))
         }
         "issuewild" => {
-            let (name, options) = parse_caa_value(&value);
+            let (name, options) = split_caa_value(&value);
             Ok(DnsRecord::CAA(CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -584,38 +465,6 @@ fn parse_caa(content: &str) -> crate::Result<DnsRecord> {
             url: value,
         })),
         other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
-    }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<DnsKeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => DnsKeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => DnsKeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
-}
-
-fn ensure_fqdn(name: String) -> String {
-    if name.ends_with('.') {
-        name
-    } else {
-        format!("{name}.")
     }
 }
 
@@ -632,15 +481,15 @@ impl From<DnsRecord> for DesecDnsRecordRepresentation {
             },
             DnsRecord::CNAME(content) => DesecDnsRecordRepresentation {
                 record_type: "CNAME".to_string(),
-                content: ensure_fqdn(content),
+                content: content.into_fqdn().into_owned(),
             },
             DnsRecord::NS(content) => DesecDnsRecordRepresentation {
                 record_type: "NS".to_string(),
-                content: ensure_fqdn(content),
+                content: content.into_fqdn().into_owned(),
             },
             DnsRecord::MX(mx) => DesecDnsRecordRepresentation {
                 record_type: "MX".to_string(),
-                content: format!("{} {}", mx.priority, ensure_fqdn(mx.exchange)),
+                content: format!("{} {}", mx.priority, mx.exchange.into_fqdn().into_owned()),
             },
             DnsRecord::TXT(content) => DesecDnsRecordRepresentation {
                 record_type: "TXT".to_string(),
@@ -653,7 +502,7 @@ impl From<DnsRecord> for DesecDnsRecordRepresentation {
                     srv.priority,
                     srv.weight,
                     srv.port,
-                    ensure_fqdn(srv.target)
+                    srv.target.into_fqdn().into_owned()
                 ),
             },
             DnsRecord::TLSA(tlsa) => DesecDnsRecordRepresentation {

@@ -10,11 +10,11 @@
  */
 
 use crate::crypto::{hmac_sha256, sha256_digest};
+use crate::utils::split_caa_value;
+use crate::utils::strip_trailing_dot;
 use crate::utils::txt_chunks_to_text;
-use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
-};
+use crate::utils::{parse_mx, parse_srv, parse_tlsa};
+use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn};
 use quick_xml::de::from_str;
 use quick_xml::se::to_string;
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -38,6 +38,7 @@ pub struct Route53Config {
     pub region: Option<String>,
     pub hosted_zone_id: Option<String>,
     pub private_zone_only: Option<bool>,
+    pub endpoint: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -55,11 +56,16 @@ impl Route53Provider {
             .clone()
             .unwrap_or_else(|| "us-east-1".to_string());
 
+        let endpoint = match config.endpoint.clone() {
+            Some(ep) => Cow::Owned(ep),
+            None => Cow::Borrowed(ROUTE53_DEFAULT_ENDPOINT),
+        };
+
         Self {
             client: Client::new(),
             config,
             region,
-            endpoint: Cow::Borrowed(ROUTE53_DEFAULT_ENDPOINT),
+            endpoint,
         }
     }
 
@@ -359,7 +365,7 @@ impl Route53Provider {
         record_type: DnsRecordType,
     ) -> crate::Result<Option<ResourceRecordSet>> {
         let type_str = record_type.as_str();
-        let normalized_name = ensure_trailing_dot(name);
+        let normalized_name = name.into_fqdn().into_owned();
         let rrsets = self
             .list_resource_record_sets(hosted_zone_id, &normalized_name, type_str)
             .await?;
@@ -701,89 +707,14 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
         DnsRecordType::AAAA => DnsRecord::AAAA(value.parse().map_err(|e: AddrParseError| {
             Error::Parse(format!("invalid AAAA value '{value}': {e}"))
         })?),
-        DnsRecordType::CNAME => DnsRecord::CNAME(strip_trailing_dot(value)),
-        DnsRecordType::NS => DnsRecord::NS(strip_trailing_dot(value)),
+        DnsRecordType::CNAME => DnsRecord::CNAME(strip_trailing_dot(value).to_string()),
+        DnsRecordType::NS => DnsRecord::NS(strip_trailing_dot(value).to_string()),
         DnsRecordType::MX => parse_mx(value)?,
         DnsRecordType::TXT => DnsRecord::TXT(parse_txt(value)),
         DnsRecordType::SRV => parse_srv(value)?,
         DnsRecordType::TLSA => parse_tlsa(value)?,
         DnsRecordType::CAA => parse_caa(value)?,
     })
-}
-
-fn parse_mx(value: &str) -> crate::Result<DnsRecord> {
-    let mut parts = value.splitn(2, char::is_whitespace);
-    let priority = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid MX value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid MX priority in '{value}': {e}")))?;
-    let exchange = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid MX value '{value}'")))?
-        .trim();
-    Ok(DnsRecord::MX(MXRecord {
-        priority,
-        exchange: strip_trailing_dot(exchange),
-    }))
-}
-
-fn parse_srv(value: &str) -> crate::Result<DnsRecord> {
-    let mut parts = value.split_whitespace();
-    let priority = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV priority in '{value}': {e}")))?;
-    let weight = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV weight in '{value}': {e}")))?;
-    let port = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid SRV port in '{value}': {e}")))?;
-    let target = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid SRV value '{value}'")))?;
-    Ok(DnsRecord::SRV(SRVRecord {
-        priority,
-        weight,
-        port,
-        target: strip_trailing_dot(target),
-    }))
-}
-
-fn parse_tlsa(value: &str) -> crate::Result<DnsRecord> {
-    let mut parts = value.split_whitespace();
-    let usage: u8 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid TLSA value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid TLSA usage in '{value}': {e}")))?;
-    let selector: u8 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid TLSA value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid TLSA selector in '{value}': {e}")))?;
-    let matching: u8 = parts
-        .next()
-        .ok_or_else(|| Error::Parse(format!("invalid TLSA value '{value}'")))?
-        .parse()
-        .map_err(|e| Error::Parse(format!("invalid TLSA matching in '{value}': {e}")))?;
-    let hex_str: String = parts.collect::<Vec<_>>().join("");
-    if hex_str.is_empty() {
-        return Err(Error::Parse(format!("invalid TLSA value '{value}'")));
-    }
-    let cert_data = decode_hex(&hex_str)?;
-    Ok(DnsRecord::TLSA(TLSARecord {
-        cert_usage: tlsa_cert_usage_from_u8(usage)?,
-        selector: tlsa_selector_from_u8(selector)?,
-        matching: tlsa_matching_from_u8(matching)?,
-        cert_data,
-    }))
 }
 
 fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
@@ -810,7 +741,7 @@ fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
     let issuer_critical = flags & 0x80 != 0;
     match tag.as_str() {
         "issue" => {
-            let (name, options) = parse_caa_kv(&unquoted);
+            let (name, options) = split_caa_value(&unquoted);
             Ok(DnsRecord::CAA(CAARecord::Issue {
                 issuer_critical,
                 name,
@@ -818,7 +749,7 @@ fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
             }))
         }
         "issuewild" => {
-            let (name, options) = parse_caa_kv(&unquoted);
+            let (name, options) = split_caa_value(&unquoted);
             Ok(DnsRecord::CAA(CAARecord::IssueWild {
                 issuer_critical,
                 name,
@@ -831,30 +762,6 @@ fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
         })),
         other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
     }
-}
-
-fn parse_caa_kv(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }
 
 fn parse_txt(value: &str) -> String {
@@ -886,61 +793,6 @@ fn parse_txt(value: &str) -> String {
         return trimmed.to_string();
     }
     out
-}
-
-fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
-    if !hex.len().is_multiple_of(2) {
-        return Err(Error::Parse(format!("invalid hex string: {hex}")));
-    }
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&hex[i..i + 2], 16)
-                .map_err(|e| Error::Parse(format!("invalid hex byte: {e}")))
-        })
-        .collect()
-}
-
-fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
-    Ok(match value {
-        0 => TlsaCertUsage::PkixTa,
-        1 => TlsaCertUsage::PkixEe,
-        2 => TlsaCertUsage::DaneTa,
-        3 => TlsaCertUsage::DaneEe,
-        255 => TlsaCertUsage::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {value}"))),
-    })
-}
-
-fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
-    Ok(match value {
-        0 => TlsaSelector::Full,
-        1 => TlsaSelector::Spki,
-        255 => TlsaSelector::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA selector: {value}"))),
-    })
-}
-
-fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
-    Ok(match value {
-        0 => TlsaMatching::Raw,
-        1 => TlsaMatching::Sha256,
-        2 => TlsaMatching::Sha512,
-        255 => TlsaMatching::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
-    })
-}
-
-fn ensure_trailing_dot(value: &str) -> String {
-    if value.ends_with('.') {
-        value.to_string()
-    } else {
-        format!("{value}.")
-    }
-}
-
-fn strip_trailing_dot(value: &str) -> String {
-    value.strip_suffix('.').unwrap_or(value).to_string()
 }
 
 fn names_match(a: &str, b: &str) -> bool {
@@ -1141,6 +993,7 @@ struct ResourceRecordSets {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{MXRecord, TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector};
     use quick_xml::se::to_string;
 
     #[test]

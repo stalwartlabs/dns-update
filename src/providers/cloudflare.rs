@@ -9,9 +9,13 @@
  * except according to those terms.
  */
 
+use crate::utils::build_caa;
+use crate::utils::unquote_txt;
+use crate::utils::{
+    decode_hex, tlsa_cert_usage_from_u8, tlsa_matching_from_u8, tlsa_selector_from_u8,
+};
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, SRVRecord,
-    TLSARecord, TlsaCertUsage, TlsaMatching, TlsaSelector,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord, TLSARecord,
     http::{HttpClient, HttpClientBuilder},
     utils::txt_chunks_to_text,
 };
@@ -450,130 +454,9 @@ impl TryFrom<DnsContent> for DnsRecord {
                 matching: tlsa_matching_from_u8(data.matching_type)?,
                 cert_data: decode_hex(&data.certificate)?,
             }),
-            DnsContent::CAA { data } => DnsRecord::CAA(build_caa(data)?),
-        })
-    }
-}
-
-fn unquote_txt(content: &str) -> String {
-    let trimmed = content.trim();
-    if !trimmed.starts_with('"') {
-        return trimmed.to_string();
-    }
-    let mut out = String::with_capacity(trimmed.len());
-    let mut bytes = trimmed.as_bytes().iter().copied().peekable();
-    while let Some(b) = bytes.peek().copied() {
-        if b != b'"' {
-            bytes.next();
-            continue;
-        }
-        bytes.next();
-        loop {
-            match bytes.next() {
-                Some(b'"') => break,
-                Some(b'\\') => {
-                    if let Some(next) = bytes.next() {
-                        out.push(next as char);
-                    }
-                }
-                Some(other) => out.push(other as char),
-                None => break,
+            DnsContent::CAA { data } => {
+                DnsRecord::CAA(build_caa(data.flags, &data.tag, &data.value)?)
             }
-        }
-    }
-    out
-}
-
-fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
-    if !hex.len().is_multiple_of(2) {
-        return Err(Error::Parse(format!("invalid hex string: {hex}")));
-    }
-    (0..hex.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&hex[i..i + 2], 16)
-                .map_err(|e| Error::Parse(format!("invalid hex byte: {e}")))
         })
-        .collect()
-}
-
-fn tlsa_cert_usage_from_u8(value: u8) -> crate::Result<TlsaCertUsage> {
-    Ok(match value {
-        0 => TlsaCertUsage::PkixTa,
-        1 => TlsaCertUsage::PkixEe,
-        2 => TlsaCertUsage::DaneTa,
-        3 => TlsaCertUsage::DaneEe,
-        255 => TlsaCertUsage::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA cert usage: {value}"))),
-    })
-}
-
-fn tlsa_selector_from_u8(value: u8) -> crate::Result<TlsaSelector> {
-    Ok(match value {
-        0 => TlsaSelector::Full,
-        1 => TlsaSelector::Spki,
-        255 => TlsaSelector::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA selector: {value}"))),
-    })
-}
-
-fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
-    Ok(match value {
-        0 => TlsaMatching::Raw,
-        1 => TlsaMatching::Sha256,
-        2 => TlsaMatching::Sha512,
-        255 => TlsaMatching::Private,
-        _ => return Err(Error::Parse(format!("unknown TLSA matching: {value}"))),
-    })
-}
-
-fn build_caa(data: CaaData) -> crate::Result<CAARecord> {
-    let issuer_critical = data.flags & 0x80 != 0;
-    match data.tag.as_str() {
-        "issue" => {
-            let (name, options) = parse_caa_value(&data.value);
-            Ok(CAARecord::Issue {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "issuewild" => {
-            let (name, options) = parse_caa_value(&data.value);
-            Ok(CAARecord::IssueWild {
-                issuer_critical,
-                name,
-                options,
-            })
-        }
-        "iodef" => Ok(CAARecord::Iodef {
-            issuer_critical,
-            url: data.value,
-        }),
-        other => Err(Error::Parse(format!("unknown CAA tag: {other}"))),
     }
-}
-
-fn parse_caa_value(value: &str) -> (Option<String>, Vec<KeyValue>) {
-    let mut parts = value.split(';').map(str::trim);
-    let name_part = parts.next().unwrap_or("").trim().to_string();
-    let name = if name_part.is_empty() {
-        None
-    } else {
-        Some(name_part)
-    };
-    let options = parts
-        .filter(|p| !p.is_empty())
-        .map(|p| match p.split_once('=') {
-            Some((k, v)) => KeyValue {
-                key: k.trim().to_string(),
-                value: v.trim().to_string(),
-            },
-            None => KeyValue {
-                key: p.trim().to_string(),
-                value: String::new(),
-            },
-        })
-        .collect();
-    (name, options)
 }
