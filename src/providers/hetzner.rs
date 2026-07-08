@@ -27,23 +27,8 @@ pub struct HetznerProvider {
 }
 
 #[derive(Serialize, Debug)]
-struct RRSetCreate<'a> {
-    name: &'a str,
-    #[serde(rename = "type")]
-    record_type: &'a str,
-    ttl: u32,
-    records: Vec<RecordValue>,
-}
-
-#[derive(Serialize, Debug)]
 struct SetRecordsBody {
     records: Vec<RecordValue>,
-}
-
-#[derive(Serialize, Debug)]
-struct AddRecordsBody {
-    records: Vec<RecordValue>,
-    ttl: u32,
 }
 
 #[derive(Serialize, Debug)]
@@ -122,7 +107,6 @@ impl HetznerProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
-        reject_tlsa(record_type)?;
         let name = name.into_name();
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, Some("@"));
@@ -133,26 +117,13 @@ impl HetznerProvider {
 
         let values = build_values(records)?;
 
-        let url = format!(
-            "{}/zones/{}/rrsets/{}/{}/actions/set_records",
-            self.endpoint,
-            domain,
-            subdomain,
-            record_type.as_str(),
-        );
-
         match self
-            .client
-            .post(url)
-            .with_body(SetRecordsBody {
-                records: values.clone(),
-            })?
-            .send_with_retry::<ActionResponse>(RETRIES)
+            .post_set_records(&domain, &subdomain, record_type, &values)
             .await
         {
             Ok(_) => self.change_ttl(&domain, &subdomain, record_type, ttl).await,
             Err(Error::NotFound) => {
-                self.create_rrset(&domain, &subdomain, record_type, ttl, values)
+                self.add_records_then_change_ttl(&domain, &subdomain, record_type, ttl, values)
                     .await
             }
             Err(e) => Err(e),
@@ -168,7 +139,6 @@ impl HetznerProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
-        reject_tlsa(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -177,27 +147,13 @@ impl HetznerProvider {
         let subdomain = strip_origin_from_name(&name, &domain, Some("@"));
         let values = build_values(records)?;
 
-        let url = format!(
-            "{}/zones/{}/rrsets/{}/{}/actions/add_records",
-            self.endpoint,
-            domain,
-            subdomain,
-            record_type.as_str(),
-        );
-
         match self
-            .client
-            .post(url)
-            .with_body(AddRecordsBody {
-                records: values.clone(),
-                ttl,
-            })?
-            .send_with_retry::<ActionResponse>(RETRIES)
+            .post_add_records(&domain, &subdomain, record_type, &values)
             .await
         {
-            Ok(_) => Ok(()),
+            Ok(_) => self.change_ttl(&domain, &subdomain, record_type, ttl).await,
             Err(Error::NotFound) => {
-                self.create_rrset(&domain, &subdomain, record_type, ttl, values)
+                self.set_records_then_change_ttl(&domain, &subdomain, record_type, ttl, values)
                     .await
             }
             Err(e) => Err(e),
@@ -212,7 +168,6 @@ impl HetznerProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
-        reject_tlsa(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -281,7 +236,57 @@ impl HetznerProvider {
         Ok(out)
     }
 
-    async fn create_rrset(
+    async fn post_set_records(
+        &self,
+        domain: &str,
+        subdomain: &str,
+        record_type: DnsRecordType,
+        values: &[RecordValue],
+    ) -> crate::Result<()> {
+        let url = format!(
+            "{}/zones/{}/rrsets/{}/{}/actions/set_records",
+            self.endpoint,
+            domain,
+            subdomain,
+            record_type.as_str(),
+        );
+
+        self.client
+            .post(url)
+            .with_body(SetRecordsBody {
+                records: values.to_vec(),
+            })?
+            .send_with_retry::<ActionResponse>(RETRIES)
+            .await
+            .map(|_| ())
+    }
+
+    async fn post_add_records(
+        &self,
+        domain: &str,
+        subdomain: &str,
+        record_type: DnsRecordType,
+        values: &[RecordValue],
+    ) -> crate::Result<()> {
+        let url = format!(
+            "{}/zones/{}/rrsets/{}/{}/actions/add_records",
+            self.endpoint,
+            domain,
+            subdomain,
+            record_type.as_str(),
+        );
+
+        self.client
+            .post(url)
+            .with_body(SetRecordsBody {
+                records: values.to_vec(),
+            })?
+            .send_with_retry::<ActionResponse>(RETRIES)
+            .await
+            .map(|_| ())
+    }
+
+    async fn add_records_then_change_ttl(
         &self,
         domain: &str,
         subdomain: &str,
@@ -289,17 +294,22 @@ impl HetznerProvider {
         ttl: u32,
         values: Vec<RecordValue>,
     ) -> crate::Result<()> {
-        self.client
-            .post(format!("{}/zones/{}/rrsets", self.endpoint, domain))
-            .with_body(RRSetCreate {
-                name: subdomain,
-                record_type: record_type.as_str(),
-                ttl,
-                records: values,
-            })?
-            .send_with_retry::<ActionResponse>(RETRIES)
-            .await
-            .map(|_| ())
+        self.post_add_records(domain, subdomain, record_type, &values)
+            .await?;
+        self.change_ttl(domain, subdomain, record_type, ttl).await
+    }
+
+    async fn set_records_then_change_ttl(
+        &self,
+        domain: &str,
+        subdomain: &str,
+        record_type: DnsRecordType,
+        ttl: u32,
+        values: Vec<RecordValue>,
+    ) -> crate::Result<()> {
+        self.post_set_records(domain, subdomain, record_type, &values)
+            .await?;
+        self.change_ttl(domain, subdomain, record_type, ttl).await
     }
 
     async fn delete_rrset(
@@ -368,16 +378,6 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
     Ok(())
 }
 
-fn reject_tlsa(record_type: DnsRecordType) -> crate::Result<()> {
-    if record_type == DnsRecordType::TLSA {
-        Err(Error::Unsupported(
-            "TLSA records are not supported by Hetzner".to_string(),
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 fn build_values(records: Vec<DnsRecord>) -> crate::Result<Vec<RecordValue>> {
     let mut out = Vec::with_capacity(records.len());
     for record in records {
@@ -407,11 +407,7 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
             srv.port,
             srv.target.into_fqdn().into_owned(),
         ),
-        DnsRecord::TLSA(_) => {
-            return Err(Error::Unsupported(
-                "TLSA records are not supported by Hetzner".to_string(),
-            ));
-        }
+        DnsRecord::TLSA(tlsa) => tlsa.to_string(),
         DnsRecord::CAA(caa) => caa.to_string(),
     })
 }
@@ -429,11 +425,7 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
         DnsRecordType::MX => parse_mx(value)?,
         DnsRecordType::TXT => DnsRecord::TXT(parse_txt(value)),
         DnsRecordType::SRV => parse_srv(value)?,
-        DnsRecordType::TLSA => {
-            return Err(Error::Unsupported(
-                "TLSA records are not supported by Hetzner".to_string(),
-            ));
-        }
+        DnsRecordType::TLSA => parse_tlsa(value)?,
         DnsRecordType::CAA => parse_caa(value)?,
     })
 }
