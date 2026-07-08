@@ -37,6 +37,8 @@ struct CreateRecordRequest<'a> {
     name: &'a str,
     value: String,
     ttl: u32,
+    #[serde(rename = "gtdLocation")]
+    gtd_location: &'static str,
     #[serde(rename = "mxLevel", skip_serializing_if = "Option::is_none")]
     mx_level: Option<u16>,
     #[serde(rename = "priority", skip_serializing_if = "Option::is_none")]
@@ -474,6 +476,7 @@ fn build_create_request<'a>(
         name,
         value: String::new(),
         ttl,
+        gtd_location: "DEFAULT",
         mx_level: None,
         priority: None,
         weight: None,
