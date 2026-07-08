@@ -25,23 +25,8 @@ pub struct HetznerProvider {
 }
 
 #[derive(Serialize, Debug)]
-struct RRSetCreate<'a> {
-    name: &'a str,
-    #[serde(rename = "type")]
-    record_type: &'a str,
-    ttl: u32,
-    records: Vec<RecordValue>,
-}
-
-#[derive(Serialize, Debug)]
 struct SetRecordsBody {
     records: Vec<RecordValue>,
-}
-
-#[derive(Serialize, Debug)]
-struct AddRecordsBody {
-    records: Vec<RecordValue>,
-    ttl: u32,
 }
 
 #[derive(Serialize, Debug)]
@@ -130,26 +115,13 @@ impl HetznerProvider {
 
         let values = build_values(records)?;
 
-        let url = format!(
-            "{}/zones/{}/rrsets/{}/{}/actions/set_records",
-            self.endpoint,
-            domain,
-            subdomain,
-            record_type.as_str(),
-        );
-
         match self
-            .client
-            .post(url)
-            .with_body(SetRecordsBody {
-                records: values.clone(),
-            })?
-            .send_with_retry::<ActionResponse>(RETRIES)
+            .post_set_records(&domain, &subdomain, record_type, &values)
             .await
         {
             Ok(_) => self.change_ttl(&domain, &subdomain, record_type, ttl).await,
             Err(Error::NotFound) => {
-                self.create_rrset(&domain, &subdomain, record_type, ttl, values)
+                self.add_records_then_change_ttl(&domain, &subdomain, record_type, ttl, values)
                     .await
             }
             Err(e) => Err(e),
@@ -173,27 +145,13 @@ impl HetznerProvider {
         let subdomain = strip_origin_from_name(&name, &domain, Some("@"));
         let values = build_values(records)?;
 
-        let url = format!(
-            "{}/zones/{}/rrsets/{}/{}/actions/add_records",
-            self.endpoint,
-            domain,
-            subdomain,
-            record_type.as_str(),
-        );
-
         match self
-            .client
-            .post(url)
-            .with_body(AddRecordsBody {
-                records: values.clone(),
-                ttl,
-            })?
-            .send_with_retry::<ActionResponse>(RETRIES)
+            .post_add_records(&domain, &subdomain, record_type, &values)
             .await
         {
-            Ok(_) => Ok(()),
+            Ok(_) => self.change_ttl(&domain, &subdomain, record_type, ttl).await,
             Err(Error::NotFound) => {
-                self.create_rrset(&domain, &subdomain, record_type, ttl, values)
+                self.set_records_then_change_ttl(&domain, &subdomain, record_type, ttl, values)
                     .await
             }
             Err(e) => Err(e),
@@ -276,7 +234,57 @@ impl HetznerProvider {
         Ok(out)
     }
 
-    async fn create_rrset(
+    async fn post_set_records(
+        &self,
+        domain: &str,
+        subdomain: &str,
+        record_type: DnsRecordType,
+        values: &[RecordValue],
+    ) -> crate::Result<()> {
+        let url = format!(
+            "{}/zones/{}/rrsets/{}/{}/actions/set_records",
+            self.endpoint,
+            domain,
+            subdomain,
+            record_type.as_str(),
+        );
+
+        self.client
+            .post(url)
+            .with_body(SetRecordsBody {
+                records: values.to_vec(),
+            })?
+            .send_with_retry::<ActionResponse>(RETRIES)
+            .await
+            .map(|_| ())
+    }
+
+    async fn post_add_records(
+        &self,
+        domain: &str,
+        subdomain: &str,
+        record_type: DnsRecordType,
+        values: &[RecordValue],
+    ) -> crate::Result<()> {
+        let url = format!(
+            "{}/zones/{}/rrsets/{}/{}/actions/add_records",
+            self.endpoint,
+            domain,
+            subdomain,
+            record_type.as_str(),
+        );
+
+        self.client
+            .post(url)
+            .with_body(SetRecordsBody {
+                records: values.to_vec(),
+            })?
+            .send_with_retry::<ActionResponse>(RETRIES)
+            .await
+            .map(|_| ())
+    }
+
+    async fn add_records_then_change_ttl(
         &self,
         domain: &str,
         subdomain: &str,
@@ -284,17 +292,22 @@ impl HetznerProvider {
         ttl: u32,
         values: Vec<RecordValue>,
     ) -> crate::Result<()> {
-        self.client
-            .post(format!("{}/zones/{}/rrsets", self.endpoint, domain))
-            .with_body(RRSetCreate {
-                name: subdomain,
-                record_type: record_type.as_str(),
-                ttl,
-                records: values,
-            })?
-            .send_with_retry::<ActionResponse>(RETRIES)
-            .await
-            .map(|_| ())
+        self.post_add_records(domain, subdomain, record_type, &values)
+            .await?;
+        self.change_ttl(domain, subdomain, record_type, ttl).await
+    }
+
+    async fn set_records_then_change_ttl(
+        &self,
+        domain: &str,
+        subdomain: &str,
+        record_type: DnsRecordType,
+        ttl: u32,
+        values: Vec<RecordValue>,
+    ) -> crate::Result<()> {
+        self.post_set_records(domain, subdomain, record_type, &values)
+            .await?;
+        self.change_ttl(domain, subdomain, record_type, ttl).await
     }
 
     async fn delete_rrset(

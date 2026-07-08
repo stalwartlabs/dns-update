@@ -83,16 +83,23 @@ mod tests {
             .with_body(r#"{"error":{"code":"not_found","message":"rrset not found"}}"#)
             .create();
 
-        let create = server
-            .mock("POST", "/zones/example.com/rrsets")
+        let add_records = server
+            .mock(
+                "POST",
+                "/zones/example.com/rrsets/www/A/actions/add_records",
+            )
             .match_body(Matcher::Json(json!({
-                "name": "www",
-                "type": "A",
-                "ttl": 300,
                 "records": [{"value": "1.1.1.1"}],
             })))
-            .with_status(201)
-            .with_body(r#"{"rrset":{}}"#)
+            .with_status(200)
+            .with_body(ok_action())
+            .create();
+
+        let change_ttl = server
+            .mock("POST", "/zones/example.com/rrsets/www/A/actions/change_ttl")
+            .match_body(Matcher::Json(json!({"ttl": 300})))
+            .with_status(200)
+            .with_body(ok_action())
             .create();
 
         let provider = setup_provider(server.url());
@@ -108,7 +115,8 @@ mod tests {
 
         assert!(result.is_ok(), "set_rrset returned: {result:?}");
         set_records.assert();
-        create.assert();
+        add_records.assert();
+        change_ttl.assert();
     }
 
     #[tokio::test]
@@ -282,7 +290,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_add_to_rrset_posts_add_records() {
+    async fn test_add_to_rrset_posts_add_records_then_change_ttl() {
         let mut server = mockito::Server::new_async().await;
         let add = server
             .mock(
@@ -292,8 +300,14 @@ mod tests {
             .match_header("authorization", "Bearer test_token")
             .match_body(Matcher::Json(json!({
                 "records": [{"value": "3.3.3.3"}],
-                "ttl": 600,
             })))
+            .with_status(200)
+            .with_body(ok_action())
+            .create();
+
+        let change_ttl = server
+            .mock("POST", "/zones/example.com/rrsets/www/A/actions/change_ttl")
+            .match_body(Matcher::Json(json!({"ttl": 600})))
             .with_status(200)
             .with_body(ok_action())
             .create();
@@ -311,10 +325,11 @@ mod tests {
 
         assert!(result.is_ok(), "add_to_rrset returned: {result:?}");
         add.assert();
+        change_ttl.assert();
     }
 
     #[tokio::test]
-    async fn test_add_to_rrset_creates_when_add_records_returns_404() {
+    async fn test_add_to_rrset_falls_back_to_set_records_when_add_records_returns_404() {
         let mut server = mockito::Server::new_async().await;
         let add = server
             .mock(
@@ -325,16 +340,23 @@ mod tests {
             .with_body(r#"{"error":{"code":"not_found","message":"rrset not found"}}"#)
             .create();
 
-        let create = server
-            .mock("POST", "/zones/example.com/rrsets")
+        let set_records = server
+            .mock(
+                "POST",
+                "/zones/example.com/rrsets/www/A/actions/set_records",
+            )
             .match_body(Matcher::Json(json!({
-                "name": "www",
-                "type": "A",
-                "ttl": 600,
                 "records": [{"value": "3.3.3.3"}],
             })))
-            .with_status(201)
-            .with_body(r#"{"rrset":{}}"#)
+            .with_status(200)
+            .with_body(ok_action())
+            .create();
+
+        let change_ttl = server
+            .mock("POST", "/zones/example.com/rrsets/www/A/actions/change_ttl")
+            .match_body(Matcher::Json(json!({"ttl": 600})))
+            .with_status(200)
+            .with_body(ok_action())
             .create();
 
         let provider = setup_provider(server.url());
@@ -350,7 +372,8 @@ mod tests {
 
         assert!(result.is_ok(), "add_to_rrset returned: {result:?}");
         add.assert();
-        create.assert();
+        set_records.assert();
+        change_ttl.assert();
     }
 
     #[tokio::test]
