@@ -64,6 +64,7 @@ struct OvhRecordBody {
 #[derive(Debug)]
 pub enum OvhEndpoint {
     OvhEu,
+    OvhUs,
     OvhCa,
     KimsufiEu,
     KimsufiCa,
@@ -75,6 +76,7 @@ impl OvhEndpoint {
     fn api_url(&self) -> &'static str {
         match self {
             OvhEndpoint::OvhEu => "https://eu.api.ovh.com/1.0",
+            OvhEndpoint::OvhUs => "https://api.us.ovhcloud.com/1.0",
             OvhEndpoint::OvhCa => "https://ca.api.ovh.com/1.0",
             OvhEndpoint::KimsufiEu => "https://eu.api.kimsufi.com/1.0",
             OvhEndpoint::KimsufiCa => "https://ca.api.kimsufi.com/1.0",
@@ -90,6 +92,7 @@ impl std::str::FromStr for OvhEndpoint {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "ovh-eu" => Ok(OvhEndpoint::OvhEu),
+            "ovh-us" => Ok(OvhEndpoint::OvhUs),
             "ovh-ca" => Ok(OvhEndpoint::OvhCa),
             "kimsufi-eu" => Ok(OvhEndpoint::KimsufiEu),
             "kimsufi-ca" => Ok(OvhEndpoint::KimsufiCa),

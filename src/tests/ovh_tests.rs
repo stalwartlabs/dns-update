@@ -37,6 +37,10 @@ mod tests {
             OvhEndpoint::OvhEu
         ));
         assert!(matches!(
+            "ovh-us".parse::<OvhEndpoint>().unwrap(),
+            OvhEndpoint::OvhUs
+        ));
+        assert!(matches!(
             "ovh-ca".parse::<OvhEndpoint>().unwrap(),
             OvhEndpoint::OvhCa
         ));
