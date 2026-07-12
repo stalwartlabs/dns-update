@@ -158,7 +158,7 @@ impl DesecProvider {
             let rrset_url = format!(
                 "{endpoint}/domains/{domain}/rrsets/{subdomain}/{rr_type}/",
                 endpoint = self.endpoint,
-                domain = &domain,
+                domain = domain,
                 subdomain = url_subname(&subdomain),
                 rr_type = rr_type,
             );
@@ -181,7 +181,7 @@ impl DesecProvider {
         let rrsets_url = format!(
             "{endpoint}/domains/{domain}/rrsets/",
             endpoint = self.endpoint,
-            domain = &domain,
+            domain = domain,
         );
 
         self.client
@@ -221,7 +221,7 @@ impl DesecProvider {
         let rrset_url = format!(
             "{endpoint}/domains/{domain}/rrsets/{subdomain}/{rr_type}/",
             endpoint = self.endpoint,
-            domain = &domain,
+            domain = domain,
             subdomain = url_subname(&subdomain),
             rr_type = rr_type,
         );
@@ -292,7 +292,7 @@ impl DesecProvider {
         let rrset_url = format!(
             "{endpoint}/domains/{domain}/rrsets/{subdomain}/{rr_type}/",
             endpoint = self.endpoint,
-            domain = &domain,
+            domain = domain,
             subdomain = url_subname(&subdomain),
             rr_type = rr_type,
         );
@@ -360,7 +360,7 @@ impl DesecProvider {
         let rrset_url = format!(
             "{endpoint}/domains/{domain}/rrsets/{subdomain}/{rr_type}/",
             endpoint = self.endpoint,
-            domain = &domain,
+            domain = domain,
             subdomain = url_subname(&subdomain),
             rr_type = rr_type,
         );

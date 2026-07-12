@@ -12,7 +12,7 @@
 use crate::utils::build_caa;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
-    http::{HttpClient, HttpClientBuilder},
+    http::{HttpClient, HttpClientBuilder, HttpRequest},
     utils::strip_origin_from_name,
 };
 use serde::Deserialize;
@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 const DEFAULT_API_ENDPOINT: &str = "https://api.cloudns.net/dns";
+const RETRIES: u32 = 3;
 
 #[derive(Clone)]
 pub struct ClouDnsProvider {
@@ -130,11 +131,11 @@ impl ClouDnsProvider {
         all.extend(params);
         let body = serde_urlencoded::to_string(&all)
             .map_err(|err| Error::Serialize(format!("Failed to encode ClouDNS form: {err}")))?;
-        self.client
+        let request = self
+            .client
             .post(format!("{}/{}", self.endpoint, path))
-            .with_raw_body(body)
-            .send_raw()
-            .await
+            .with_raw_body(body);
+        Self::send_with_backoff(request).await
     }
 
     async fn get_form(
@@ -146,10 +147,24 @@ impl ClouDnsProvider {
         all.extend(params);
         let qs = serde_urlencoded::to_string(&all)
             .map_err(|err| Error::Serialize(format!("Failed to encode ClouDNS query: {err}")))?;
-        self.client
-            .get(format!("{}/{}?{}", self.endpoint, path, qs))
-            .send_raw()
-            .await
+        let request = self
+            .client
+            .get(format!("{}/{}?{}", self.endpoint, path, qs));
+        Self::send_with_backoff(request).await
+    }
+
+    async fn send_with_backoff(request: HttpRequest) -> crate::Result<String> {
+        let mut attempts = 0;
+        loop {
+            let body = request.clone().send_raw().await?;
+            if attempts < RETRIES && is_rate_limited(&body) {
+                let delay = Duration::from_millis(250 * (1u64 << attempts));
+                tokio::time::sleep(delay).await;
+                attempts += 1;
+                continue;
+            }
+            return Ok(body);
+        }
     }
 
     fn check_status(body: &str, action: &str) -> crate::Result<()> {
@@ -398,6 +413,14 @@ impl ClouDnsProvider {
     }
 }
 
+fn is_rate_limited(body: &str) -> bool {
+    serde_json::from_str::<ApiResponse>(body)
+        .ok()
+        .filter(|r| r.status.as_deref() != Some("Success"))
+        .and_then(|r| r.status_description)
+        .is_some_and(|d| d.to_ascii_lowercase().contains("request blocked"))
+}
+
 fn build_record_params(record: &DnsRecord) -> crate::Result<Vec<(&'static str, String)>> {
     let mut params: Vec<(&'static str, String)> = Vec::new();
     let rr_type = record.as_type().as_str();
@@ -623,6 +646,25 @@ mod tests {
     fn empty_array_yields_no_records() {
         let recs = ClouDnsProvider::parse_list_response("[]", "host", "TXT").unwrap();
         assert!(recs.is_empty());
+    }
+
+    #[test]
+    fn rate_limit_envelope_is_detected() {
+        let body = r#"{"status":"Failed","statusDescription":"Request blocked, 1.2.3.4 is sending more than 20 requests per second."}"#;
+        assert!(is_rate_limited(body));
+    }
+
+    #[test]
+    fn non_rate_limit_failures_are_not_retried() {
+        let body = r#"{"status":"Failed","statusDescription":"Invalid authentication, incorrect auth-id or auth-password."}"#;
+        assert!(!is_rate_limited(body));
+    }
+
+    #[test]
+    fn success_envelope_is_not_rate_limited() {
+        let body =
+            r#"{"status":"Success","statusDescription":"The record was added successfully."}"#;
+        assert!(!is_rate_limited(body));
     }
 
     #[test]

@@ -3,6 +3,9 @@ dns-update 0.5.4
 - Include body snippet in deserialization failure messages.
 - deSEC: resolve the managed DNS zone by walking up the origin labels instead of using the origin verbatim (#72).
 - DNSMadeEasy: send `gtdLocation: "DEFAULT"` on record creation to fix HTTP 500 errors when publishing records.
+- Hetzner: add TLSA support and fix RRset write paths.
+- ClouDNS: retry when the API signals rate limiting in the response body instead of via HTTP 429 (#78).
+- OVH: add US OVH Endpoint.
 
 dns-update 0.5.3
 ================================

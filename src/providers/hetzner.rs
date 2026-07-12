@@ -11,7 +11,7 @@
 
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
-use crate::utils::{parse_mx, parse_srv};
+use crate::utils::{parse_mx, parse_srv, parse_tlsa};
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn,
     http::{HttpClient, HttpClientBuilder},

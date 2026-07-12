@@ -104,6 +104,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_in_body_rate_limit_is_retried() {
+        let mut server = mockito::Server::new_async().await;
+        let lookup = server
+            .mock("GET", mockito::Matcher::Regex("^/records.json".into()))
+            .with_status(200)
+            .with_body("[]")
+            .create();
+
+        let add_throttled = server
+            .mock("POST", "/add-record.json")
+            .with_status(200)
+            .with_body(
+                r#"{"status":"Failed","statusDescription":"Request blocked, 1.2.3.4 is sending more than 20 requests per second."}"#,
+            )
+            .expect(1)
+            .create();
+
+        let add_ok = server
+            .mock("POST", "/add-record.json")
+            .with_status(200)
+            .with_body(r#"{"status":"Success","statusDescription":"added"}"#)
+            .expect(1)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .add_to_rrset(
+                "www.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("3.3.3.3".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "add_to_rrset should retry throttle: {result:?}"
+        );
+        lookup.assert();
+        add_throttled.assert();
+        add_ok.assert();
+    }
+
+    #[tokio::test]
     async fn test_set_rrset_diff_adds_and_deletes() {
         let mut server = mockito::Server::new_async().await;
         let lookup = server
