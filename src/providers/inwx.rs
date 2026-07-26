@@ -69,6 +69,11 @@ struct NameserverInfoResData {
     record: Vec<NameserverRecord>,
 }
 
+struct ZoneRecords {
+    zone: String,
+    records: Vec<NameserverRecord>,
+}
+
 #[derive(Deserialize, Debug, Clone)]
 struct NameserverRecord {
     #[serde(deserialize_with = "deserialize_record_id")]
@@ -135,7 +140,10 @@ impl InwxProvider {
         let desired = build_payloads(&records);
 
         self.ensure_logged_in().await?;
-        let existing = self.list_records_at(&domain, &name, rtype).await?;
+        let ZoneRecords {
+            zone,
+            records: existing,
+        } = self.list_records_at(&domain, &name, rtype).await?;
 
         let mut existing_pool = existing;
         let mut to_add: Vec<(String, Option<u16>)> = Vec::new();
@@ -157,7 +165,7 @@ impl InwxProvider {
         }
 
         for (content, prio) in to_add {
-            self.create_record(&domain, &name, rtype, ttl, content, prio)
+            self.create_record(&zone, &name, rtype, ttl, content, prio)
                 .await?;
         }
         Ok(())
@@ -181,7 +189,10 @@ impl InwxProvider {
         let desired = build_payloads(&records);
 
         self.ensure_logged_in().await?;
-        let existing = self.list_records_at(&domain, &name, rtype).await?;
+        let ZoneRecords {
+            zone,
+            records: existing,
+        } = self.list_records_at(&domain, &name, rtype).await?;
 
         for (content, prio) in desired {
             let already_present = existing
@@ -190,7 +201,7 @@ impl InwxProvider {
             if already_present {
                 continue;
             }
-            self.create_record(&domain, &name, rtype, ttl, content, prio)
+            self.create_record(&zone, &name, rtype, ttl, content, prio)
                 .await?;
         }
         Ok(())
@@ -213,7 +224,7 @@ impl InwxProvider {
         let to_remove = build_payloads(&records);
 
         self.ensure_logged_in().await?;
-        let existing = self.list_records_at(&domain, &name, rtype).await?;
+        let existing = self.list_records_at(&domain, &name, rtype).await?.records;
 
         for (content, prio) in to_remove {
             if let Some(entry) = existing
@@ -239,7 +250,7 @@ impl InwxProvider {
         let rtype = inwx_record_type(record_type);
 
         self.ensure_logged_in().await?;
-        let existing = self.list_records_at(&domain, &name, rtype).await?;
+        let existing = self.list_records_at(&domain, &name, rtype).await?.records;
         existing
             .into_iter()
             .map(|r| parse_record(record_type, &r.content, r.prio))
@@ -248,35 +259,49 @@ impl InwxProvider {
 
     async fn list_records_at(
         &self,
-        domain: &str,
+        origin: &str,
         name: &str,
         record_type: &str,
-    ) -> crate::Result<Vec<NameserverRecord>> {
-        let params = json!({
-            "domain": domain,
-            "name": name,
-            "type": record_type,
-        });
-        let resp = self.call("nameserver.info", params).await?;
-        let Some(res_data) = resp.res_data else {
-            return Ok(Vec::new());
-        };
-        let info: NameserverInfoResData = serde_json::from_value(res_data)
-            .map_err(|err| Error::Api(format!("Failed to parse INWX nameserver.info: {err}")))?;
+    ) -> crate::Result<ZoneRecords> {
+        let mut candidate = origin;
+        let mut first_failure = None;
+        loop {
+            let resp = self
+                .call_raw(
+                    "nameserver.info",
+                    json!({
+                        "domain": candidate,
+                        "name": name,
+                        "type": record_type,
+                    }),
+                )
+                .await?;
 
-        let apex = strip_origin_from_name(name, domain, Some("@"));
-        let bare_name = name.trim_end_matches('.');
-        Ok(info
-            .record
-            .into_iter()
-            .filter(|record| {
-                if !record.record_type.eq_ignore_ascii_case(record_type) {
-                    return false;
+            if resp.code / 1000 == 1 {
+                return Ok(ZoneRecords {
+                    zone: candidate.to_string(),
+                    records: filter_records(resp.res_data, candidate, name, record_type)?,
+                });
+            }
+
+            if first_failure.is_none() {
+                first_failure = Some(format!(
+                    "code={} message={}",
+                    resp.code,
+                    resp.msg.unwrap_or_default()
+                ));
+            }
+
+            match candidate.split_once('.') {
+                Some((_, rest)) if rest.contains('.') => candidate = rest,
+                _ => {
+                    return Err(Error::Api(format!(
+                        "No INWX nameserver domain found for {origin}: {}",
+                        first_failure.unwrap_or_default()
+                    )));
                 }
-                let echoed = record.name.trim_end_matches('.');
-                echoed == bare_name || echoed == apex
-            })
-            .collect())
+            }
+        }
     }
 
     async fn create_record(
@@ -370,6 +395,18 @@ impl InwxProvider {
     }
 
     async fn call(&self, method: &str, params: Value) -> crate::Result<RpcResponse> {
+        let rpc = self.call_raw(method, params).await?;
+        if rpc.code / 1000 != 1 {
+            return Err(Error::Api(format!(
+                "INWX {method} failed: code={} message={}",
+                rpc.code,
+                rpc.msg.clone().unwrap_or_default()
+            )));
+        }
+        Ok(rpc)
+    }
+
+    async fn call_raw(&self, method: &str, params: Value) -> crate::Result<RpcResponse> {
         let cookie = self
             .session
             .lock()
@@ -386,20 +423,39 @@ impl InwxProvider {
         }
         let body = request.send_raw().await?;
 
-        let rpc: RpcResponse = serde_json::from_str(&body).map_err(|err| {
+        serde_json::from_str(&body).map_err(|err| {
             Error::Api(format!(
                 "Failed to parse INWX response from {method}: {err}"
             ))
-        })?;
-        if rpc.code / 1000 != 1 {
-            return Err(Error::Api(format!(
-                "INWX {method} failed: code={} message={}",
-                rpc.code,
-                rpc.msg.clone().unwrap_or_default()
-            )));
-        }
-        Ok(rpc)
+        })
     }
+}
+
+fn filter_records(
+    res_data: Option<Value>,
+    zone: &str,
+    name: &str,
+    record_type: &str,
+) -> crate::Result<Vec<NameserverRecord>> {
+    let Some(res_data) = res_data else {
+        return Ok(Vec::new());
+    };
+    let info: NameserverInfoResData = serde_json::from_value(res_data)
+        .map_err(|err| Error::Api(format!("Failed to parse INWX nameserver.info: {err}")))?;
+
+    let apex = strip_origin_from_name(name, zone, Some("@"));
+    let bare_name = name.trim_end_matches('.');
+    Ok(info
+        .record
+        .into_iter()
+        .filter(|record| {
+            if !record.record_type.eq_ignore_ascii_case(record_type) {
+                return false;
+            }
+            let echoed = record.name.trim_end_matches('.');
+            echoed == bare_name || echoed == apex
+        })
+        .collect())
 }
 
 fn deserialize_record_id<'de, D>(deserializer: D) -> Result<String, D::Error>

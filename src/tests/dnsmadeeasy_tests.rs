@@ -59,8 +59,8 @@ mod tests {
             .mock("POST", "/dns/managed/12345/records/createMulti")
             .match_header("x-dnsme-apiKey", "api_key")
             .match_body(Matcher::Json(json!([
-                {"type": "A", "name": "test", "value": "1.2.3.4", "ttl": 300},
-                {"type": "A", "name": "test", "value": "5.6.7.8", "ttl": 300}
+                {"type": "A", "name": "test", "value": "1.2.3.4", "ttl": 300, "gtdLocation": "DEFAULT"},
+                {"type": "A", "name": "test", "value": "5.6.7.8", "ttl": 300, "gtdLocation": "DEFAULT"}
             ])))
             .with_status(201)
             .with_header("content-type", "application/json")
@@ -149,7 +149,7 @@ mod tests {
         let bulk_create = server
             .mock("POST", "/dns/managed/12345/records/createMulti")
             .match_body(Matcher::Json(json!([
-                {"type": "A", "name": "test", "value": "8.8.8.8", "ttl": 300}
+                {"type": "A", "name": "test", "value": "8.8.8.8", "ttl": 300, "gtdLocation": "DEFAULT"}
             ])))
             .with_status(201)
             .with_header("content-type", "application/json")
@@ -269,7 +269,7 @@ mod tests {
         let create_multi = server
             .mock("POST", "/dns/managed/12345/records/createMulti")
             .match_body(Matcher::Json(json!([
-                {"type": "A", "name": "test", "value": "1.2.3.4", "ttl": 300}
+                {"type": "A", "name": "test", "value": "1.2.3.4", "ttl": 300, "gtdLocation": "DEFAULT"}
             ])))
             .with_status(201)
             .with_header("content-type", "application/json")
@@ -366,7 +366,7 @@ mod tests {
         let create_multi = server
             .mock("POST", "/dns/managed/12345/records/createMulti")
             .match_body(Matcher::Json(json!([
-                {"type": "A", "name": "test", "value": "5.6.7.8", "ttl": 300}
+                {"type": "A", "name": "test", "value": "5.6.7.8", "ttl": 300, "gtdLocation": "DEFAULT"}
             ])))
             .with_status(201)
             .with_header("content-type", "application/json")
@@ -565,7 +565,7 @@ mod tests {
         let create_multi = server
             .mock("POST", "/dns/managed/12345/records/createMulti")
             .match_body(Matcher::Json(json!([
-                {"type": "MX", "name": "@", "value": "mail.example.com.", "ttl": 3600, "mxLevel": 10}
+                {"type": "MX", "name": "@", "value": "mail.example.com.", "ttl": 3600, "mxLevel": 10, "gtdLocation": "DEFAULT"}
             ])))
             .with_status(201)
             .with_header("content-type", "application/json")

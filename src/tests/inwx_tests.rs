@@ -521,6 +521,342 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn set_rrset_walks_up_to_parent_zone() {
+        let mut server = mockito::Server::new_async().await;
+        let list_subdomain = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.info",
+                "params": {
+                    "domain": "stalwart-test.example.com",
+                    "name": "mta-sts.stalwart-test.example.com",
+                    "type": "CNAME"
+                }
+            })))
+            .with_status(200)
+            .with_body(r#"{"code":2303,"msg":"Object does not exist"}"#)
+            .create();
+        let list_zone = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.info",
+                "params": {
+                    "domain": "example.com",
+                    "name": "mta-sts.stalwart-test.example.com",
+                    "type": "CNAME"
+                }
+            })))
+            .with_status(200)
+            .with_body(r#"{"code":1000,"resData":{"record":[]}}"#)
+            .create();
+
+        let create = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.createRecord",
+                "params": {
+                    "domain": "example.com",
+                    "name": "mta-sts.stalwart-test.example.com",
+                    "type": "CNAME",
+                    "content": "mta-sts.example.com.",
+                    "ttl": 300
+                }
+            })))
+            .with_status(200)
+            .with_body(r#"{"code":1000,"resData":{"id":131}}"#)
+            .create();
+
+        let provider = setup(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "mta-sts.stalwart-test.example.com",
+                DnsRecordType::CNAME,
+                300,
+                vec![DnsRecord::CNAME("mta-sts.example.com".into())],
+                "stalwart-test.example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "{result:?}");
+        list_subdomain.assert();
+        list_zone.assert();
+        create.assert();
+    }
+
+    #[tokio::test]
+    async fn set_rrset_matches_subdomain_apex_in_parent_zone() {
+        let mut server = mockito::Server::new_async().await;
+        let list_subdomain = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.info",
+                "params": {
+                    "domain": "stalwart-test.example.com",
+                    "name": "stalwart-test.example.com",
+                    "type": "MX"
+                }
+            })))
+            .with_status(200)
+            .with_body(r#"{"code":2303,"msg":"Object does not exist"}"#)
+            .create();
+        let list_zone = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.info",
+                "params": {
+                    "domain": "example.com",
+                    "name": "stalwart-test.example.com",
+                    "type": "MX"
+                }
+            })))
+            .with_status(200)
+            .with_body(
+                r#"{"code":1000,"resData":{"record":[
+                    {"id":141,"name":"stalwart-test.example.com","type":"MX","content":"mail.example.com.","prio":10}
+                ]}}"#,
+            )
+            .create();
+        let no_create = server
+            .mock("POST", "/")
+            .match_body(match_method("nameserver.createRecord"))
+            .expect(0)
+            .create();
+        let no_delete = server
+            .mock("POST", "/")
+            .match_body(match_method("nameserver.deleteRecord"))
+            .expect(0)
+            .create();
+
+        let provider = setup(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "stalwart-test.example.com",
+                DnsRecordType::MX,
+                300,
+                vec![DnsRecord::MX(MXRecord {
+                    exchange: "mail.example.com".into(),
+                    priority: 10,
+                })],
+                "stalwart-test.example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "{result:?}");
+        list_subdomain.assert();
+        list_zone.assert();
+        no_create.assert();
+        no_delete.assert();
+    }
+
+    #[tokio::test]
+    async fn set_rrset_prefers_delegated_subzone() {
+        let mut server = mockito::Server::new_async().await;
+        let list_subzone = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.info",
+                "params": {
+                    "domain": "delegated.example.com",
+                    "name": "host.delegated.example.com",
+                    "type": "A"
+                }
+            })))
+            .with_status(200)
+            .with_body(r#"{"code":1000,"resData":{"record":[]}}"#)
+            .create();
+        let parent_must_not_fire = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.info",
+                "params": {
+                    "domain": "example.com",
+                    "name": "host.delegated.example.com",
+                    "type": "A"
+                }
+            })))
+            .expect(0)
+            .create();
+
+        let create = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.createRecord",
+                "params": {
+                    "domain": "delegated.example.com",
+                    "name": "host.delegated.example.com",
+                    "type": "A",
+                    "content": "1.1.1.1",
+                    "ttl": 300
+                }
+            })))
+            .with_status(200)
+            .with_body(r#"{"code":1000,"resData":{"id":151}}"#)
+            .create();
+
+        let provider = setup(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "host.delegated.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "delegated.example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "{result:?}");
+        list_subzone.assert();
+        parent_must_not_fire.assert();
+        create.assert();
+    }
+
+    #[tokio::test]
+    async fn set_rrset_reports_error_when_no_zone_matches() {
+        let mut server = mockito::Server::new_async().await;
+        let list = server
+            .mock("POST", "/")
+            .match_body(match_method("nameserver.info"))
+            .with_status(200)
+            .with_body(r#"{"code":2303,"msg":"Object does not exist"}"#)
+            .expect(2)
+            .create();
+        let no_create = server
+            .mock("POST", "/")
+            .match_body(match_method("nameserver.createRecord"))
+            .expect(0)
+            .create();
+
+        let provider = setup(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "host.absent.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "absent.example.com",
+            )
+            .await;
+
+        match result {
+            Err(Error::Api(message)) => {
+                assert!(message.contains("absent.example.com"), "{message}");
+                assert!(message.contains("2303"), "{message}");
+            }
+            other => panic!("expected Error::Api, got {other:?}"),
+        }
+        list.assert();
+        no_create.assert();
+    }
+
+    #[tokio::test]
+    async fn list_rrset_walks_up_to_parent_zone() {
+        let mut server = mockito::Server::new_async().await;
+        let list_subdomain = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.info",
+                "params": {
+                    "domain": "stalwart-test.example.com",
+                    "name": "_dmarc.stalwart-test.example.com",
+                    "type": "TXT"
+                }
+            })))
+            .with_status(200)
+            .with_body(r#"{"code":2303,"msg":"Object does not exist"}"#)
+            .create();
+        let list_zone = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.info",
+                "params": {
+                    "domain": "example.com",
+                    "name": "_dmarc.stalwart-test.example.com",
+                    "type": "TXT"
+                }
+            })))
+            .with_status(200)
+            .with_body(
+                r#"{"code":1000,"resData":{"record":[
+                    {"id":161,"name":"_dmarc.stalwart-test.example.com","type":"TXT","content":"v=DMARC1; p=reject"}
+                ]}}"#,
+            )
+            .create();
+
+        let provider = setup(server.url().as_str());
+        let records = provider
+            .list_rrset(
+                "_dmarc.stalwart-test.example.com",
+                DnsRecordType::TXT,
+                "stalwart-test.example.com",
+            )
+            .await
+            .expect("list_rrset");
+
+        assert_eq!(records, vec![DnsRecord::TXT("v=DMARC1; p=reject".into())]);
+        list_subdomain.assert();
+        list_zone.assert();
+    }
+
+    #[tokio::test]
+    async fn remove_from_rrset_walks_up_to_parent_zone() {
+        let mut server = mockito::Server::new_async().await;
+        let list_subdomain = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.info",
+                "params": {
+                    "domain": "stalwart-test.example.com",
+                    "name": "_acme.stalwart-test.example.com",
+                    "type": "TXT"
+                }
+            })))
+            .with_status(200)
+            .with_body(r#"{"code":2303,"msg":"Object does not exist"}"#)
+            .create();
+        let list_zone = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.info",
+                "params": {
+                    "domain": "example.com",
+                    "name": "_acme.stalwart-test.example.com",
+                    "type": "TXT"
+                }
+            })))
+            .with_status(200)
+            .with_body(
+                r#"{"code":1000,"resData":{"record":[
+                    {"id":171,"name":"_acme.stalwart-test.example.com","type":"TXT","content":"drop-me"}
+                ]}}"#,
+            )
+            .create();
+        let delete = server
+            .mock("POST", "/")
+            .match_body(json_match(json!({
+                "method": "nameserver.deleteRecord",
+                "params": {"id": "171"}
+            })))
+            .with_status(200)
+            .with_body(r#"{"code":1000}"#)
+            .create();
+
+        let provider = setup(server.url().as_str());
+        let result = provider
+            .remove_from_rrset(
+                "_acme.stalwart-test.example.com",
+                DnsRecordType::TXT,
+                vec![DnsRecord::TXT("drop-me".to_string())],
+                "stalwart-test.example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "{result:?}");
+        list_subdomain.assert();
+        list_zone.assert();
+        delete.assert();
+    }
+
+    #[tokio::test]
     async fn set_rrset_type_mismatch_rejected() {
         let server = mockito::Server::new_async().await;
         let provider = setup(server.url().as_str());
