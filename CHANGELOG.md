@@ -1,6 +1,7 @@
 dns-update 0.5.5
 ================================
 - INWX: resolve the managed DNS zone by walking up the origin labels instead of using the origin verbatim (#79).
+- Spaceship: send the TLSA `port` as the underscore-prefixed string the API requires (`"_995"`) instead of a number, and match TLSA RRsets returned in that form (#81).
 
 dns-update 0.5.4
 ================================

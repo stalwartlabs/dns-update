@@ -451,7 +451,7 @@ impl RrsetIdentity {
                 protocol,
             } => {
                 r.name == *name
-                    && r.port.as_ref().and_then(|v| v.as_u64()) == Some(u64::from(*port))
+                    && r.port.as_ref().and_then(port_as_u64) == Some(u64::from(*port))
                     && r.protocol.as_deref() == Some(protocol.as_str())
             }
         }
@@ -530,7 +530,7 @@ impl SpaceshipDnsRecord {
                 let (port_label, protocol, normalized_name) = split_service_protocol_labels(name)?;
                 let port = parse_tlsa_port_label(&port_label)?;
                 item.name = normalized_name;
-                item.port = Some(Value::from(port));
+                item.port = Some(Value::String(format!("_{port}")));
                 item.protocol = Some(protocol);
                 item.usage = Some(u8::from(tlsa.cert_usage));
                 item.selector = Some(u8::from(tlsa.selector));
@@ -591,7 +591,10 @@ impl SpaceshipDnsRecord {
             "SRV" => DnsRecord::SRV(SRVRecord {
                 priority: self.priority.ok_or_else(|| missing("priority"))?,
                 weight: self.weight.ok_or_else(|| missing("weight"))?,
-                port: port_as_u64(&self.port)
+                port: self
+                    .port
+                    .as_ref()
+                    .and_then(port_as_u64)
                     .and_then(|p| u16::try_from(p).ok())
                     .ok_or_else(|| missing("port"))?,
                 target: self.target.ok_or_else(|| missing("target"))?,
@@ -727,12 +730,16 @@ fn split_service_protocol_labels(name: &str) -> crate::Result<(String, String, S
 }
 
 fn parse_tlsa_port_label(label: &str) -> crate::Result<u16> {
-    let digits = label.strip_prefix('_').unwrap_or(label);
-    digits.parse::<u16>().map_err(|_| {
+    let invalid = || {
         Error::Parse(format!(
-            "Invalid TLSA port label '{label}': expected '_<u16>'"
+            "Invalid TLSA port label '{label}': expected '_<1-65535>'"
         ))
-    })
+    };
+    let digits = label.strip_prefix('_').ok_or_else(invalid)?;
+    match digits.parse::<u16>() {
+        Ok(port) if port > 0 => Ok(port),
+        _ => Err(invalid()),
+    }
 }
 
 fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
@@ -783,14 +790,17 @@ fn record_value_matches(a: &SpaceshipDnsRecord, b: &SpaceshipDnsRecord) -> bool 
 }
 
 fn port_value_matches(a: &Option<Value>, b: &Option<Value>) -> bool {
-    match (port_as_u64(a), port_as_u64(b)) {
+    match (
+        a.as_ref().and_then(port_as_u64),
+        b.as_ref().and_then(port_as_u64),
+    ) {
         (Some(av), Some(bv)) => av == bv,
         _ => a == b,
     }
 }
 
-fn port_as_u64(v: &Option<Value>) -> Option<u64> {
-    match v.as_ref()? {
+fn port_as_u64(v: &Value) -> Option<u64> {
+    match v {
         Value::Number(n) => n.as_u64(),
         Value::String(s) => s.trim_start_matches('_').parse::<u64>().ok(),
         _ => None,

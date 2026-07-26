@@ -526,11 +526,11 @@ mod tests {
             json!({
                 "items": [
                     {
-                        "type":"TLSA","name":"mail","port":25,"protocol":"_tcp",
+                        "type":"TLSA","name":"mail","port":"_25","protocol":"_tcp",
                         "usage":3,"selector":1,"matching":1,"associationData":"aa","ttl":300
                     },
                     {
-                        "type":"TLSA","name":"mail","port":25,"protocol":"_tcp",
+                        "type":"TLSA","name":"mail","port":"_25","protocol":"_tcp",
                         "usage":2,"selector":1,"matching":1,"associationData":"bb","ttl":300
                     }
                 ],
@@ -542,11 +542,11 @@ mod tests {
             .mock("DELETE", "/dns/records/example.com")
             .match_body(Matcher::Json(json!([
                 {
-                    "type":"TLSA","name":"mail","port":25,"protocol":"_tcp",
+                    "type":"TLSA","name":"mail","port":"_25","protocol":"_tcp",
                     "usage":3,"selector":1,"matching":1,"associationData":"aa"
                 },
                 {
-                    "type":"TLSA","name":"mail","port":25,"protocol":"_tcp",
+                    "type":"TLSA","name":"mail","port":"_25","protocol":"_tcp",
                     "usage":2,"selector":1,"matching":1,"associationData":"bb"
                 }
             ])))
@@ -558,11 +558,11 @@ mod tests {
             .match_body(Matcher::Json(json!({
                 "items": [
                     {
-                        "type":"TLSA","name":"mail","port":25,"protocol":"_tcp",
+                        "type":"TLSA","name":"mail","port":"_25","protocol":"_tcp",
                         "usage":3,"selector":1,"matching":1,"associationData":"cc","ttl":300
                     },
                     {
-                        "type":"TLSA","name":"mail","port":25,"protocol":"_tcp",
+                        "type":"TLSA","name":"mail","port":"_25","protocol":"_tcp",
                         "usage":2,"selector":1,"matching":1,"associationData":"dd","ttl":300
                     }
                 ]
@@ -598,6 +598,116 @@ mod tests {
         list.assert();
         delete.assert();
         put.assert();
+    }
+
+    #[tokio::test]
+    async fn set_rrset_sends_underscore_prefixed_tlsa_port() {
+        let mut server = mockito::Server::new_async().await;
+        let list = mock_list(
+            &mut server,
+            "example.com",
+            json!({
+                "items": [],
+                "total": 0,
+            }),
+        );
+
+        let put = server
+            .mock("PUT", "/dns/records/example.com")
+            .match_body(Matcher::Json(json!({
+                "items": [
+                    {
+                        "type":"TLSA","name":"mail","port":"_995","protocol":"_tcp",
+                        "usage":3,"selector":1,"matching":1,"associationData":"aabb","ttl":300
+                    }
+                ]
+            })))
+            .with_status(200)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "_995._tcp.mail.example.com",
+                DnsRecordType::TLSA,
+                300,
+                vec![DnsRecord::TLSA(TLSARecord {
+                    cert_usage: TlsaCertUsage::DaneEe,
+                    selector: TlsaSelector::Spki,
+                    matching: TlsaMatching::Sha256,
+                    cert_data: vec![0xaa, 0xbb],
+                })],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        list.assert();
+        put.assert();
+    }
+
+    #[tokio::test]
+    async fn list_rrset_matches_tlsa_with_string_port() {
+        let mut server = mockito::Server::new_async().await;
+        let list = mock_list(
+            &mut server,
+            "example.com",
+            json!({
+                "items": [
+                    {
+                        "type":"TLSA","name":"mail","port":"_995","protocol":"_tcp",
+                        "usage":3,"selector":1,"matching":1,"associationData":"aabb","ttl":300
+                    },
+                    {
+                        "type":"TLSA","name":"mail","port":"_25","protocol":"_tcp",
+                        "usage":3,"selector":1,"matching":1,"associationData":"ccdd","ttl":300
+                    }
+                ],
+                "total": 2,
+            }),
+        );
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .list_rrset(
+                "_995._tcp.mail.example.com",
+                DnsRecordType::TLSA,
+                "example.com",
+            )
+            .await
+            .expect("list_rrset failed");
+
+        list.assert();
+        assert_eq!(
+            result,
+            vec![DnsRecord::TLSA(TLSARecord {
+                cert_usage: TlsaCertUsage::DaneEe,
+                selector: TlsaSelector::Spki,
+                matching: TlsaMatching::Sha256,
+                cert_data: vec![0xaa, 0xbb],
+            })]
+        );
+    }
+
+    #[tokio::test]
+    async fn set_rrset_rejects_invalid_tlsa_port_label() {
+        let server = mockito::Server::new_async().await;
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "_0._tcp.mail.example.com",
+                DnsRecordType::TLSA,
+                300,
+                vec![DnsRecord::TLSA(TLSARecord {
+                    cert_usage: TlsaCertUsage::DaneEe,
+                    selector: TlsaSelector::Spki,
+                    matching: TlsaMatching::Sha256,
+                    cert_data: vec![0xaa],
+                })],
+                "example.com",
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Parse(_))), "got {result:?}");
     }
 
     #[tokio::test]
