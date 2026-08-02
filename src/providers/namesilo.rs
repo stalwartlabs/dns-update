@@ -63,7 +63,10 @@ impl NameSiloProvider {
             return Err(Error::Api("NameSilo API key must not be empty".to_string()));
         }
         Ok(Self {
-            client: HttpClientBuilder::default().with_timeout(timeout).build(),
+            client: HttpClientBuilder::default()
+                .without_header("Content-Type")
+                .with_timeout(timeout)
+                .build(),
             endpoint: DEFAULT_API_ENDPOINT.to_string(),
             api_key: key.to_string(),
         })

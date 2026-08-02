@@ -69,6 +69,11 @@ impl HttpClientBuilder {
         self
     }
 
+    pub fn without_header(mut self, name: &'static str) -> Self {
+        self.headers.remove(name);
+        self
+    }
+
     pub fn with_timeout(mut self, timeout: Option<Duration>) -> Self {
         if let Some(timeout) = timeout {
             self.timeout = timeout;

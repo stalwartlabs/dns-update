@@ -37,7 +37,7 @@ aws-lc-rs = [
 test_provider = []
 
 [dependencies]
-base64 = { version = "0.22.1", default-features = false, features = ["std"] }
+base64 = { version = "0.23", default-features = false, features = ["std"] }
 tokio = { version = "1.52", features = ["rt", "net"] }
 hex = { version = "0.4.3", default-features = false, features = ["std"] }
 hickory-net = { version = "0.26.1", default-features = false }

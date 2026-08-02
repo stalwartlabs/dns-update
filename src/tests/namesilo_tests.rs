@@ -558,6 +558,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_json_content_type_does_not_suppress_xml_response() {
+        let mut server = mockito::Server::new_async().await;
+        let json = server
+            .mock("GET", "/dnsListRecords")
+            .match_query(Matcher::Any)
+            .match_header("content-type", "application/json")
+            .with_status(200)
+            .with_body(
+                r#"{"request":{"operation":"dnsListRecords"},"reply":{"code":300,"detail":"success","resource_record":[]}}"#,
+            )
+            .create();
+
+        let xml = server
+            .mock("GET", "/dnsListRecords")
+            .match_query(Matcher::Any)
+            .match_header("content-type", Matcher::Missing)
+            .with_status(200)
+            .with_body(list_reply(&resource_record(
+                "rec-a",
+                "A",
+                "host.example.com",
+                "1.1.1.1",
+                "300",
+                "0",
+            )))
+            .create();
+
+        let provider = setup_provider(server.url());
+        let listed = provider
+            .list_rrset("host.example.com", DnsRecordType::A, "example.com")
+            .await
+            .expect("list_rrset failed");
+
+        assert_eq!(listed, vec![DnsRecord::A("1.1.1.1".parse().unwrap())]);
+        xml.assert();
+        assert!(
+            !json.matched(),
+            "provider sent Content-Type: application/json, which makes NameSilo ignore type=xml"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires NAMESILO_API_KEY and NAMESILO_ORIGIN"]
+    async fn integration_test() {
+        let key = std::env::var("NAMESILO_API_KEY").unwrap_or_default();
+        let origin = std::env::var("NAMESILO_ORIGIN").unwrap_or_default();
+        assert!(!key.is_empty(), "Set NAMESILO_API_KEY");
+        assert!(!origin.is_empty(), "Set NAMESILO_ORIGIN (e.g. example.com)");
+
+        let provider = NameSiloProvider::new(&key, Some(Duration::from_secs(30))).unwrap();
+        let listed = provider
+            .list_rrset(origin.as_str(), DnsRecordType::A, origin.as_str())
+            .await
+            .expect("list_rrset against the live API failed");
+        println!("{origin} A records: {listed:?}");
+    }
+
+    #[tokio::test]
     async fn test_list_rrset_parses_records() {
         let mut server = mockito::Server::new_async().await;
         let records = format!(
