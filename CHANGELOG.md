@@ -1,3 +1,7 @@
+dns-update 0.5.6
+================================
+- NameSilo: clamp the TTL to the range the API accepts and strip the trailing dot from records.
+
 dns-update 0.5.5
 ================================
 - INWX: resolve the managed DNS zone by walking up the origin labels instead of using the origin verbatim (#79).

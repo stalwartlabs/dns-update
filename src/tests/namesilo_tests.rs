@@ -65,7 +65,7 @@ mod tests {
                 Matcher::UrlEncoded("rrtype".into(), "A".into()),
                 Matcher::UrlEncoded("rrhost".into(), "host".into()),
                 Matcher::UrlEncoded("rrvalue".into(), "1.1.1.1".into()),
-                Matcher::UrlEncoded("rrttl".into(), "300".into()),
+                Matcher::UrlEncoded("rrttl".into(), "3600".into()),
             ]))
             .with_status(200)
             .with_body(ok_reply("300", "success"))
@@ -77,7 +77,7 @@ mod tests {
                 Matcher::UrlEncoded("rrtype".into(), "A".into()),
                 Matcher::UrlEncoded("rrhost".into(), "host".into()),
                 Matcher::UrlEncoded("rrvalue".into(), "8.8.8.8".into()),
-                Matcher::UrlEncoded("rrttl".into(), "300".into()),
+                Matcher::UrlEncoded("rrttl".into(), "3600".into()),
             ]))
             .with_status(200)
             .with_body(ok_reply("300", "success"))
@@ -597,6 +597,255 @@ mod tests {
             !json.matched(),
             "provider sent Content-Type: application/json, which makes NameSilo ignore type=xml"
         );
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_raises_ttl_to_provider_minimum() {
+        let mut server = mockito::Server::new_async().await;
+        let list = server
+            .mock("GET", "/dnsListRecords")
+            .match_query(Matcher::UrlEncoded("domain".into(), "example.com".into()))
+            .with_status(200)
+            .with_body(list_reply(""))
+            .create();
+
+        let add = server
+            .mock("GET", "/dnsAddRecord")
+            .match_query(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("rrtype".into(), "TXT".into()),
+                Matcher::UrlEncoded("rrhost".into(), "_dmarc".into()),
+                Matcher::UrlEncoded("rrttl".into(), "3600".into()),
+            ]))
+            .with_status(200)
+            .with_body(ok_reply("300", "success"))
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .set_rrset(
+                "_dmarc.example.com",
+                DnsRecordType::TXT,
+                60,
+                vec![DnsRecord::TXT("v=DMARC1; p=reject".to_string())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        list.assert();
+        add.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_lowers_ttl_to_provider_maximum() {
+        let mut server = mockito::Server::new_async().await;
+        let list = server
+            .mock("GET", "/dnsListRecords")
+            .match_query(Matcher::UrlEncoded("domain".into(), "example.com".into()))
+            .with_status(200)
+            .with_body(list_reply(""))
+            .create();
+
+        let add = server
+            .mock("GET", "/dnsAddRecord")
+            .match_query(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("rrtype".into(), "A".into()),
+                Matcher::UrlEncoded("rrttl".into(), "2592000".into()),
+            ]))
+            .with_status(200)
+            .with_body(ok_reply("300", "success"))
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .set_rrset(
+                "host.example.com",
+                DnsRecordType::A,
+                31_536_000,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        list.assert();
+        add.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_cname_strips_trailing_dot_from_target() {
+        let mut server = mockito::Server::new_async().await;
+        let list = server
+            .mock("GET", "/dnsListRecords")
+            .match_query(Matcher::UrlEncoded("domain".into(), "example.com".into()))
+            .with_status(200)
+            .with_body(list_reply(""))
+            .create();
+
+        let add = server
+            .mock("GET", "/dnsAddRecord")
+            .match_query(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("rrtype".into(), "CNAME".into()),
+                Matcher::UrlEncoded("rrhost".into(), "mta-sts".into()),
+                Matcher::UrlEncoded("rrvalue".into(), "mail.example.com".into()),
+            ]))
+            .with_status(200)
+            .with_body(ok_reply("300", "success"))
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .set_rrset(
+                "mta-sts.example.com",
+                DnsRecordType::CNAME,
+                3600,
+                vec![DnsRecord::CNAME("mail.example.com.".to_string())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        list.assert();
+        add.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_mx_strips_trailing_dot_from_exchange() {
+        let mut server = mockito::Server::new_async().await;
+        let list = server
+            .mock("GET", "/dnsListRecords")
+            .match_query(Matcher::UrlEncoded("domain".into(), "example.com".into()))
+            .with_status(200)
+            .with_body(list_reply(""))
+            .create();
+
+        let add = server
+            .mock("GET", "/dnsAddRecord")
+            .match_query(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("rrtype".into(), "MX".into()),
+                Matcher::UrlEncoded("rrvalue".into(), "mail.example.com".into()),
+                Matcher::UrlEncoded("rrdistance".into(), "10".into()),
+            ]))
+            .with_status(200)
+            .with_body(ok_reply("300", "success"))
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .set_rrset(
+                "example.com",
+                DnsRecordType::MX,
+                3600,
+                vec![DnsRecord::MX(MXRecord {
+                    exchange: "mail.example.com.".to_string(),
+                    priority: 10,
+                })],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        list.assert();
+        add.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_srv_strips_trailing_dot_from_target() {
+        let mut server = mockito::Server::new_async().await;
+        let list = server
+            .mock("GET", "/dnsListRecords")
+            .match_query(Matcher::UrlEncoded("domain".into(), "example.com".into()))
+            .with_status(200)
+            .with_body(list_reply(""))
+            .create();
+
+        let add = server
+            .mock("GET", "/dnsAddRecord")
+            .match_query(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("rrtype".into(), "SRV".into()),
+                Matcher::UrlEncoded("rrhost".into(), "_imaps._tcp".into()),
+                Matcher::UrlEncoded("rrvalue".into(), "1:993:mail.example.com".into()),
+                Matcher::UrlEncoded("rrdistance".into(), "10".into()),
+            ]))
+            .with_status(200)
+            .with_body(ok_reply("300", "success"))
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .set_rrset(
+                "_imaps._tcp.example.com",
+                DnsRecordType::SRV,
+                3600,
+                vec![DnsRecord::SRV(SRVRecord {
+                    priority: 10,
+                    weight: 1,
+                    port: 993,
+                    target: "mail.example.com.".to_string(),
+                })],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        list.assert();
+        add.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_matches_hosts_returned_as_bare_subdomains() {
+        let mut server = mockito::Server::new_async().await;
+        let records = format!(
+            "{}{}",
+            resource_record("rec-www", "A", "www", "1.1.1.1", "3603", "0"),
+            resource_record("rec-apex", "A", "@", "1.1.1.1", "3603", "0"),
+        );
+        let list = server
+            .mock("GET", "/dnsListRecords")
+            .match_query(Matcher::UrlEncoded("domain".into(), "example.com".into()))
+            .with_status(200)
+            .with_body(list_reply(&records))
+            .expect(1)
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .set_rrset(
+                "www.example.com",
+                DnsRecordType::A,
+                3600,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        list.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_rrset_matches_apex_host_marker() {
+        let mut server = mockito::Server::new_async().await;
+        let records = format!(
+            "{}{}",
+            resource_record("rec-apex", "A", "@", "1.1.1.1", "3603", "0"),
+            resource_record("rec-www", "A", "www", "2.2.2.2", "3603", "0"),
+        );
+        let list = server
+            .mock("GET", "/dnsListRecords")
+            .match_query(Matcher::UrlEncoded("domain".into(), "example.com".into()))
+            .with_status(200)
+            .with_body(list_reply(&records))
+            .create();
+
+        let provider = setup_provider(server.url());
+        let listed = provider
+            .list_rrset("example.com", DnsRecordType::A, "example.com")
+            .await
+            .expect("list_rrset failed");
+
+        assert_eq!(listed, vec![DnsRecord::A("1.1.1.1".parse().unwrap())]);
+        list.assert();
     }
 
     #[tokio::test]

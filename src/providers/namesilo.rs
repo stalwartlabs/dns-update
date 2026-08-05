@@ -13,7 +13,7 @@ use crate::utils::build_caa;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
-    utils::strip_origin_from_name,
+    utils::{strip_origin_from_name, strip_trailing_dot},
 };
 use quick_xml::de::from_str;
 use serde::Deserialize;
@@ -55,6 +55,8 @@ struct ResourceRecord {
 }
 
 const DEFAULT_API_ENDPOINT: &str = "https://www.namesilo.com/api";
+const TTL_MIN: u32 = 3600;
+const TTL_MAX: u32 = 2_592_000;
 
 impl NameSiloProvider {
     pub(crate) fn new(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
@@ -215,12 +217,15 @@ impl NameSiloProvider {
         let mut params = base_params(&self.api_key);
         params.push(("domain", domain.to_string()));
         let reply = self.call("dnsListRecords", &params).await?;
-        let host_target = fqdn.trim_end_matches('.').to_ascii_lowercase();
+        let host_fqdn = strip_trailing_dot(fqdn).to_ascii_lowercase();
+        let host_subdomain =
+            strip_origin_from_name(&host_fqdn, &domain.to_ascii_lowercase(), Some(""));
         Ok(reply
             .resource_record
             .into_iter()
             .filter(|r| {
-                r.record_type == record_type.as_str() && r.host.to_ascii_lowercase() == host_target
+                r.record_type == record_type.as_str()
+                    && host_matches(&r.host, &host_fqdn, &host_subdomain)
             })
             .collect())
     }
@@ -239,7 +244,7 @@ impl NameSiloProvider {
         params.push(("rrtype", record_type.as_str().to_string()));
         params.push(("rrhost", subdomain.to_string()));
         params.push(("rrvalue", value.to_string()));
-        params.push(("rrttl", ttl.to_string()));
+        params.push(("rrttl", clamp_ttl(ttl).to_string()));
         params.push(("rrdistance", distance.to_string()));
         self.call("dnsAddRecord", &params).await.map(|_| ())
     }
@@ -277,6 +282,15 @@ impl NameSiloProvider {
 struct RenderedRecord {
     value: String,
     distance: u16,
+}
+
+fn clamp_ttl(ttl: u32) -> u32 {
+    ttl.clamp(TTL_MIN, TTL_MAX)
+}
+
+fn host_matches(host: &str, fqdn: &str, subdomain: &str) -> bool {
+    let host = strip_trailing_dot(host).to_ascii_lowercase();
+    host == fqdn || host == subdomain || (subdomain.is_empty() && host == "@")
 }
 
 fn base_params(api_key: &str) -> Vec<(&'static str, String)> {
@@ -337,7 +351,7 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
     Ok(match record {
         DnsRecord::A(addr) => addr.to_string(),
         DnsRecord::AAAA(addr) => addr.to_string(),
-        DnsRecord::CNAME(content) => content,
+        DnsRecord::CNAME(content) => strip_trailing_dot(&content).to_string(),
         DnsRecord::NS(_) => {
             return Err(Error::Unsupported(
                 "NS records are not supported by NameSilo's dnsAddRecord; \
@@ -345,9 +359,14 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
                     .to_string(),
             ));
         }
-        DnsRecord::MX(mx) => mx.exchange,
+        DnsRecord::MX(mx) => strip_trailing_dot(&mx.exchange).to_string(),
         DnsRecord::TXT(content) => content,
-        DnsRecord::SRV(srv) => format!("{}:{}:{}", srv.weight, srv.port, srv.target),
+        DnsRecord::SRV(srv) => format!(
+            "{}:{}:{}",
+            srv.weight,
+            srv.port,
+            strip_trailing_dot(&srv.target)
+        ),
         DnsRecord::CAA(caa) => {
             let (flags, tag, value) = caa.decompose();
             format!("{}:{}:{}", flags, tag, value)
