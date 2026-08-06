@@ -13,7 +13,7 @@
 mod tests {
     use crate::{
         CAARecord, DnsRecord, DnsRecordType, Error, MXRecord, SRVRecord,
-        providers::simply::{ExistingDnsRecord, SimplyProvider, SimplyRecordContent},
+        providers::simplycom::{ExistingDnsRecord, SimplyComProvider, SimplyComRecordContent},
     };
     use mockito::{Matcher, Mock, ServerGuard};
     use serde_json::json;
@@ -21,7 +21,7 @@ mod tests {
 
     #[test]
     fn test_content_from_mx_splits_priority() {
-        let content = SimplyRecordContent::try_from(DnsRecord::MX(MXRecord {
+        let content = SimplyComRecordContent::try_from(DnsRecord::MX(MXRecord {
             exchange: "mail.example.com.".to_string(),
             priority: 10,
         }))
@@ -33,7 +33,7 @@ mod tests {
 
     #[test]
     fn test_content_from_srv_packs_weight_port_target() {
-        let content = SimplyRecordContent::try_from(DnsRecord::SRV(SRVRecord {
+        let content = SimplyComRecordContent::try_from(DnsRecord::SRV(SRVRecord {
             priority: 10,
             weight: 5,
             port: 993,
@@ -47,7 +47,7 @@ mod tests {
 
     #[test]
     fn test_content_from_caa_uses_bind_string() {
-        let content = SimplyRecordContent::try_from(DnsRecord::CAA(CAARecord::Issue {
+        let content = SimplyComRecordContent::try_from(DnsRecord::CAA(CAARecord::Issue {
             issuer_critical: false,
             name: Some("letsencrypt.org".to_string()),
             options: vec![],
@@ -61,7 +61,7 @@ mod tests {
     #[test]
     fn test_content_from_tlsa_uses_display_string() {
         let record = crate::utils::parse_tlsa("3 1 1 0123af").unwrap();
-        let content = SimplyRecordContent::try_from(record).unwrap();
+        let content = SimplyComRecordContent::try_from(record).unwrap();
         assert_eq!(content.record_type, "TLSA");
         assert_eq!(content.data, "3 1 1 0123af");
     }
@@ -112,8 +112,8 @@ mod tests {
 
     const AUTH: &str = "Basic UzEyMzQ1Njp0ZXN0a2V5";
 
-    fn setup_provider(endpoint: String) -> SimplyProvider {
-        SimplyProvider::new("S123456", "testkey", Some(Duration::from_secs(1)))
+    fn setup_provider(endpoint: String) -> SimplyComProvider {
+        SimplyComProvider::new("S123456", "testkey", Some(Duration::from_secs(1)))
             .with_endpoint(endpoint)
     }
 
@@ -678,7 +678,7 @@ mod tests {
         let account = std::env::var("SIMPLY_ACCOUNT").unwrap();
         let api_key = std::env::var("SIMPLY_API_KEY").unwrap();
         let domain = std::env::var("SIMPLY_DOMAIN").unwrap();
-        let provider = SimplyProvider::new(account, api_key, Some(Duration::from_secs(30)));
+        let provider = SimplyComProvider::new(account, api_key, Some(Duration::from_secs(30)));
         let name = format!("_dnsupdate-test.{domain}");
 
         provider

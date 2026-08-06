@@ -21,7 +21,7 @@ use std::time::Duration;
 const DEFAULT_API_ENDPOINT: &str = "https://api.simply.com/2";
 
 #[derive(Clone)]
-pub struct SimplyProvider {
+pub struct SimplyComProvider {
     client: HttpClient,
     endpoint: String,
 }
@@ -79,13 +79,13 @@ pub struct CreateDnsRecord<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SimplyRecordContent {
+pub struct SimplyComRecordContent {
     pub record_type: &'static str,
     pub data: String,
     pub priority: Option<u16>,
 }
 
-impl SimplyProvider {
+impl SimplyComProvider {
     pub(crate) fn new(
         account_name: impl AsRef<str>,
         api_key: impl AsRef<str>,
@@ -127,7 +127,7 @@ impl SimplyProvider {
         let existing = self.list_at(&object, &host, record_type).await?;
 
         let mut existing_pool = existing;
-        let mut to_add: Vec<SimplyRecordContent> = Vec::new();
+        let mut to_add: Vec<SimplyComRecordContent> = Vec::new();
 
         for content in desired {
             if let Some(idx) = existing_pool
@@ -264,7 +264,7 @@ impl SimplyProvider {
         object: &str,
         host: &str,
         ttl: u32,
-        content: &SimplyRecordContent,
+        content: &SimplyComRecordContent,
     ) -> crate::Result<()> {
         self.client
             .post(format!(
@@ -306,7 +306,7 @@ fn product_matches(product: &Product, candidate: &str) -> bool {
 fn build_contents(
     expected_type: DnsRecordType,
     records: Vec<DnsRecord>,
-) -> crate::Result<Vec<SimplyRecordContent>> {
+) -> crate::Result<Vec<SimplyComRecordContent>> {
     let mut out = Vec::with_capacity(records.len());
     for record in records {
         if record.as_type() != expected_type {
@@ -316,18 +316,18 @@ fn build_contents(
                 record.as_type().as_str(),
             )));
         }
-        out.push(SimplyRecordContent::try_from(record)?);
+        out.push(SimplyComRecordContent::try_from(record)?);
     }
     Ok(out)
 }
 
-fn record_matches(existing: &ExistingDnsRecord, desired: &SimplyRecordContent) -> bool {
+fn record_matches(existing: &ExistingDnsRecord, desired: &SimplyComRecordContent) -> bool {
     existing.record_type == desired.record_type
         && existing.data == desired.data
         && (desired.priority.is_none() || existing.priority == desired.priority)
 }
 
-fn parse_simply_srv(data: &str, priority: u16) -> crate::Result<DnsRecord> {
+fn parse_simplycom_srv(data: &str, priority: u16) -> crate::Result<DnsRecord> {
     let mut parts = data.split_whitespace();
     let weight = parts.next().and_then(|v| v.parse().ok());
     let port = parts.next().and_then(|v| v.parse().ok());
@@ -345,7 +345,7 @@ fn parse_simply_srv(data: &str, priority: u16) -> crate::Result<DnsRecord> {
     }
 }
 
-fn parse_simply_caa(data: &str) -> crate::Result<DnsRecord> {
+fn parse_simplycom_caa(data: &str) -> crate::Result<DnsRecord> {
     let mut parts = data.splitn(3, ' ');
     let flags = parts
         .next()
@@ -361,42 +361,42 @@ fn parse_simply_caa(data: &str) -> crate::Result<DnsRecord> {
     build_caa(flags, tag, value).map(DnsRecord::CAA)
 }
 
-impl TryFrom<DnsRecord> for SimplyRecordContent {
+impl TryFrom<DnsRecord> for SimplyComRecordContent {
     type Error = Error;
 
     fn try_from(record: DnsRecord) -> Result<Self, Self::Error> {
         Ok(match record {
-            DnsRecord::A(addr) => SimplyRecordContent {
+            DnsRecord::A(addr) => SimplyComRecordContent {
                 record_type: "A",
                 data: addr.to_string(),
                 priority: None,
             },
-            DnsRecord::AAAA(addr) => SimplyRecordContent {
+            DnsRecord::AAAA(addr) => SimplyComRecordContent {
                 record_type: "AAAA",
                 data: addr.to_string(),
                 priority: None,
             },
-            DnsRecord::CNAME(target) => SimplyRecordContent {
+            DnsRecord::CNAME(target) => SimplyComRecordContent {
                 record_type: "CNAME",
                 data: strip_trailing_dot(&target).to_string(),
                 priority: None,
             },
-            DnsRecord::NS(target) => SimplyRecordContent {
+            DnsRecord::NS(target) => SimplyComRecordContent {
                 record_type: "NS",
                 data: strip_trailing_dot(&target).to_string(),
                 priority: None,
             },
-            DnsRecord::MX(mx) => SimplyRecordContent {
+            DnsRecord::MX(mx) => SimplyComRecordContent {
                 record_type: "MX",
                 data: strip_trailing_dot(&mx.exchange).to_string(),
                 priority: Some(mx.priority),
             },
-            DnsRecord::TXT(text) => SimplyRecordContent {
+            DnsRecord::TXT(text) => SimplyComRecordContent {
                 record_type: "TXT",
                 data: text,
                 priority: None,
             },
-            DnsRecord::SRV(srv) => SimplyRecordContent {
+            DnsRecord::SRV(srv) => SimplyComRecordContent {
                 record_type: "SRV",
                 data: format!(
                     "{} {} {}",
@@ -406,12 +406,12 @@ impl TryFrom<DnsRecord> for SimplyRecordContent {
                 ),
                 priority: Some(srv.priority),
             },
-            DnsRecord::TLSA(tlsa) => SimplyRecordContent {
+            DnsRecord::TLSA(tlsa) => SimplyComRecordContent {
                 record_type: "TLSA",
                 data: tlsa.to_string(),
                 priority: None,
             },
-            DnsRecord::CAA(caa) => SimplyRecordContent {
+            DnsRecord::CAA(caa) => SimplyComRecordContent {
                 record_type: "CAA",
                 data: caa.to_string(),
                 priority: None,
@@ -442,9 +442,9 @@ impl TryFrom<ExistingDnsRecord> for DnsRecord {
                 priority: record.priority.unwrap_or_default(),
             })),
             "TXT" => Ok(DnsRecord::TXT(record.data)),
-            "SRV" => parse_simply_srv(&record.data, record.priority.unwrap_or_default()),
+            "SRV" => parse_simplycom_srv(&record.data, record.priority.unwrap_or_default()),
             "TLSA" => parse_tlsa(&record.data),
-            "CAA" => parse_simply_caa(&record.data),
+            "CAA" => parse_simplycom_caa(&record.data),
             other => Err(Error::Parse(format!(
                 "Unsupported Simply.com record type: {other}"
             ))),

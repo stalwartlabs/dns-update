@@ -76,7 +76,7 @@ pub mod rfc2136;
 pub mod route53;
 pub mod safedns;
 pub mod scaleway;
-pub mod simply;
+pub mod simplycom;
 pub mod spaceship;
 pub mod tencentcloud;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
