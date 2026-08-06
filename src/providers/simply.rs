@@ -110,6 +110,197 @@ impl SimplyProvider {
             ..self
         }
     }
+
+    pub(crate) async fn set_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        let name = name.into_name().into_owned();
+        let origin = origin.into_name().into_owned();
+        let desired = build_contents(record_type, records)?;
+        let (object, zone) = self.find_object(&origin).await?;
+        let host = strip_origin_from_name(&name, &zone, Some("@"));
+        let existing = self.list_at(&object, &host, record_type).await?;
+
+        let mut existing_pool = existing;
+        let mut to_add: Vec<SimplyRecordContent> = Vec::new();
+
+        for content in desired {
+            if let Some(idx) = existing_pool
+                .iter()
+                .position(|r| record_matches(r, &content))
+            {
+                existing_pool.swap_remove(idx);
+            } else {
+                to_add.push(content);
+            }
+        }
+
+        for entry in existing_pool {
+            self.delete_record(&object, entry.record_id).await?;
+        }
+        for content in to_add {
+            self.create_record(&object, &host, ttl, &content).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn add_to_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        ttl: u32,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let name = name.into_name().into_owned();
+        let origin = origin.into_name().into_owned();
+        let desired = build_contents(record_type, records)?;
+        let (object, zone) = self.find_object(&origin).await?;
+        let host = strip_origin_from_name(&name, &zone, Some("@"));
+        let existing = self.list_at(&object, &host, record_type).await?;
+
+        for content in desired {
+            if existing.iter().any(|r| record_matches(r, &content)) {
+                continue;
+            }
+            self.create_record(&object, &host, ttl, &content).await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn remove_from_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        records: Vec<DnsRecord>,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let name = name.into_name().into_owned();
+        let origin = origin.into_name().into_owned();
+        let to_remove = build_contents(record_type, records)?;
+        let (object, zone) = self.find_object(&origin).await?;
+        let host = strip_origin_from_name(&name, &zone, Some("@"));
+        let existing = self.list_at(&object, &host, record_type).await?;
+
+        for content in to_remove {
+            if let Some(entry) = existing.iter().find(|r| record_matches(r, &content)) {
+                self.delete_record(&object, entry.record_id).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn list_rrset(
+        &self,
+        name: impl IntoFqdn<'_>,
+        record_type: DnsRecordType,
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<Vec<DnsRecord>> {
+        let name = name.into_name().into_owned();
+        let origin = origin.into_name().into_owned();
+        let (object, zone) = self.find_object(&origin).await?;
+        let host = strip_origin_from_name(&name, &zone, Some("@"));
+        let existing = self.list_at(&object, &host, record_type).await?;
+        existing.into_iter().map(DnsRecord::try_from).collect()
+    }
+
+    async fn find_object(&self, origin: &str) -> crate::Result<(String, String)> {
+        let response: ProductList = self
+            .client
+            .get(format!("{endpoint}/my/products/", endpoint = self.endpoint))
+            .send_with_retry(3)
+            .await?;
+        let mut candidate = origin;
+        loop {
+            if let Some(product) = response
+                .products
+                .iter()
+                .find(|p| product_matches(p, candidate))
+            {
+                return Ok((product.object.clone(), candidate.to_string()));
+            }
+            match candidate.split_once('.') {
+                Some((_, rest)) if rest.contains('.') => candidate = rest,
+                _ => return Err(Error::NotFound),
+            }
+        }
+    }
+
+    async fn list_at(
+        &self,
+        object: &str,
+        host: &str,
+        record_type: DnsRecordType,
+    ) -> crate::Result<Vec<ExistingDnsRecord>> {
+        let response: RecordList = self
+            .client
+            .get(format!(
+                "{endpoint}/my/products/{object}/dns/records/",
+                endpoint = self.endpoint
+            ))
+            .send_with_retry(3)
+            .await?;
+        let type_str = record_type.as_str();
+        Ok(response
+            .records
+            .into_iter()
+            .filter(|r| r.name == host && r.record_type == type_str)
+            .collect())
+    }
+
+    async fn create_record(
+        &self,
+        object: &str,
+        host: &str,
+        ttl: u32,
+        content: &SimplyRecordContent,
+    ) -> crate::Result<()> {
+        self.client
+            .post(format!(
+                "{endpoint}/my/products/{object}/dns/records/",
+                endpoint = self.endpoint
+            ))
+            .with_body(CreateDnsRecord {
+                record_type: content.record_type,
+                name: host,
+                data: &content.data,
+                ttl,
+                priority: content.priority,
+            })?
+            .send_with_retry::<serde_json::Value>(3)
+            .await
+            .map(|_| ())
+    }
+
+    async fn delete_record(&self, object: &str, record_id: i64) -> crate::Result<()> {
+        self.client
+            .delete(format!(
+                "{endpoint}/my/products/{object}/dns/records/{record_id}/",
+                endpoint = self.endpoint
+            ))
+            .send_with_retry::<serde_json::Value>(3)
+            .await
+            .map(|_| ())
+    }
+}
+
+fn product_matches(product: &Product, candidate: &str) -> bool {
+    product.object == candidate
+        || product.name.as_deref() == Some(candidate)
+        || product.domain.as_ref().is_some_and(|d| {
+            d.name.as_deref() == Some(candidate) || d.name_idn.as_deref() == Some(candidate)
+        })
 }
 
 fn build_contents(
