@@ -671,4 +671,40 @@ mod tests {
         }
         list.assert();
     }
+
+    #[tokio::test]
+    #[ignore = "requires Simply.com credentials in SIMPLY_ACCOUNT, SIMPLY_API_KEY, SIMPLY_DOMAIN"]
+    async fn test_live_simply_txt_roundtrip() {
+        let account = std::env::var("SIMPLY_ACCOUNT").unwrap();
+        let api_key = std::env::var("SIMPLY_API_KEY").unwrap();
+        let domain = std::env::var("SIMPLY_DOMAIN").unwrap();
+        let provider = SimplyProvider::new(account, api_key, Some(Duration::from_secs(30)));
+        let name = format!("_dnsupdate-test.{domain}");
+
+        provider
+            .set_rrset(
+                &name,
+                DnsRecordType::TXT,
+                300,
+                vec![DnsRecord::TXT("dns-update-live-test".to_string())],
+                &domain,
+            )
+            .await
+            .unwrap();
+
+        let listed = provider
+            .list_rrset(&name, DnsRecordType::TXT, &domain)
+            .await
+            .unwrap();
+        assert!(
+            listed
+                .iter()
+                .any(|r| matches!(r, DnsRecord::TXT(v) if v == "dns-update-live-test"))
+        );
+
+        provider
+            .set_rrset(&name, DnsRecordType::TXT, 300, vec![], &domain)
+            .await
+            .unwrap();
+    }
 }
