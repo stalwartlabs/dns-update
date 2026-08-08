@@ -76,6 +76,7 @@ pub mod rfc2136_tests;
 pub mod route53_tests;
 pub mod safedns_tests;
 pub mod scaleway_tests;
+pub mod simplycom_tests;
 pub mod spaceship_tests;
 pub mod tencentcloud_tests;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]

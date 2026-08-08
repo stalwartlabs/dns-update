@@ -86,6 +86,7 @@ use crate::{
         route53::Route53Provider,
         safedns::SafeDnsProvider,
         scaleway::ScalewayProvider,
+        simplycom::SimplyComProvider,
         spaceship::SpaceshipProvider,
         tencentcloud::TencentCloudProvider,
         ultradns::UltraDnsProvider,
@@ -414,6 +415,19 @@ impl DnsUpdater {
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::Domeneshop(DomeneshopProvider::new(
             api_token, api_secret, timeout,
+        )))
+    }
+
+    /// Create a new DNS updater using the Simply.com API.
+    pub fn new_simplycom(
+        account_name: impl AsRef<str>,
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::SimplyCom(SimplyComProvider::new(
+            account_name,
+            api_key,
+            timeout,
         )))
     }
 
@@ -983,6 +997,11 @@ impl DnsUpdater {
                     .set_rrset(name, record_type, ttl, records, origin)
                     .await
             }
+            DnsUpdater::SimplyCom(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
             DnsUpdater::Safedns(provider) => {
                 provider
                     .set_rrset(name, record_type, ttl, records, origin)
@@ -1354,6 +1373,11 @@ impl DnsUpdater {
                     .await
             }
             DnsUpdater::Domeneshop(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::SimplyCom(provider) => {
                 provider
                     .add_to_rrset(name, record_type, ttl, records, origin)
                     .await
@@ -1732,6 +1756,11 @@ impl DnsUpdater {
                     .remove_from_rrset(name, record_type, records, origin)
                     .await
             }
+            DnsUpdater::SimplyCom(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
             DnsUpdater::Safedns(provider) => {
                 provider
                     .remove_from_rrset(name, record_type, records, origin)
@@ -1983,6 +2012,7 @@ impl DnsUpdater {
             DnsUpdater::Domeneshop(provider) => {
                 provider.list_rrset(name, record_type, origin).await
             }
+            DnsUpdater::SimplyCom(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Safedns(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::ArvanCloud(provider) => {
                 provider.list_rrset(name, record_type, origin).await

@@ -50,7 +50,7 @@ use providers::{
     edgedns::EdgeDnsProvider, hostinger::HostingerProvider, huaweicloud::HuaweiCloudProvider,
     hurricane::HurricaneProvider, ibmcloud::IbmCloudProvider, infoblox::InfobloxProvider,
     inwx::InwxProvider, lightsail::LightsailProvider, plesk::PleskProvider,
-    safedns::SafeDnsProvider, ultradns::UltraDnsProvider,
+    safedns::SafeDnsProvider, simplycom::SimplyComProvider, ultradns::UltraDnsProvider,
 };
 use std::{
     borrow::Cow,
@@ -291,6 +291,7 @@ pub enum DnsUpdater {
     YandexCloud(YandexCloudProvider),
     Domeneshop(DomeneshopProvider),
     Safedns(SafeDnsProvider),
+    SimplyCom(SimplyComProvider),
     ArvanCloud(ArvanCloudProvider),
     Inwx(InwxProvider),
     UltraDns(UltraDnsProvider),
