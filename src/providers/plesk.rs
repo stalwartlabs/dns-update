@@ -26,8 +26,6 @@ pub struct PleskProvider {
 
 #[derive(Serialize, Debug)]
 struct CreateRecordRequest<'a> {
-    #[serde(rename = "site_id")]
-    site_id: i64,
     #[serde(rename = "type")]
     record_type: &'a str,
     host: &'a str,
@@ -38,18 +36,10 @@ struct CreateRecordRequest<'a> {
     ttl: Option<u32>,
 }
 
-#[derive(Deserialize, Debug)]
-#[allow(dead_code)]
-struct CreateRecordResponse {
-    id: i64,
-}
-
 #[derive(Deserialize, Debug, Clone)]
 #[allow(dead_code)]
 struct PleskRecord {
     id: i64,
-    #[serde(rename = "site_id")]
-    site_id: Option<i64>,
     #[serde(rename = "type")]
     record_type: String,
     host: String,
@@ -57,12 +47,6 @@ struct PleskRecord {
     value: String,
     #[serde(default)]
     opt: String,
-}
-
-#[derive(Deserialize, Debug)]
-struct PleskDomain {
-    id: i64,
-    name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,13 +96,10 @@ impl PleskProvider {
         }
         let name_owned = name.into_name().to_string();
         let domain_owned = origin.into_name().to_string();
-        let site_id = self.find_site_id(&domain_owned).await?;
-        let host = strip_origin_from_name(&name_owned, &domain_owned, Some(""));
+        let host = record_host(&name_owned, &domain_owned);
 
         let desired = build_payloads(record_type, records)?;
-        let mut existing = self
-            .list_at(site_id, &host, &domain_owned, record_type)
-            .await?;
+        let mut existing = self.list_at(&domain_owned, &host, record_type).await?;
 
         let mut to_add: Vec<EncodedPayload> = Vec::new();
         for payload in desired {
@@ -133,7 +114,8 @@ impl PleskProvider {
             self.delete_record(stale.id).await?;
         }
         for payload in to_add {
-            self.post_record(site_id, &host, ttl, &payload).await?;
+            self.post_record(&domain_owned, &host, ttl, &payload)
+                .await?;
         }
         Ok(())
     }
@@ -157,19 +139,17 @@ impl PleskProvider {
         }
         let name_owned = name.into_name().to_string();
         let domain_owned = origin.into_name().to_string();
-        let site_id = self.find_site_id(&domain_owned).await?;
-        let host = strip_origin_from_name(&name_owned, &domain_owned, Some(""));
+        let host = record_host(&name_owned, &domain_owned);
 
         let desired = build_payloads(record_type, records)?;
-        let existing = self
-            .list_at(site_id, &host, &domain_owned, record_type)
-            .await?;
+        let existing = self.list_at(&domain_owned, &host, record_type).await?;
 
         for payload in desired {
             if existing.iter().any(|r| payload_matches(r, &payload)) {
                 continue;
             }
-            self.post_record(site_id, &host, ttl, &payload).await?;
+            self.post_record(&domain_owned, &host, ttl, &payload)
+                .await?;
         }
         Ok(())
     }
@@ -192,13 +172,10 @@ impl PleskProvider {
         }
         let name_owned = name.into_name().to_string();
         let domain_owned = origin.into_name().to_string();
-        let site_id = self.find_site_id(&domain_owned).await?;
-        let host = strip_origin_from_name(&name_owned, &domain_owned, Some(""));
+        let host = record_host(&name_owned, &domain_owned);
 
         let to_remove = build_payloads(record_type, records)?;
-        let existing = self
-            .list_at(site_id, &host, &domain_owned, record_type)
-            .await?;
+        let existing = self.list_at(&domain_owned, &host, record_type).await?;
 
         for payload in to_remove {
             if let Some(target) = existing.iter().find(|r| payload_matches(r, &payload)) {
@@ -221,46 +198,30 @@ impl PleskProvider {
         }
         let name_owned = name.into_name().to_string();
         let domain_owned = origin.into_name().to_string();
-        let site_id = self.find_site_id(&domain_owned).await?;
-        let host = strip_origin_from_name(&name_owned, &domain_owned, Some(""));
+        let host = record_host(&name_owned, &domain_owned);
 
-        let existing = self
-            .list_at(site_id, &host, &domain_owned, record_type)
-            .await?;
+        let existing = self.list_at(&domain_owned, &host, record_type).await?;
         existing
             .into_iter()
             .map(|r| decode_record(record_type, &r))
             .collect()
     }
 
-    async fn find_site_id(&self, domain: &str) -> crate::Result<i64> {
-        let query = serde_urlencoded::to_string([("name", domain)])
+    fn records_url(&self, domain: &str) -> crate::Result<String> {
+        let query = serde_urlencoded::to_string([("domain", domain.trim_end_matches('.'))])
             .map_err(|err| Error::Serialize(err.to_string()))?;
-        let domains = self
-            .client
-            .get(format!("{}/api/v2/domains?{}", self.endpoint, query))
-            .send_with_retry::<Vec<PleskDomain>>(3)
-            .await?;
-
-        domains
-            .into_iter()
-            .find(|d| d.name.trim_end_matches('.') == domain.trim_end_matches('.'))
-            .map(|d| d.id)
-            .ok_or_else(|| Error::Api(format!("Plesk site not found for {domain}")))
+        Ok(format!("{}/api/v2/dns/records?{}", self.endpoint, query))
     }
 
     async fn list_at(
         &self,
-        site_id: i64,
-        host_target: &str,
         domain: &str,
+        host_target: &str,
         record_type: DnsRecordType,
     ) -> crate::Result<Vec<PleskRecord>> {
-        let query = serde_urlencoded::to_string([("site_id", site_id.to_string())])
-            .map_err(|err| Error::Serialize(err.to_string()))?;
         let records = self
             .client
-            .get(format!("{}/api/v2/dns/records?{}", self.endpoint, query))
+            .get(self.records_url(domain)?)
             .send_with_retry::<Vec<PleskRecord>>(3)
             .await?;
 
@@ -276,13 +237,12 @@ impl PleskProvider {
 
     async fn post_record(
         &self,
-        site_id: i64,
+        domain: &str,
         host: &str,
         ttl: u32,
         payload: &EncodedPayload,
     ) -> crate::Result<()> {
         let body = CreateRecordRequest {
-            site_id,
             record_type: payload.record_type,
             host,
             value: payload.value.clone(),
@@ -290,9 +250,9 @@ impl PleskProvider {
             ttl: Some(ttl),
         };
         self.client
-            .post(format!("{}/api/v2/dns/records", self.endpoint))
+            .post(self.records_url(domain)?)
             .with_body(&body)?
-            .send_with_retry::<CreateRecordResponse>(3)
+            .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
@@ -306,14 +266,23 @@ impl PleskProvider {
     }
 }
 
-fn host_matches(api_host: &str, expected_subdomain: &str, domain: &str) -> bool {
-    let api = api_host.trim_end_matches('.');
-    let expected_full = if expected_subdomain.is_empty() {
-        domain.trim_end_matches('.').to_string()
+fn record_host(name: &str, domain: &str) -> String {
+    let domain = domain.trim_end_matches('.');
+    let subdomain = strip_origin_from_name(name, domain, Some(""));
+    if subdomain.is_empty() {
+        domain.to_string()
     } else {
-        format!("{}.{}", expected_subdomain, domain.trim_end_matches('.'))
-    };
-    api.eq_ignore_ascii_case(&expected_full) || api.eq_ignore_ascii_case(expected_subdomain)
+        format!("{subdomain}.{domain}")
+    }
+}
+
+fn host_matches(api_host: &str, expected_host: &str, domain: &str) -> bool {
+    let api = api_host.trim_end_matches('.');
+    if api.eq_ignore_ascii_case(expected_host) {
+        return true;
+    }
+    let subdomain = strip_origin_from_name(expected_host, domain, Some(""));
+    !subdomain.is_empty() && api.eq_ignore_ascii_case(&subdomain)
 }
 
 fn payload_matches(existing: &PleskRecord, desired: &EncodedPayload) -> bool {

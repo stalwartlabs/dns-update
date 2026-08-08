@@ -19,31 +19,31 @@ mod tests {
     use serde_json::json;
     use std::time::Duration;
 
-    const SITE_ID: i64 = 42;
+    const ZONE: &str = "example.com";
 
     fn setup_provider(endpoint: &str) -> PleskProvider {
         PleskProvider::new(endpoint, "test_api_key", Some(Duration::from_secs(1)))
             .with_endpoint(endpoint)
     }
 
-    fn mock_domain(server: &mut ServerGuard, zone: &str) -> Mock {
-        server
-            .mock("GET", "/api/v2/domains")
-            .match_query(Matcher::UrlEncoded("name".into(), zone.into()))
-            .match_header("x-api-key", "test_api_key")
-            .with_status(200)
-            .with_body(format!(r#"[{{"id": {SITE_ID}, "name": "{zone}"}}]"#))
-            .expect_at_least(1)
-            .create()
-    }
-
     fn mock_list_records(server: &mut ServerGuard, body: serde_json::Value) -> Mock {
         server
             .mock("GET", "/api/v2/dns/records")
-            .match_query(Matcher::UrlEncoded("site_id".into(), SITE_ID.to_string()))
+            .match_query(Matcher::UrlEncoded("domain".into(), ZONE.into()))
             .match_header("x-api-key", "test_api_key")
             .with_status(200)
             .with_body(serde_json::to_string(&body).unwrap())
+            .create()
+    }
+
+    fn mock_create_record(server: &mut ServerGuard, body: serde_json::Value, id: i64) -> Mock {
+        server
+            .mock("POST", "/api/v2/dns/records")
+            .match_query(Matcher::UrlEncoded("domain".into(), ZONE.into()))
+            .match_header("x-api-key", "test_api_key")
+            .match_body(Matcher::Json(body))
+            .with_status(200)
+            .with_body(format!(r#"{{"id": {id}}}"#))
             .create()
     }
 
@@ -60,34 +60,29 @@ mod tests {
     #[tokio::test]
     async fn set_rrset_creates_when_owner_is_empty() {
         let mut server = mockito::Server::new_async().await;
-        let _domain_mock = mock_domain(&mut server, "example.com");
         let _list_mock = mock_list_records(&mut server, json!([]));
 
-        let create_a = server
-            .mock("POST", "/api/v2/dns/records")
-            .match_body(Matcher::Json(json!({
-                "site_id": SITE_ID,
+        let create_a = mock_create_record(
+            &mut server,
+            json!({
                 "type": "A",
-                "host": "www",
+                "host": "www.example.com",
                 "value": "1.1.1.1",
                 "ttl": 300
-            })))
-            .with_status(200)
-            .with_body(r#"{"id": 5001}"#)
-            .create();
+            }),
+            5001,
+        );
 
-        let create_b = server
-            .mock("POST", "/api/v2/dns/records")
-            .match_body(Matcher::Json(json!({
-                "site_id": SITE_ID,
+        let create_b = mock_create_record(
+            &mut server,
+            json!({
                 "type": "A",
-                "host": "www",
+                "host": "www.example.com",
                 "value": "2.2.2.2",
                 "ttl": 300
-            })))
-            .with_status(200)
-            .with_body(r#"{"id": 5002}"#)
-            .create();
+            }),
+            5002,
+        );
 
         let provider = setup_provider(server.url().as_str());
         let result = provider
@@ -111,7 +106,6 @@ mod tests {
     #[tokio::test]
     async fn set_rrset_is_noop_when_matching() {
         let mut server = mockito::Server::new_async().await;
-        let _domain_mock = mock_domain(&mut server, "example.com");
         let _list_mock = mock_list_records(
             &mut server,
             json!([
@@ -136,7 +130,6 @@ mod tests {
     #[tokio::test]
     async fn set_rrset_deletes_extras_and_adds_missing() {
         let mut server = mockito::Server::new_async().await;
-        let _domain_mock = mock_domain(&mut server, "example.com");
         let _list_mock = mock_list_records(
             &mut server,
             json!([
@@ -149,18 +142,16 @@ mod tests {
             .mock("DELETE", "/api/v2/dns/records/8002")
             .with_status(204)
             .create();
-        let create_new = server
-            .mock("POST", "/api/v2/dns/records")
-            .match_body(Matcher::Json(json!({
-                "site_id": SITE_ID,
+        let create_new = mock_create_record(
+            &mut server,
+            json!({
                 "type": "A",
-                "host": "host",
+                "host": "host.example.com",
                 "value": "8.8.8.8",
                 "ttl": 300
-            })))
-            .with_status(200)
-            .with_body(r#"{"id": 8003}"#)
-            .create();
+            }),
+            8003,
+        );
 
         let provider = setup_provider(server.url().as_str());
         let result = provider
@@ -184,7 +175,6 @@ mod tests {
     #[tokio::test]
     async fn set_rrset_empty_deletes_all_of_type_only() {
         let mut server = mockito::Server::new_async().await;
-        let _domain_mock = mock_domain(&mut server, "example.com");
         let _list_mock = mock_list_records(
             &mut server,
             json!([
@@ -223,7 +213,6 @@ mod tests {
     #[tokio::test]
     async fn add_to_rrset_skips_existing_and_adds_new() {
         let mut server = mockito::Server::new_async().await;
-        let _domain_mock = mock_domain(&mut server, "example.com");
         let _list_mock = mock_list_records(
             &mut server,
             json!([
@@ -231,18 +220,16 @@ mod tests {
             ]),
         );
 
-        let create_mock = server
-            .mock("POST", "/api/v2/dns/records")
-            .match_body(Matcher::Json(json!({
-                "site_id": SITE_ID,
+        let create_mock = mock_create_record(
+            &mut server,
+            json!({
                 "type": "TXT",
-                "host": "_acme",
+                "host": "_acme.example.com",
                 "value": "new-token",
                 "ttl": 60
-            })))
-            .with_status(200)
-            .with_body(r#"{"id": 10002}"#)
-            .create();
+            }),
+            10002,
+        );
 
         let provider = setup_provider(server.url().as_str());
         let result = provider
@@ -281,7 +268,6 @@ mod tests {
     #[tokio::test]
     async fn remove_from_rrset_deletes_only_matching() {
         let mut server = mockito::Server::new_async().await;
-        let _domain_mock = mock_domain(&mut server, "example.com");
         let _list_mock = mock_list_records(
             &mut server,
             json!([
@@ -317,6 +303,26 @@ mod tests {
             .remove_from_rrset("host.example.com", DnsRecordType::A, vec![], "example.com")
             .await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn list_rrset_matches_relative_hosts() {
+        let mut server = mockito::Server::new_async().await;
+        let _list_mock = mock_list_records(
+            &mut server,
+            json!([
+                {"id": 15001, "type": "TXT", "host": "_acme", "value": "relative", "opt": ""},
+                {"id": 15002, "type": "TXT", "host": "other", "value": "skip", "opt": ""}
+            ]),
+        );
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .list_rrset("_acme.example.com", DnsRecordType::TXT, "example.com")
+            .await
+            .unwrap();
+
+        assert_eq!(result, vec![DnsRecord::TXT("relative".to_string())]);
     }
 
     #[tokio::test]
@@ -362,38 +368,33 @@ mod tests {
     #[tokio::test]
     async fn set_rrset_txt_chunks_long_value() {
         let mut server = mockito::Server::new_async().await;
-        let _domain_mock = mock_domain(&mut server, "example.com");
         let _list_mock = mock_list_records(&mut server, json!([]));
 
         let long_value: String = "a".repeat(300);
         let first_chunk: String = "a".repeat(255);
         let second_chunk: String = "a".repeat(45);
 
-        let create_first = server
-            .mock("POST", "/api/v2/dns/records")
-            .match_body(Matcher::Json(json!({
-                "site_id": SITE_ID,
+        let create_first = mock_create_record(
+            &mut server,
+            json!({
                 "type": "TXT",
-                "host": "long",
+                "host": "long.example.com",
                 "value": first_chunk,
                 "ttl": 300
-            })))
-            .with_status(200)
-            .with_body(r#"{"id": 12001}"#)
-            .create();
+            }),
+            12001,
+        );
 
-        let create_second = server
-            .mock("POST", "/api/v2/dns/records")
-            .match_body(Matcher::Json(json!({
-                "site_id": SITE_ID,
+        let create_second = mock_create_record(
+            &mut server,
+            json!({
                 "type": "TXT",
-                "host": "long",
+                "host": "long.example.com",
                 "value": second_chunk,
                 "ttl": 300
-            })))
-            .with_status(200)
-            .with_body(r#"{"id": 12002}"#)
-            .create();
+            }),
+            12002,
+        );
 
         let provider = setup_provider(server.url().as_str());
         let result = provider
@@ -414,22 +415,19 @@ mod tests {
     #[tokio::test]
     async fn set_rrset_mx_with_priority() {
         let mut server = mockito::Server::new_async().await;
-        let _domain_mock = mock_domain(&mut server, "example.com");
         let _list_mock = mock_list_records(&mut server, json!([]));
 
-        let create_mock = server
-            .mock("POST", "/api/v2/dns/records")
-            .match_body(Matcher::Json(json!({
-                "site_id": SITE_ID,
+        let create_mock = mock_create_record(
+            &mut server,
+            json!({
                 "type": "MX",
-                "host": "",
+                "host": "example.com",
                 "value": "mail.example.com",
                 "opt": "10",
                 "ttl": 3600
-            })))
-            .with_status(200)
-            .with_body(r#"{"id": 13001}"#)
-            .create();
+            }),
+            13001,
+        );
 
         let provider = setup_provider(server.url().as_str());
         let result = provider
@@ -452,7 +450,6 @@ mod tests {
     #[tokio::test]
     async fn list_rrset_returns_filtered_records() {
         let mut server = mockito::Server::new_async().await;
-        let _domain_mock = mock_domain(&mut server, "example.com");
         let _list_mock = mock_list_records(
             &mut server,
             json!([
