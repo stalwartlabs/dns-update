@@ -627,4 +627,30 @@ mod tests {
         token.assert();
         list.assert();
     }
+
+    #[tokio::test]
+    async fn test_auth_uses_form_content_type() {
+        let mut server = mockito::Server::new_async().await;
+
+        let auth = server
+            .mock("POST", "/auth/login")
+            .match_header("content-type", "application/x-www-form-urlencoded")
+            .with_status(200)
+            .with_body(r#"{"access_token":"tok","expires_in":3600,"token_type":"bearer"}"#)
+            .create();
+
+        let get = server
+            .mock("GET", "/dns/v2/zones/example.com/records/www/A")
+            .with_status(200)
+            .with_body(r#"{"records":[]}"#)
+            .create();
+
+        let p = provider(server.url());
+        let result = p
+            .list_rrset("www.example.com", DnsRecordType::A, "example.com")
+            .await;
+        assert!(result.is_ok(), "list_rrset returned {result:?}");
+        auth.assert();
+        get.assert();
+    }
 }
