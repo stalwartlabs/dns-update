@@ -553,4 +553,27 @@ mod tests {
             .await;
         assert!(delete_result.is_ok(), "delete failed: {delete_result:?}");
     }
+
+    #[tokio::test]
+    async fn api_uses_charset_content_type() {
+        let mut server = mockito::Server::new_async().await;
+
+        let domain_list = mock_domain_list(&mut server);
+
+        let list_records = server
+            .mock("POST", "/")
+            .match_header("X-TC-Action", "DescribeRecordList")
+            .match_header("content-type", "application/json; charset=utf-8")
+            .with_status(200)
+            .with_body(r#"{"Response":{"RecordList":[],"TotalCount":0,"RequestId":"x"}}"#)
+            .create();
+
+        let p = setup_provider(&server.url());
+        let result = p
+            .list_rrset("www.example.com", DnsRecordType::A, "example.com")
+            .await;
+        assert!(result.is_ok(), "list failed: {result:?}");
+        domain_list.assert();
+        list_records.assert();
+    }
 }
