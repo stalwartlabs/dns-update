@@ -555,7 +555,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn api_uses_charset_content_type() {
+    async fn test_uses_charset_content_type() {
         let mut server = mockito::Server::new_async().await;
 
         let domain_list = mock_domain_list(&mut server);

@@ -569,10 +569,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn login_uses_form_content_type() {
+    async fn test_auth_uses_form_content_type() {
         let mut server = mockito::Server::new_async().await;
 
-        let login = server
+        let auth = server
             .mock("POST", "/login")
             .match_header("content-type", "application/x-www-form-urlencoded")
             .with_status(200)
@@ -591,7 +591,7 @@ mod tests {
             .list_rrset("www.example.com", DnsRecordType::A, "example.com")
             .await;
         assert!(res.is_ok(), "{res:?}");
-        login.assert();
+        auth.assert();
         get.assert();
     }
 }
