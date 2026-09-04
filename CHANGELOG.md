@@ -1,3 +1,8 @@
+dns-update 0.5.7
+================================
+- Exoscale: fix HTTP 403 "Invalid request signature" on every API call by signing the request body.
+- Update `quick-xml` to 0.42.
+
 dns-update 0.5.6
 ================================
 - Simply.com support.

@@ -538,7 +538,7 @@ impl Route53Provider {
 
         let mut signed_header_names: Vec<&'static str> = vec!["content-type", "host", "x-amz-date"];
         let mut canonical_header_lines: Vec<String> = vec![
-            format!("content-type:application/xml"),
+            "content-type:application/xml".to_string(),
             format!("host:{host_header_value}"),
             format!("x-amz-date:{amz_date}"),
         ];

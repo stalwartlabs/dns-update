@@ -14,12 +14,12 @@ use crate::utils::unquote_txt;
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     crypto::hmac_sha256,
-    http::{HttpClient, HttpClientBuilder},
+    http::{HttpClient, HttpClientBuilder, HttpRequest},
     utils::strip_origin_from_name,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use chrono::Utc;
-use reqwest::Method;
+use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -112,26 +112,31 @@ impl ExoscaleProvider {
         }
     }
 
-    fn build_authorization(&self, method: &Method, path: &str, body: &str) -> String {
+    fn build_authorization(&self, method: &Method, url: &str, body: &str) -> crate::Result<String> {
+        let parsed = Url::parse(url)
+            .map_err(|err| Error::Client(format!("Failed to parse URL {}: {}", url, err)))?;
         let expires = Utc::now().timestamp() + SIGNATURE_EXPIRES_SECONDS;
-        let signing_string = format!("{} {}\n\n{}\n\n{}", method.as_str(), path, body, expires);
-        let signature = hmac_sha256(self.api_secret.as_bytes(), signing_string.as_bytes());
-        let signature_b64 = BASE64_STANDARD.encode(&signature);
-        format!(
+        let signature = hmac_sha256(
+            self.api_secret.as_bytes(),
+            signing_string(method.as_str(), parsed.path(), body, expires).as_bytes(),
+        );
+        Ok(format!(
             "EXO2-HMAC-SHA256 credential={},expires={},signature={}",
-            self.api_key, expires, signature_b64
-        )
+            self.api_key,
+            expires,
+            BASE64_STANDARD.encode(&signature)
+        ))
     }
 
     fn signed(
         &self,
-        request: crate::http::HttpRequest,
+        request: HttpRequest,
         method: Method,
-        path: &str,
+        url: &str,
         body: &str,
-    ) -> crate::http::HttpRequest {
-        let auth = self.build_authorization(&method, path, body);
-        request.with_header("Authorization", auth)
+    ) -> crate::Result<HttpRequest> {
+        let auth = self.build_authorization(&method, url, body)?;
+        Ok(request.with_header("Authorization", auth))
     }
 
     pub(crate) async fn set_rrset(
@@ -247,10 +252,9 @@ impl ExoscaleProvider {
     }
 
     async fn obtain_zone_id(&self, domain: &str) -> crate::Result<String> {
-        let path = "/dns-domain";
-        let url = format!("{}{}", self.endpoint, path);
+        let url = format!("{}/dns-domain", self.endpoint);
         let response: DomainList = self
-            .signed(self.client.get(url), Method::GET, path, "")
+            .signed(self.client.get(url.as_str()), Method::GET, &url, "")?
             .send()
             .await?;
         response
@@ -267,10 +271,9 @@ impl ExoscaleProvider {
         subdomain: &str,
         record_type: DnsRecordType,
     ) -> crate::Result<Vec<ListedRecord>> {
-        let path = format!("/dns-domain/{}/record", zone_id);
-        let url = format!("{}{}", self.endpoint, path);
+        let url = format!("{}/dns-domain/{}/record", self.endpoint, zone_id);
         let response: RecordList = self
-            .signed(self.client.get(url), Method::GET, &path, "")
+            .signed(self.client.get(url.as_str()), Method::GET, &url, "")?
             .send()
             .await?;
         let type_str = record_type.as_str();
@@ -296,27 +299,33 @@ impl ExoscaleProvider {
         let body = build_create_record(subdomain, record, ttl)?;
         let body_str = serde_json::to_string(&body)
             .map_err(|e| Error::Serialize(format!("body serialization failed: {e}")))?;
-        let path = format!("/dns-domain/{}/record", zone_id);
-        let url = format!("{}{}", self.endpoint, path);
+        let url = format!("{}/dns-domain/{}/record", self.endpoint, zone_id);
         self.signed(
-            self.client.post(url).with_raw_body(body_str.clone()),
+            self.client.post(url.as_str()),
             Method::POST,
-            &path,
+            &url,
             &body_str,
-        )
+        )?
+        .with_raw_body(body_str)
         .send_with_retry::<serde_json::Value>(3)
         .await
         .map(|_| ())
     }
 
     async fn delete_record(&self, zone_id: &str, record_id: &str) -> crate::Result<()> {
-        let path = format!("/dns-domain/{}/record/{}", zone_id, record_id);
-        let url = format!("{}{}", self.endpoint, path);
-        self.signed(self.client.delete(url), Method::DELETE, &path, "")
+        let url = format!(
+            "{}/dns-domain/{}/record/{}",
+            self.endpoint, zone_id, record_id
+        );
+        self.signed(self.client.delete(url.as_str()), Method::DELETE, &url, "")?
             .send_with_retry::<serde_json::Value>(3)
             .await
             .map(|_| ())
     }
+}
+
+pub(crate) fn signing_string(method: &str, path: &str, body: &str, expires: i64) -> String {
+    format!("{} {}\n{}\n\n\n{}", method, path, body, expires)
 }
 
 fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {

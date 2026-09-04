@@ -13,9 +13,12 @@
 mod tests {
     use crate::{
         CAARecord, DnsRecord, DnsRecordType, Error, MXRecord, SRVRecord, TLSARecord, TlsaCertUsage,
-        TlsaMatching, TlsaSelector, providers::exoscale::ExoscaleProvider,
+        TlsaMatching, TlsaSelector,
+        crypto::hmac_sha256,
+        providers::exoscale::{ExoscaleProvider, signing_string},
     };
-    use mockito::{Matcher, Mock, ServerGuard};
+    use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
+    use mockito::{Matcher, Mock, Request, ServerGuard};
     use serde_json::json;
     use std::time::Duration;
 
@@ -27,14 +30,37 @@ mod tests {
             .with_endpoint(endpoint)
     }
 
-    fn auth_match() -> Matcher {
-        Matcher::Regex("^EXO2-HMAC-SHA256 credential=api_key,expires=[0-9]+,signature=.+$".into())
+    fn valid_signature(request: &Request) -> bool {
+        let Some(header) = request
+            .header("authorization")
+            .first()
+            .and_then(|value| value.to_str().ok())
+        else {
+            return false;
+        };
+        let Some(rest) = header.strip_prefix("EXO2-HMAC-SHA256 credential=api_key,expires=") else {
+            return false;
+        };
+        let Some((expires, signature)) = rest.split_once(",signature=") else {
+            return false;
+        };
+        let (Ok(expires), Ok(body)) = (expires.parse::<i64>(), request.utf8_lossy_body()) else {
+            return false;
+        };
+        let expected = format!(
+            "{} {}\n{}\n\n\n{}",
+            request.method(),
+            request.path(),
+            body,
+            expires
+        );
+        signature == BASE64_STANDARD.encode(hmac_sha256(b"api_secret", expected.as_bytes()))
     }
 
     fn mock_zone_lookup(server: &mut ServerGuard) -> Mock {
         server
             .mock("GET", "/dns-domain")
-            .match_header("authorization", auth_match())
+            .match_request(valid_signature)
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(format!(
@@ -46,7 +72,7 @@ mod tests {
     fn mock_list(server: &mut ServerGuard, body: serde_json::Value) -> Mock {
         server
             .mock("GET", format!("/dns-domain/{ZONE_ID}/record").as_str())
-            .match_header("authorization", auth_match())
+            .match_request(valid_signature)
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(serde_json::to_string(&body).unwrap())
@@ -57,6 +83,76 @@ mod tests {
         r#"{"id":"op-1","state":"success"}"#
     }
 
+    #[test]
+    fn test_signing_string_matches_documented_layout() {
+        assert_eq!(
+            signing_string(
+                "GET",
+                "/v2/resource/a02baf5a-a3e4-49a0-857b-8a08d276c1c0",
+                "",
+                1599140767
+            ),
+            "GET /v2/resource/a02baf5a-a3e4-49a0-857b-8a08d276c1c0\n\n\n\n1599140767"
+        );
+        assert_eq!(
+            signing_string(
+                "POST",
+                "/v2/security-group",
+                r#"{"name": "my-security-group"}"#,
+                1599140767
+            ),
+            "POST /v2/security-group\n{\"name\": \"my-security-group\"}\n\n\n1599140767"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_signature_covers_body_and_endpoint_path_prefix() {
+        let mut server = mockito::Server::new_async().await;
+        let zone = server
+            .mock("GET", "/v2/dns-domain")
+            .match_request(valid_signature)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(format!(
+                r#"{{"dns-domains":[{{"id":"{ZONE_ID}","unicode-name":"example.com"}}]}}"#
+            ))
+            .create();
+        let list = server
+            .mock("GET", format!("/v2/dns-domain/{ZONE_ID}/record").as_str())
+            .match_request(valid_signature)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"dns-domain-records":[]}"#)
+            .create();
+        let create = server
+            .mock("POST", format!("/v2/dns-domain/{ZONE_ID}/record").as_str())
+            .match_request(valid_signature)
+            .match_body(Matcher::Json(json!({
+                "name": "host",
+                "type": "A",
+                "content": "1.1.1.1",
+                "ttl": 300,
+            })))
+            .with_status(200)
+            .with_body(ok_op_body())
+            .create();
+
+        let provider = setup_provider(format!("{}/v2", server.url()));
+        let result = provider
+            .set_rrset(
+                "host.example.com",
+                DnsRecordType::A,
+                300,
+                vec![DnsRecord::A("1.1.1.1".parse().unwrap())],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        zone.assert();
+        list.assert();
+        create.assert();
+    }
+
     #[tokio::test]
     async fn test_set_rrset_creates_when_owner_is_empty() {
         let mut server = mockito::Server::new_async().await;
@@ -65,7 +161,7 @@ mod tests {
 
         let create_1 = server
             .mock("POST", format!("/dns-domain/{ZONE_ID}/record").as_str())
-            .match_header("authorization", auth_match())
+            .match_request(valid_signature)
             .match_body(Matcher::Json(json!({
                 "name": "host",
                 "type": "A",
@@ -162,7 +258,7 @@ mod tests {
                 "DELETE",
                 format!("/dns-domain/{ZONE_ID}/record/rec-stale").as_str(),
             )
-            .match_header("authorization", auth_match())
+            .match_request(valid_signature)
             .with_status(200)
             .with_body(ok_op_body())
             .create();
