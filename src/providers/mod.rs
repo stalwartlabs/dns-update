@@ -68,6 +68,7 @@ pub mod ns1;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod oraclecloud;
 pub mod ovh;
+pub mod pdns;
 #[cfg(feature = "test_provider")]
 pub mod pebble;
 pub mod plesk;

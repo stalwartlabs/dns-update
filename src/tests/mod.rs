@@ -68,6 +68,7 @@ pub mod ns1_tests;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod oraclecloud_tests;
 pub mod ovh_tests;
+pub mod pdns_tests;
 pub mod plesk_tests;
 pub mod porkbun_tests;
 #[cfg(test)]
