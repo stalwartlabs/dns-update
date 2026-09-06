@@ -567,4 +567,31 @@ mod tests {
         fresh_get.assert();
         put.assert();
     }
+
+    #[tokio::test]
+    async fn test_auth_uses_form_content_type() {
+        let mut server = mockito::Server::new_async().await;
+
+        let auth = server
+            .mock("POST", "/login")
+            .match_header("content-type", "application/x-www-form-urlencoded")
+            .with_status(200)
+            .with_body("Status-Code: 0\nStatus-Text: OK\nAuth-Sid: sid\n\n")
+            .create();
+
+        let get = get_zone_mock(
+            &mut server,
+            "sid",
+            "example.com",
+            "example.com. 300 A 1.1.1.1",
+        );
+
+        let p = provider(server.url());
+        let res = p
+            .list_rrset("www.example.com", DnsRecordType::A, "example.com")
+            .await;
+        assert!(res.is_ok(), "{res:?}");
+        auth.assert();
+        get.assert();
+    }
 }

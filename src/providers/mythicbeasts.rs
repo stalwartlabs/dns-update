@@ -166,7 +166,7 @@ impl MythicBeastsProvider {
             .client
             .post(self.auth_endpoint.clone())
             .with_header("Authorization", format!("Basic {credentials}"))
-            .with_header("Content-Type", "application/x-www-form-urlencoded")
+            .set_header("Content-Type", "application/x-www-form-urlencoded")
             .with_raw_body("grant_type=client_credentials".to_string())
             .send()
             .await?;
