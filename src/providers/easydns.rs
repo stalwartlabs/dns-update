@@ -359,7 +359,8 @@ fn render_wire(record: DnsRecord) -> crate::Result<RecordWire> {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by EasyDNS".to_string(),
             ));
-        }
+        },
+        DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
     };
     Ok(RecordWire { rdata, prio })
 }
@@ -414,6 +415,7 @@ fn parse_record(
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by EasyDNS".to_string(),
         )),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 

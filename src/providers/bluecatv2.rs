@@ -513,7 +513,8 @@ fn bluecat_record_type(record_type: DnsRecordType) -> crate::Result<&'static str
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Bluecat".into(),
             ));
-        }
+        },
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
     })
 }
 
@@ -601,7 +602,8 @@ fn record_to_normalized(record: DnsRecord) -> crate::Result<NormalizedContent> {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Bluecat".into(),
             ));
-        }
+        },
+        DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
     })
 }
 
@@ -650,6 +652,7 @@ fn normalize_listed(
             value: listed.value.clone()?,
         }),
         DnsRecordType::TLSA => None,
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 

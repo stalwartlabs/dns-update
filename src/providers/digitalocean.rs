@@ -402,7 +402,8 @@ impl TryFrom<DnsRecord> for RecordData {
                     flags,
                     tag,
                 })
-            }
+            },
+            DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
         }
     }
 }

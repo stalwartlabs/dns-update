@@ -416,6 +416,7 @@ impl TryFrom<DnsRecord> for SimplyComRecordContent {
                 data: caa.to_string(),
                 priority: None,
             },
+            DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
         })
     }
 }

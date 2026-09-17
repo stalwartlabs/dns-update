@@ -496,6 +496,7 @@ fn inwx_record_type(record_type: DnsRecordType) -> &'static str {
         DnsRecordType::SRV => "SRV",
         DnsRecordType::TLSA => "TLSA",
         DnsRecordType::CAA => "CAA",
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 
@@ -523,6 +524,7 @@ fn inwx_record_payload(record: &DnsRecord) -> (&'static str, String, Option<u16>
         ),
         DnsRecord::TLSA(tlsa) => ("TLSA", format!("{tlsa}"), None),
         DnsRecord::CAA(caa) => ("CAA", format!("{caa}"), None),
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
     }
 }
 
@@ -573,6 +575,7 @@ fn parse_record(
         DnsRecordType::SRV => parse_srv(content, prio.unwrap_or(0)),
         DnsRecordType::TLSA => parse_tlsa(content),
         DnsRecordType::CAA => parse_caa(content),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 

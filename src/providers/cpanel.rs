@@ -478,7 +478,8 @@ fn encode_record_data(record: &DnsRecord) -> crate::Result<Vec<String>> {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by cPanel".to_string(),
             ));
-        }
+        },
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
     })
 }
 
@@ -634,5 +635,6 @@ fn decode_to_dns_record(record_type: DnsRecordType, fields: &[String]) -> crate:
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by cPanel".to_string(),
         )),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }

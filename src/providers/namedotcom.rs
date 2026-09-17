@@ -336,7 +336,8 @@ fn render_answer(record: DnsRecord) -> crate::Result<String> {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Name.com".to_string(),
             ));
-        }
+        },
+        DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
     })
 }
 
@@ -367,6 +368,7 @@ fn normalized_to_record(
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Name.com".to_string(),
         )),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 

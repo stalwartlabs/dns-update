@@ -338,6 +338,7 @@ fn record_type_to_wire(record_type: DnsRecordType) -> &'static str {
         DnsRecordType::SRV => "srv",
         DnsRecordType::TLSA => "tlsa",
         DnsRecordType::CAA => "caa",
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 
@@ -626,7 +627,8 @@ fn listed_to_dns_record(record_type: DnsRecordType, value: &Value) -> Option<Dns
                 })),
                 _ => None,
             }
-        }
+        },
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
     }
 }
 
@@ -714,7 +716,8 @@ impl TryFrom<DnsRecord> for ArvanRecordContent {
                         "value": value,
                     }),
                 })
-            }
+            },
+            DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
         }
     }
 }

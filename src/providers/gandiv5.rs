@@ -295,6 +295,7 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
         ),
         DnsRecord::TLSA(tlsa) => tlsa.to_string(),
         DnsRecord::CAA(caa) => caa.to_string(),
+        DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
     })
 }
 
@@ -315,6 +316,7 @@ fn parse_value(record_type: DnsRecordType, content: &str) -> crate::Result<DnsRe
         DnsRecordType::SRV => parse_srv(content),
         DnsRecordType::TLSA => parse_tlsa(content),
         DnsRecordType::CAA => parse_caa(content),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 

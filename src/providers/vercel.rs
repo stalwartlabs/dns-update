@@ -387,6 +387,7 @@ fn vercel_content_from_record(record: &DnsRecord) -> crate::Result<VercelContent
             ));
         }
         DnsRecord::CAA(caa) => VercelContent::Value(caa.to_string()),
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
     })
 }
 
@@ -475,6 +476,7 @@ fn listed_to_dns_record(
             "TLSA records are not supported by Vercel".to_string(),
         )),
         DnsRecordType::CAA => parse_caa_value(record.value.as_deref().unwrap_or("")),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 

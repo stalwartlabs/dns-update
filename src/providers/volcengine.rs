@@ -431,7 +431,8 @@ fn record_to_value(record: &DnsRecord) -> crate::Result<(&'static str, String)> 
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Volcengine".into(),
             ));
-        }
+        },
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
     })
 }
 
@@ -501,6 +502,7 @@ fn value_to_record(record_type: DnsRecordType, value: &str) -> crate::Result<Dns
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Volcengine".into(),
         )),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 
@@ -561,7 +563,8 @@ fn record_type_str(record_type: DnsRecordType) -> crate::Result<&'static str> {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Volcengine".into(),
             ));
-        }
+        },
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
     })
 }
 

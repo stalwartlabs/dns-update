@@ -423,7 +423,8 @@ impl From<DnsRecord> for DnsContent {
                 DnsContent::CAA {
                     data: CaaData { flags, tag, value },
                 }
-            }
+            },
+            DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
         }
     }
 }

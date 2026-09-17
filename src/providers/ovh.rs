@@ -148,6 +148,7 @@ impl From<&DnsRecord> for OvhRecordFormat {
                 field_type: "CAA".to_string(),
                 target: caa.to_string(),
             },
+            &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
         }
     }
 }
@@ -580,6 +581,7 @@ fn parse_ovh_target(record_type: DnsRecordType, target: &str) -> crate::Result<D
             }))
         }
         DnsRecordType::CAA => parse_caa(target),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 

@@ -425,7 +425,8 @@ fn record_to_value(record: DnsRecord) -> crate::Result<RecordValue> {
                 protocol: None,
                 tag: Some(tag),
             })
-        }
+        },
+        DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
     }
 }
 
@@ -479,7 +480,8 @@ fn value_to_record(record_type: DnsRecordType, value: RecordValue) -> crate::Res
         DnsRecordType::CAA => {
             let tag = value.tag.unwrap_or_default();
             build_caa(0, &tag, &value.target).map(DnsRecord::CAA)
-        }
+        },
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
     }
 }
 

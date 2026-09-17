@@ -267,6 +267,7 @@ fn validate_record_type(record_type: DnsRecordType) -> crate::Result<()> {
             "{} records are not supported by IPv64",
             record_type.as_str()
         ))),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 
@@ -288,7 +289,8 @@ fn encode_record_content(record: &DnsRecord) -> crate::Result<String> {
             return Err(Error::Unsupported(
                 "CAA records are not supported by IPv64".to_string(),
             ));
-        }
+        },
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
     })
 }
 
@@ -351,7 +353,8 @@ fn decode_record(record_type: DnsRecordType, content: &str) -> crate::Result<Dns
                 "{} records are not supported by IPv64",
                 record_type.as_str()
             )));
-        }
+        },
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
     })
 }
 

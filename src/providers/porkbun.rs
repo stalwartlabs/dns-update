@@ -410,6 +410,7 @@ fn listed_to_dns_record(
         DnsRecordType::SRV => DnsRecord::SRV(parse_srv_content(&content, prio.unwrap_or(0))?),
         DnsRecordType::TLSA => DnsRecord::TLSA(parse_tlsa_content(&content)?),
         DnsRecordType::CAA => DnsRecord::CAA(parse_caa_content(&content)?),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     })
 }
 
@@ -583,6 +584,7 @@ impl From<DnsRecord> for RecordData {
             DnsRecord::CAA(caa) => RecordData::CAA {
                 content: caa.to_string(),
             },
+            DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
         }
     }
 }

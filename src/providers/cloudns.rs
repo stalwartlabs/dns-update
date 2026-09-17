@@ -455,7 +455,8 @@ fn build_record_params(record: &DnsRecord) -> crate::Result<Vec<(&'static str, S
             params.push(("caa_flag", flags.to_string()));
             params.push(("caa_type", tag));
             params.push(("caa_value", value));
-        }
+        },
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
     }
     Ok(params)
 }
@@ -505,6 +506,7 @@ fn record_matches(existing: &ClouDnsRecord, desired: &DnsRecord) -> bool {
                 && existing.caa_value.as_deref() == Some(value.as_str())
         }
         DnsRecord::TLSA(_) => false,
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
     }
 }
 

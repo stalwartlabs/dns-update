@@ -397,7 +397,8 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
         DnsRecord::CAA(caa) => {
             let (flags, tag, value) = caa.decompose();
             format!("{flags} {tag} \"{value}\"")
-        }
+        },
+        DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
     })
 }
 
@@ -497,6 +498,7 @@ fn parse_dns_entry(entry: &DnsEntry, record_type: DnsRecordType) -> crate::Resul
             }))
         }
         DnsRecordType::CAA => Ok(DnsRecord::CAA(parse_caa_content(&entry.content)?)),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 

@@ -294,6 +294,7 @@ fn bunny_type_for(record_type: DnsRecordType) -> Option<u8> {
         DnsRecordType::CAA => BUNNY_TYPE_CAA,
         DnsRecordType::NS => BUNNY_TYPE_NS,
         DnsRecordType::TLSA => BUNNY_TYPE_TLSA,
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     })
 }
 
@@ -355,7 +356,8 @@ impl TryFrom<&DnsRecord> for BunnyRecordContent {
                     tag: Some(tag),
                     ..Default::default()
                 }
-            }
+            },
+            &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
         })
     }
 }

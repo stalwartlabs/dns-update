@@ -367,6 +367,7 @@ fn resource_record_to_dns_record(
             })
         }
         DnsRecordType::CAA => DnsRecord::CAA(autodns_parse_caa(&rr.value)?),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     })
 }
 
@@ -472,6 +473,7 @@ fn build_resource_record(name: &str, record: &DnsRecord, ttl: u32) -> ResourceRe
         ),
         DnsRecord::TLSA(tlsa) => (tlsa.to_string(), 0),
         DnsRecord::CAA(caa) => (caa.to_string(), 0),
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
     };
     ResourceRecord {
         name: name.to_string(),

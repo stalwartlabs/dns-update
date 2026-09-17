@@ -542,7 +542,8 @@ fn build_payload(host: &str, record: DnsRecord, ttl: u32) -> crate::Result<Recor
             payload.caa_flags = Some(flags);
             payload.caa_tag = Some(tag);
             payload.data = value;
-        }
+        },
+        DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
     }
 
     Ok(payload)

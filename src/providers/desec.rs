@@ -419,6 +419,7 @@ fn parse_record(record_type: DnsRecordType, content: &str) -> crate::Result<DnsR
         DnsRecordType::SRV => parse_srv(content),
         DnsRecordType::TLSA => parse_tlsa(content),
         DnsRecordType::CAA => parse_caa(content),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 
@@ -513,6 +514,7 @@ impl From<DnsRecord> for DesecDnsRecordRepresentation {
                 record_type: "CAA".to_string(),
                 content: caa.to_string(),
             },
+            DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
         }
     }
 }

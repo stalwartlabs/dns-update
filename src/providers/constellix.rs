@@ -420,6 +420,7 @@ fn record_type_segment(record_type: DnsRecordType) -> crate::Result<&'static str
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Constellix".into(),
         )),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 
@@ -459,7 +460,8 @@ fn record_to_round_robin_entries(record: &DnsRecord) -> crate::Result<Vec<RoundR
             entry.value = Some(val);
             entry.flags = Some(flags);
             entry.tag = Some(tag);
-        }
+        },
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
     }
     Ok(vec![entry])
 }
@@ -551,5 +553,6 @@ fn round_robin_to_record(
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Constellix".into(),
         )),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }

@@ -322,6 +322,7 @@ impl OracleCloudProvider {
                 )
             }
             DnsRecord::TLSA(tlsa) => ("TLSA".to_string(), tlsa.to_string()),
+            &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
         };
         Ok((rtype, rdata))
     }
@@ -637,6 +638,7 @@ fn parse_rdata(record_type: DnsRecordType, value: &str) -> Result<DnsRecord> {
         DnsRecordType::SRV => parse_srv(value)?,
         DnsRecordType::TLSA => parse_tlsa(value)?,
         DnsRecordType::CAA => parse_caa(value)?,
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     })
 }
 

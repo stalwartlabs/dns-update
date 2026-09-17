@@ -589,7 +589,8 @@ fn rrdata_for_record(record: &DnsRecord) -> String {
         DnsRecord::CAA(caa) => {
             let (flags, tag, value) = caa.clone().decompose();
             format!("{} {} \"{}\"", flags, tag, value)
-        }
+        },
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
     }
 }
 
@@ -691,6 +692,7 @@ fn parse_rrdata(record_type: DnsRecordType, text: &str) -> Result<DnsRecord> {
             })
         }
         DnsRecordType::CAA => parse_caa_rrdata(text)?,
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     })
 }
 

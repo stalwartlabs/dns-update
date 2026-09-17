@@ -450,6 +450,7 @@ fn listed_to_record(
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by DNSMadeEasy".into(),
         )),
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 
@@ -512,7 +513,8 @@ fn build_create_request<'a>(
             request.value = value;
             request.issuer_critical = Some(if flags & 0x80 != 0 { 1 } else { 0 });
             request.caa_type = Some(tag);
-        }
+        },
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
     }
     Ok(request)
 }
@@ -530,5 +532,6 @@ fn dns_type(record: &DnsRecord) -> crate::Result<&'static str> {
         DnsRecord::TLSA(_) => Err(Error::Unsupported(
             "TLSA records are not supported by DNSMadeEasy".into(),
         )),
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
     }
 }

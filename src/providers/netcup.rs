@@ -504,6 +504,7 @@ fn encode_record(record: &DnsRecord, hostname: &str) -> crate::Result<NetcupReco
             ),
             String::new(),
         ),
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
     };
 
     Ok(NetcupRecord {
@@ -555,6 +556,7 @@ fn decode_record(record_type: DnsRecordType, record: &NetcupRecord) -> crate::Re
         DnsRecordType::SRV => parse_srv(record)?,
         DnsRecordType::TLSA => parse_tlsa(&record.destination)?,
         DnsRecordType::CAA => parse_caa(&record.destination)?,
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     })
 }
 

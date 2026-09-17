@@ -634,6 +634,7 @@ fn render_record(record: &DnsRecord) -> crate::Result<String> {
         DnsRecord::TLSA(_) => Err(Error::Unsupported(
             "TLSA records are not supported by huaweicloud".to_string(),
         )),
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
     }
 }
 
@@ -655,7 +656,8 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
             return Err(Error::Unsupported(
                 "TLSA records are not supported by huaweicloud".to_string(),
             ));
-        }
+        },
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
     })
 }
 

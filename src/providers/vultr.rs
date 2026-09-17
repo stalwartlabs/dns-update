@@ -355,7 +355,8 @@ fn record_target(record: &DnsRecord) -> Result<String, Error> {
         DnsRecord::CAA(caa) => {
             let (flags, tag, value) = caa.clone().decompose();
             Ok(format!("{flags} {tag} \"{value}\""))
-        }
+        },
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
     }
 }
 
