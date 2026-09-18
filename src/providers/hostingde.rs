@@ -435,7 +435,11 @@ fn record_to_payload(record: &DnsRecord, name: &str, ttl: u32) -> crate::Result<
             )
         }
         DnsRecord::TLSA(tlsa) => ("TLSA", format!("{}", tlsa), 0),
-        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by hosting.de".to_string(),
+            ));
+        }
     };
 
     Ok(DnsRecordPayload {

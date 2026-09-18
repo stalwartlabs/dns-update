@@ -306,7 +306,11 @@ fn wapi_object_for_type(record_type: DnsRecordType) -> Result<&'static str> {
         DnsRecordType::SRV => "record:srv",
         DnsRecordType::CAA => "record:caa",
         DnsRecordType::TLSA => "record:tlsa",
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Infoblox".to_string(),
+            ));
+        }
     })
 }
 
@@ -354,8 +358,12 @@ fn build_update_body(record: &DnsRecord, ttl: u32) -> Result<Value> {
                 "ca_tag": tag,
                 "ca_value": value,
             })
-        },
-        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+        }
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Infoblox".to_string(),
+            ));
+        }
     };
     if let Value::Object(ref mut map) = body
         && ttl > 0
@@ -466,8 +474,8 @@ fn infoblox_value_matches(value: &Value, record: &DnsRecord) -> bool {
                 .map(|content| content.eq_ignore_ascii_case(&cert_hex))
                 .unwrap_or(false);
             usage_matches && selector_matches && matched_matches && cert_matches
-        },
-        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+        }
+        &DnsRecord::PTR(_) => false,
     }
 }
 
@@ -602,8 +610,12 @@ fn infoblox_value_to_record(value: &Value, record_type: DnsRecordType) -> Result
                 matching: tlsa_matching_from_u8(matched)?,
                 cert_data: decode_hex(cert_hex)?,
             }))
-        },
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
+        }
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Infoblox".to_string(),
+            ));
+        }
     }
 }
 

@@ -310,7 +310,11 @@ fn render_data(record: &DnsRecord) -> crate::Result<String> {
             ));
         }
         DnsRecord::CAA(caa) => caa.to_string(),
-        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Glesys".to_string(),
+            ));
+        }
     })
 }
 
@@ -351,7 +355,11 @@ fn parse_record(record_type: DnsRecordType, content: &str) -> crate::Result<DnsR
             "TLSA records are not supported by Glesys".to_string(),
         )),
         DnsRecordType::CAA => parse_caa(content),
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Glesys".to_string(),
+            ));
+        }
     }
 }
 

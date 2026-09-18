@@ -309,8 +309,12 @@ fn record_to_answers(record: DnsRecord) -> crate::Result<Vec<Answer>> {
         DnsRecord::CAA(caa) => {
             let (flags, tag, value) = caa.decompose();
             vec![flags.to_string(), tag, value]
-        },
-        DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+        }
+        DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by NS1".to_string(),
+            ));
+        }
     };
 
     if parts.is_empty() {
@@ -376,8 +380,12 @@ fn answer_to_record(record_type: DnsRecordType, answer: &Answer) -> crate::Resul
             let tag = need(1)?.to_ascii_lowercase();
             let value = need(2)?.clone();
             DnsRecord::CAA(build_caa(flags, &tag, &value)?)
-        },
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
+        }
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by NS1".to_string(),
+            ));
+        }
     })
 }
 

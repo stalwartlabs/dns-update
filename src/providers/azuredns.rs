@@ -424,8 +424,12 @@ fn azure_record_type(rt: &DnsRecordType) -> Result<&'static str> {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Azure DNS".to_string(),
             ));
-        },
-        &DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
+        }
+        &DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Azure DNS".to_string(),
+            ));
+        }
     })
 }
 
@@ -560,8 +564,12 @@ fn insert_rrset_payload(
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Azure DNS".to_string(),
             ));
-        },
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
+        }
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Azure DNS".to_string(),
+            ));
+        }
     }
     Ok(())
 }

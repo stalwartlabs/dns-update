@@ -383,8 +383,12 @@ fn build_records(record: &DnsRecord, name: &str, ttl: u32) -> crate::Result<Vec<
             return Err(Error::Unsupported(
                 "TLSA records are not supported by IONOS".to_string(),
             ));
-        },
-        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+        }
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by IONOS".to_string(),
+            ));
+        }
     };
 
     Ok(contents
@@ -425,7 +429,11 @@ fn record_from_api(record: &Record, record_type: DnsRecordType) -> crate::Result
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by IONOS".to_string(),
         )),
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by IONOS".to_string(),
+            ));
+        }
     }
 }
 

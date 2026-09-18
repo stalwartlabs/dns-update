@@ -382,8 +382,12 @@ fn build_create_record<'a>(
         DnsRecord::CAA(caa) => {
             let (flags, tag, value) = caa.clone().decompose();
             req.content = format!("{} {} \"{}\"", flags, tag, value);
-        },
-        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+        }
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Exoscale".to_string(),
+            ));
+        }
     }
     Ok(req)
 }
@@ -401,7 +405,11 @@ fn dns_type(record: &DnsRecord) -> crate::Result<&'static str> {
         DnsRecord::TLSA(_) => Err(Error::Unsupported(
             "TLSA records are not supported by Exoscale".into(),
         )),
-        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Exoscale".to_string(),
+            ));
+        }
     }
 }
 

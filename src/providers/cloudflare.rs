@@ -423,8 +423,12 @@ impl From<DnsRecord> for DnsContent {
                 DnsContent::CAA {
                     data: CaaData { flags, tag, value },
                 }
-            },
-            DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+            }
+            // TODO(human): this PTR arm was left as `unimplemented!` on purpose - the
+            // enclosing function returns `Self`, not a Result or bool, so
+            // there is no established not-supported precedent (TLSA/CAA style) to follow
+            // here without changing the function signature. Needs human judgment.
+            DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
         }
     }
 }

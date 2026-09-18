@@ -245,7 +245,7 @@ impl DnsRecord {
             DnsRecord::SRV { .. } => DnsRecordType::SRV,
             DnsRecord::TLSA { .. } => DnsRecordType::TLSA,
             DnsRecord::CAA { .. } => DnsRecordType::CAA,
-            &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
+            DnsRecord::PTR { .. } => DnsRecordType::PTR,
         }
     }
 }
@@ -262,7 +262,7 @@ impl Display for DnsRecord {
             DnsRecord::SRV(record) => Display::fmt(record, f),
             DnsRecord::TLSA(record) => Display::fmt(record, f),
             DnsRecord::CAA(record) => Display::fmt(record, f),
-            &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
+            DnsRecord::PTR(name) => f.write_str(name),
         }
     }
 }
@@ -279,7 +279,7 @@ impl DnsRecordType {
             DnsRecordType::SRV => "SRV",
             DnsRecordType::TLSA => "TLSA",
             DnsRecordType::CAA => "CAA",
-            &DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
+            DnsRecordType::PTR => "PTR",
         }
     }
 }

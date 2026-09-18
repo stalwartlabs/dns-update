@@ -503,7 +503,11 @@ fn render_rdata(record: DnsRecord) -> Result<String> {
         ),
         DnsRecord::TLSA(tlsa) => tlsa.to_string(),
         DnsRecord::CAA(caa) => caa.to_string(),
-        DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
+        DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by UltraDNS".to_string(),
+            ));
+        }
     })
 }
 
@@ -526,7 +530,11 @@ fn parse_rdata(record_type: DnsRecordType, value: &str) -> Result<DnsRecord> {
         DnsRecordType::SRV => parse_srv(value)?,
         DnsRecordType::TLSA => parse_tlsa(value)?,
         DnsRecordType::CAA => parse_caa(value)?,
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by UltraDNS".to_string(),
+            ));
+        }
     })
 }
 

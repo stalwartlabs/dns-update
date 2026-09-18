@@ -293,7 +293,11 @@ fn build_entry(name: String, record: DnsRecord, ttl: u32) -> crate::Result<Recor
         DnsRecord::SRV(srv) => format!("{} {} {}", srv.weight, srv.port, srv.target.into_fqdn()),
         DnsRecord::TLSA(tlsa) => tlsa.to_string(),
         DnsRecord::CAA(caa) => caa.to_string(),
-        DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
+        DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Scaleway".to_string(),
+            ));
+        }
     };
     Ok(RecordEntry {
         name,
@@ -325,7 +329,11 @@ fn parse_listed_record(expected: DnsRecordType, record: &ListedRecord) -> crate:
         DnsRecordType::SRV => DnsRecord::SRV(parse_srv(&record.data, record.priority)?),
         DnsRecordType::TLSA => parse_tlsa(&record.data)?,
         DnsRecordType::CAA => DnsRecord::CAA(parse_caa(&record.data)?),
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Scaleway".to_string(),
+            ));
+        }
     })
 }
 

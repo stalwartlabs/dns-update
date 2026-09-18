@@ -404,8 +404,12 @@ impl TryFrom<DnsRecord> for DomeneshopRecordContent {
                     flags: Some(flags),
                     tag: Some(tag),
                 })
-            },
-            DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+            }
+            DnsRecord::PTR(_) => {
+                return Err(Error::Unsupported(
+                    "PTR records are not supported by Domeneshop".to_string(),
+                ));
+            }
         }
     }
 }

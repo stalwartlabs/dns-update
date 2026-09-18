@@ -671,7 +671,11 @@ fn dns_type_str(record_type: DnsRecordType) -> crate::Result<&'static str> {
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Nifcloud".into(),
         )),
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Nifcloud".to_string(),
+            ));
+        }
     }
 }
 
@@ -710,8 +714,12 @@ fn build_value(record: &DnsRecord) -> crate::Result<String> {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Nifcloud".into(),
             ));
-        },
-        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+        }
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Nifcloud".to_string(),
+            ));
+        }
     })
 }
 
@@ -756,7 +764,11 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Nifcloud".into(),
             ));
-        },
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
+        }
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Nifcloud".to_string(),
+            ));
+        }
     })
 }

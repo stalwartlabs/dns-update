@@ -376,8 +376,12 @@ fn encode_record(record: &DnsRecord) -> crate::Result<Vec<EncodedPayload>> {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Plesk".to_string(),
             ));
-        },
-        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+        }
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Plesk".to_string(),
+            ));
+        }
     })
 }
 
@@ -452,6 +456,10 @@ fn decode_record(expected_type: DnsRecordType, record: &PleskRecord) -> crate::R
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Plesk".to_string(),
         )),
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Plesk".to_string(),
+            ));
+        }
     }
 }

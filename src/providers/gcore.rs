@@ -360,8 +360,12 @@ fn record_to_content(record: DnsRecord) -> Vec<Value> {
                 Value::String(tag),
                 Value::String(value),
             ]
-        },
-        DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+        }
+        // TODO(human): this PTR arm was left as `unimplemented!` on purpose - the
+        // enclosing function returns `Vec<Value>`, not a Result or bool, so
+        // there is no established not-supported precedent (TLSA/CAA style) to follow
+        // here without changing the function signature. Needs human judgment.
+        DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
     }
 }
 
@@ -464,8 +468,12 @@ fn parse_content(record_type: DnsRecordType, content: &[Value]) -> crate::Result
             let tag = expect_string(content, 1, "CAA")?.to_string();
             let value = expect_string(content, 2, "CAA")?.to_string();
             build_caa(flags, &tag, &value).map(DnsRecord::CAA)
-        },
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
+        }
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Gcore".to_string(),
+            ));
+        }
     }
 }
 

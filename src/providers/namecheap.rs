@@ -525,8 +525,12 @@ fn build_hosts_for_record(
                 caa_flag: None,
                 caa_tag: None,
             });
-        },
-        DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+        }
+        DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Namecheap".to_string(),
+            ));
+        }
     }
     Ok(hosts)
 }
@@ -573,8 +577,12 @@ fn host_to_dns_record(host: &Host, record_type: DnsRecordType) -> crate::Result<
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Namecheap".to_string(),
             ));
-        },
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
+        }
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Namecheap".to_string(),
+            ));
+        }
     }))
 }
 

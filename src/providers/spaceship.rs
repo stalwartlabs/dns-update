@@ -471,7 +471,11 @@ impl SpaceshipDnsRecord {
                 DnsRecord::SRV(_) => "SRV",
                 DnsRecord::TLSA(_) => "TLSA",
                 DnsRecord::CAA(_) => "CAA",
-                &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
+                &DnsRecord::PTR(_) => {
+                    return Err(Error::Unsupported(
+                        "PTR records are not supported by Spaceship".to_string(),
+                    ));
+                }
             }
             .to_string(),
             name: name.to_string(),
@@ -548,8 +552,12 @@ impl SpaceshipDnsRecord {
                 item.flag = Some(flag);
                 item.tag = Some(tag);
                 item.value = Some(value);
-            },
-            DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+            }
+            DnsRecord::PTR(_) => {
+                return Err(Error::Unsupported(
+                    "PTR records are not supported by Spaceship".to_string(),
+                ));
+            }
         }
 
         Ok(item)

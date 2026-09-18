@@ -332,7 +332,11 @@ fn safedns_record_to_dns_record(
             "TLSA records are not supported by SafeDNS".to_string(),
         )),
         DnsRecordType::CAA => parse_caa(&record.content),
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by SafeDNS".to_string(),
+            ));
+        }
     }
 }
 
@@ -454,8 +458,12 @@ impl TryFrom<DnsRecord> for SafeDnsRecordContent {
                     content: format!("{flags} {tag} \"{value}\""),
                     priority: None,
                 })
-            },
-            DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+            }
+            DnsRecord::PTR(_) => {
+                return Err(Error::Unsupported(
+                    "PTR records are not supported by SafeDNS".to_string(),
+                ));
+            }
         }
     }
 }

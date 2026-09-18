@@ -410,7 +410,11 @@ fn listed_to_dns_record(
         DnsRecordType::SRV => DnsRecord::SRV(parse_srv_content(&content, prio.unwrap_or(0))?),
         DnsRecordType::TLSA => DnsRecord::TLSA(parse_tlsa_content(&content)?),
         DnsRecordType::CAA => DnsRecord::CAA(parse_caa_content(&content)?),
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by porkbun".to_string(),
+            ));
+        }
     })
 }
 
@@ -584,6 +588,10 @@ impl From<DnsRecord> for RecordData {
             DnsRecord::CAA(caa) => RecordData::CAA {
                 content: caa.to_string(),
             },
+            // TODO(human): this PTR arm was left as `unimplemented!` on purpose - the
+            // enclosing function returns `Self`, not a Result or bool, so
+            // there is no established not-supported precedent (TLSA/CAA style) to follow
+            // here without changing the function signature. Needs human judgment.
             DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
         }
     }

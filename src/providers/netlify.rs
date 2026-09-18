@@ -342,8 +342,12 @@ fn record_to_content(record: &DnsRecord) -> crate::Result<RecordContent> {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Netlify".to_string(),
             ));
-        },
-        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+        }
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Netlify".to_string(),
+            ));
+        }
     }
     Ok(content)
 }
@@ -393,7 +397,11 @@ fn listed_to_record(record_type: DnsRecordType, r: &ListedRecord) -> crate::Resu
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Netlify".to_string(),
             ));
-        },
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
+        }
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Netlify".to_string(),
+            ));
+        }
     })
 }

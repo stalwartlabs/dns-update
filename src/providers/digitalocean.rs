@@ -402,8 +402,8 @@ impl TryFrom<DnsRecord> for RecordData {
                     flags,
                     tag,
                 })
-            },
-            DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+            }
+            DnsRecord::PTR(_) => Err("PTR records are not supported by DigitalOcean"),
         }
     }
 }

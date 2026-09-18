@@ -537,7 +537,11 @@ fn render_record(record: &DnsRecord) -> crate::Result<Vec<WireRecord>> {
         DnsRecord::TLSA(_) => Err(Error::Unsupported(
             "TLSA records are not supported by baiducloud".to_string(),
         )),
-        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by baiducloud".to_string(),
+            ));
+        }
     }
 }
 

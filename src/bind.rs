@@ -70,8 +70,10 @@ impl BindSerializer {
                 }
                 DnsRecord::CAA(caa) => {
                     writeln!(output, "{name} IN CAA {caa}").unwrap();
-                },
-                &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider")
+                }
+                DnsRecord::PTR(ptr) => {
+                    writeln!(output, "{name} IN PTR {}", ptr.into_fqdn()).unwrap();
+                }
             }
         }
         output

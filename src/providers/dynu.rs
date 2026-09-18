@@ -465,7 +465,11 @@ fn record_type_and_payload(record: DnsRecord) -> crate::Result<(&'static str, Pa
                 certificate: tlsa.cert_data.iter().map(|b| format!("{b:02x}")).collect(),
             },
         )),
-        DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
+        DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Dynu".to_string(),
+            ));
+        }
     }
 }
 
@@ -624,7 +628,11 @@ fn listed_to_dns_record(listed: ListedRecord, expected: DnsRecordType) -> crate:
                 matching: tlsa_matching_from_u8(matching)?,
                 cert_data: decode_hex(&hex)?,
             }))
-        },
-        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider")
+        }
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Dynu".to_string(),
+            ));
+        }
     }
 }
