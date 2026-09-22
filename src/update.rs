@@ -80,6 +80,7 @@ use crate::{
         netlify::NetlifyProvider,
         nifcloud::NifcloudProvider,
         ns1::Ns1Provider,
+        pdns::PdnsProvider,
         plesk::PleskProvider,
         porkbun::PorkBunProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
@@ -759,6 +760,21 @@ impl DnsUpdater {
         )))
     }
 
+    /// Create a new DNS updater using the PowerDNS Authoritative HTTP API.
+    pub fn new_pdns(
+        api_key: impl AsRef<str>,
+        endpoint: Option<impl AsRef<str>>,
+        server_name: Option<impl AsRef<str>>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Pdns(PdnsProvider::new(
+            api_key,
+            endpoint,
+            server_name,
+            timeout,
+        )))
+    }
+
     /// Create a new DNS updater using the cPanel UAPI (API token auth).
     pub fn new_cpanel(
         base_url: impl AsRef<str>,
@@ -1150,6 +1166,11 @@ impl DnsUpdater {
                     .set_rrset(name, record_type, ttl, records, origin)
                     .await
             }
+            DnsUpdater::Pdns(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
             DnsUpdater::Cpanel(provider) => {
                 provider
                     .set_rrset(name, record_type, ttl, records, origin)
@@ -1526,6 +1547,11 @@ impl DnsUpdater {
                     .await
             }
             DnsUpdater::Plesk(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Pdns(provider) => {
                 provider
                     .add_to_rrset(name, record_type, ttl, records, origin)
                     .await
@@ -1909,6 +1935,11 @@ impl DnsUpdater {
                     .remove_from_rrset(name, record_type, records, origin)
                     .await
             }
+            DnsUpdater::Pdns(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
             DnsUpdater::Cpanel(provider) => {
                 provider
                     .remove_from_rrset(name, record_type, records, origin)
@@ -2061,6 +2092,7 @@ impl DnsUpdater {
             DnsUpdater::Hostinger(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Autodns(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Plesk(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Pdns(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Cpanel(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Lightsail(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::EdgeDns(provider) => provider.list_rrset(name, record_type, origin).await,
