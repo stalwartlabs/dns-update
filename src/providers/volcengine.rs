@@ -17,7 +17,7 @@ use crate::utils::split_caa_value;
 use crate::utils::unquote_txt;
 use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
 use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord};
-use chrono::Utc;
+use jiff::Timestamp;
 use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
@@ -317,9 +317,9 @@ impl VolcengineProvider {
         let query = format!("Action={}&Version={}", action, VOLCENGINE_API_VERSION);
         let canonical_query = canonical_query_string(&query);
 
-        let datetime = Utc::now();
-        let amz_date = datetime.format("%Y%m%dT%H%M%SZ").to_string();
-        let date_stamp = datetime.format("%Y%m%d").to_string();
+        let datetime = Timestamp::now();
+        let amz_date = datetime.strftime("%Y%m%dT%H%M%SZ").to_string();
+        let date_stamp = datetime.strftime("%Y%m%d").to_string();
         let payload_hash = hex::encode(sha256_digest(body_text.as_bytes()));
 
         let canonical_headers = format!(

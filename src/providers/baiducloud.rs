@@ -15,7 +15,7 @@ use crate::{
     http::{HttpClient, HttpClientBuilder, HttpRequest},
     utils::{parse_srv, parse_tlsa, txt_chunks},
 };
-use chrono::Utc;
+use jiff::Timestamp;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -319,7 +319,7 @@ impl BaiduCloudProvider {
         };
 
         let host = host_from_endpoint(&self.endpoint);
-        let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let timestamp = Timestamp::now().strftime("%Y-%m-%dT%H:%M:%SZ").to_string();
         let auth_string = format!(
             "bce-auth-v1/{}/{}/{}",
             self.access_key, timestamp, BAIDU_EXPIRE_SECONDS
@@ -479,8 +479,8 @@ fn subdomain_for(name: &str, origin: &str) -> String {
 }
 
 fn generate_client_token() -> String {
-    let now = Utc::now();
-    format!("dnsupdate-{}", now.timestamp_micros())
+    let now = Timestamp::now();
+    format!("dnsupdate-{}", now.as_microsecond())
 }
 
 fn render_record(record: &DnsRecord) -> crate::Result<Vec<WireRecord>> {

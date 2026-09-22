@@ -17,7 +17,7 @@ use crate::{
     utils::txt_chunks_to_text,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use chrono::Utc;
+use jiff::Timestamp;
 use quick_xml::se::to_string as xml_to_string;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -195,7 +195,9 @@ impl NifcloudProvider {
     }
 
     fn signed(&self, request: crate::http::HttpRequest) -> crate::http::HttpRequest {
-        let date = Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+        let date = Timestamp::now()
+            .strftime("%a, %d %b %Y %H:%M:%S GMT")
+            .to_string();
         let mac = hmac_sha256(self.secret_key.as_bytes(), date.as_bytes());
         let signature = BASE64_STANDARD.encode(&mac);
         let auth = format!(

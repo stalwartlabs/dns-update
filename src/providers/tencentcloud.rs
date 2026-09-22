@@ -12,7 +12,7 @@
 use crate::utils::parse_srv;
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
-use chrono::Utc;
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{net::AddrParseError, time::Duration};
@@ -383,9 +383,9 @@ impl TencentCloudProvider {
     where
         T: serde::de::DeserializeOwned,
     {
-        let now = Utc::now();
-        let timestamp = now.timestamp().to_string();
-        let date_stamp = now.format("%Y-%m-%d").to_string();
+        let now = Timestamp::now();
+        let timestamp = now.as_second().to_string();
+        let date_stamp = now.strftime("%Y-%m-%d").to_string();
 
         let content_type = "application/json; charset=utf-8";
         let action_header = action.to_ascii_lowercase();

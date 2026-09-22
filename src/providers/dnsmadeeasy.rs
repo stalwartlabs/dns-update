@@ -16,7 +16,7 @@ use crate::{
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
-use chrono::Utc;
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -115,7 +115,9 @@ impl DnsMadeEasyProvider {
     }
 
     fn signed_request(&self, request: crate::http::HttpRequest) -> crate::http::HttpRequest {
-        let timestamp = Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+        let timestamp = Timestamp::now()
+            .strftime("%a, %d %b %Y %H:%M:%S GMT")
+            .to_string();
         let signature = hex::encode(hmac_sha1(self.api_secret.as_bytes(), timestamp.as_bytes()));
         request
             .with_header("x-dnsme-apiKey", &self.api_key)

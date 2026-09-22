@@ -12,7 +12,7 @@
 use crate::utils::split_caa_value;
 use std::time::Duration;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use serde::Deserialize;
 
 use crate::{
@@ -405,13 +405,9 @@ impl AlidnsProvider {
             .join("&");
         let url = format!("{}/?{}", self.endpoint, canonical_querystring);
 
-        let now = Utc::now();
-        let amz_date = now.format("%Y-%m-%dT%H:%M:%SZ").to_string();
-        let nonce = format!(
-            "{}{}",
-            now.timestamp_nanos_opt().unwrap_or(0),
-            now.timestamp_subsec_nanos()
-        );
+        let now = Timestamp::now();
+        let amz_date = now.strftime("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let nonce = format!("{}{}", now.as_nanosecond(), now.subsec_nanosecond());
 
         let payload_hash = hex::encode(sha256_digest(b""));
 

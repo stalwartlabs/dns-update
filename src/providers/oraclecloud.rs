@@ -19,7 +19,7 @@ use crate::utils::txt_chunks_to_text;
 use crate::utils::{parse_mx, parse_srv, parse_tlsa};
 use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
-use chrono::Utc;
+use jiff::Timestamp;
 use reqwest::Method;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
@@ -167,7 +167,9 @@ impl OracleCloudProvider {
         }
 
         let method_lower = method.as_str().to_lowercase();
-        let date = Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+        let date = Timestamp::now()
+            .strftime("%a, %d %b %Y %H:%M:%S GMT")
+            .to_string();
 
         let mut signed_pairs: Vec<(String, String)> = Vec::new();
         signed_pairs.push((

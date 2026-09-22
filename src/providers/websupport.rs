@@ -17,7 +17,7 @@ use crate::{
     utils::strip_origin_from_name,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use chrono::{SecondsFormat, Utc};
+use jiff::Timestamp;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -145,9 +145,9 @@ impl WebSupportProvider {
         method: Method,
         path: &str,
     ) -> crate::http::HttpRequest {
-        let now = Utc::now();
-        let timestamp = now.timestamp();
-        let date = now.to_rfc3339_opts(SecondsFormat::Secs, true);
+        let now = Timestamp::now();
+        let timestamp = now.as_second();
+        let date = now.strftime("%Y-%m-%dT%H:%M:%SZ").to_string();
         let canonical = format!("{} {} {}", method.as_str(), path, timestamp);
         let signature = hex::encode(hmac_sha1(self.secret.as_bytes(), canonical.as_bytes()));
         let basic = BASE64_STANDARD.encode(format!("{}:{}", self.api_key, signature));

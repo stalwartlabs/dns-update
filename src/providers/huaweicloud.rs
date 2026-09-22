@@ -18,7 +18,7 @@ use crate::{
     http::{HttpClient, HttpClientBuilder, HttpRequest},
     utils::txt_chunks_to_text,
 };
-use chrono::Utc;
+use jiff::Timestamp;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use std::{net::AddrParseError, time::Duration};
@@ -449,8 +449,8 @@ impl HuaweiCloudProvider {
         };
 
         let host = host_from_endpoint(&self.endpoint);
-        let now = Utc::now();
-        let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
+        let now = Timestamp::now();
+        let amz_date = now.strftime("%Y%m%dT%H%M%SZ").to_string();
 
         let body_str = body.as_deref().unwrap_or("");
         let payload_hash = hex::encode(sha256_digest(body_str.as_bytes()));

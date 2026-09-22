@@ -18,7 +18,7 @@ use crate::{
     utils::strip_origin_from_name,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use chrono::Utc;
+use jiff::Timestamp;
 use reqwest::{Method, Url};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -115,7 +115,7 @@ impl ExoscaleProvider {
     fn build_authorization(&self, method: &Method, url: &str, body: &str) -> crate::Result<String> {
         let parsed = Url::parse(url)
             .map_err(|err| Error::Client(format!("Failed to parse URL {}: {}", url, err)))?;
-        let expires = Utc::now().timestamp() + SIGNATURE_EXPIRES_SECONDS;
+        let expires = Timestamp::now().as_second() + SIGNATURE_EXPIRES_SECONDS;
         let signature = hmac_sha256(
             self.api_secret.as_bytes(),
             signing_string(method.as_str(), parsed.path(), body, expires).as_bytes(),

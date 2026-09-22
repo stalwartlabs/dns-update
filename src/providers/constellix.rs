@@ -18,7 +18,7 @@ use crate::{
     utils::{strip_origin_from_name, txt_chunks_to_text},
 };
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use chrono::Utc;
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -113,7 +113,7 @@ impl ConstellixProvider {
     }
 
     fn security_token(&self) -> String {
-        let timestamp = Utc::now().timestamp_millis();
+        let timestamp = Timestamp::now().as_millisecond();
         let timestamp_str = timestamp.to_string();
         let mac = hmac_sha1(self.secret_key.as_bytes(), timestamp_str.as_bytes());
         let encoded = BASE64_STANDARD.encode(&mac);

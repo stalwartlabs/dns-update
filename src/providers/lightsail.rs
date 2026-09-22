@@ -13,7 +13,7 @@ use crate::crypto::{hmac_sha256, sha256_digest};
 use crate::utils::unquote_txt;
 use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
 use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, Result, SRVRecord};
-use chrono::Utc;
+use jiff::Timestamp;
 use reqwest::Client;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
@@ -211,9 +211,9 @@ impl LightsailProvider {
     }
 
     fn sign(&self, method: &str, path: &str, target: &str, payload: &str) -> Result<HeaderMap> {
-        let now = Utc::now();
-        let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
-        let date_stamp = now.format("%Y%m%d").to_string();
+        let now = Timestamp::now();
+        let amz_date = now.strftime("%Y%m%dT%H%M%SZ").to_string();
+        let date_stamp = now.strftime("%Y%m%d").to_string();
         let payload_hash = hex::encode(sha256_digest(payload.as_bytes()));
         let host = self.signing_host();
 

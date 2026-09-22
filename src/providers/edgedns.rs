@@ -17,7 +17,7 @@ use crate::utils::txt_chunks_to_text;
 use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, Result, SRVRecord};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use chrono::Utc;
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -309,7 +309,9 @@ impl EdgeDnsProvider {
             None => parsed.host_str().unwrap_or("").to_string(),
         };
         let scheme = parsed.scheme().to_string();
-        let timestamp = Utc::now().format("%Y%m%dT%H:%M:%S+0000").to_string();
+        let timestamp = Timestamp::now()
+            .strftime("%Y%m%dT%H:%M:%S+0000")
+            .to_string();
         let nonce = generate_nonce();
 
         let body_for_hash = if matches!(method, "POST" | "PUT") {
@@ -405,8 +407,7 @@ fn url_encode(value: &str) -> String {
 }
 
 fn generate_nonce() -> String {
-    let now = Utc::now();
-    let nanos = now.timestamp_nanos_opt().unwrap_or(now.timestamp());
+    let nanos = Timestamp::now().as_nanosecond();
     let mut buf = [0u8; 16];
     let bytes = (nanos as u128).to_le_bytes();
     buf.copy_from_slice(&bytes);

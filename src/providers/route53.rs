@@ -15,6 +15,7 @@ use crate::utils::strip_trailing_dot;
 use crate::utils::txt_chunks_to_text;
 use crate::utils::{parse_mx, parse_srv, parse_tlsa};
 use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn};
+use jiff::Timestamp;
 use quick_xml::de::from_str;
 use quick_xml::se::to_string;
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -22,7 +23,7 @@ use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::net::AddrParseError;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 const ROUTE53_API_VERSION: &str = "2013-04-01";
 const ROUTE53_SERVICE: &str = "route53";
@@ -500,10 +501,9 @@ impl Route53Provider {
         url: &str,
         body: Option<&str>,
     ) -> Result<Response, SignedRequestError> {
-        use chrono::{DateTime, Utc};
-        let datetime: DateTime<Utc> = SystemTime::now().into();
-        let amz_date = datetime.format("%Y%m%dT%H%M%SZ").to_string();
-        let date_stamp = datetime.format("%Y%m%d").to_string();
+        let datetime = Timestamp::now();
+        let amz_date = datetime.strftime("%Y%m%dT%H%M%SZ").to_string();
+        let date_stamp = datetime.strftime("%Y%m%d").to_string();
 
         let parsed_url: reqwest::Url = url
             .parse()

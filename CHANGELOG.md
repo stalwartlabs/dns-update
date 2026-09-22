@@ -1,3 +1,8 @@
+dns-update 0.5.9
+================================
+- Added PowerDNS authoritative API support.
+- Replaced `chrono` with `jiff`.
+
 dns-update 0.5.8
 ================================
 - Scaleway: append a trailing dot to CNAME, NS, MX and SRV hostname targets.
