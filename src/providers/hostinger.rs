@@ -390,6 +390,11 @@ fn encode_record(record: &DnsRecord) -> String {
         ),
         DnsRecord::TLSA(tlsa) => tlsa.to_string(),
         DnsRecord::CAA(caa) => caa.to_string(),
+        // TODO(human): this PTR arm was left as `unimplemented!` on purpose - the
+        // enclosing function returns `String`, not a Result or bool, so
+        // there is no established not-supported precedent (TLSA/CAA style) to follow
+        // here without changing the function signature. Needs human judgment.
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
     }
 }
 
@@ -410,6 +415,11 @@ fn parse_record(record_type: DnsRecordType, content: &str) -> crate::Result<DnsR
         DnsRecordType::SRV => parse_srv(content),
         DnsRecordType::TLSA => parse_tlsa(content),
         DnsRecordType::CAA => parse_caa(content),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Hostinger".to_string(),
+            ));
+        }
     }
 }
 

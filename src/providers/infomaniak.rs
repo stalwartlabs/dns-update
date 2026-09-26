@@ -535,6 +535,11 @@ fn encode_record(record: &DnsRecord) -> crate::Result<(&'static str, String, Opt
             ),
             None,
         ),
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Infomaniak".to_string(),
+            ));
+        }
     })
 }
 
@@ -565,6 +570,11 @@ fn decode_existing(
         DnsRecordType::SRV => DnsRecord::SRV(parse_srv(&record.target)?),
         DnsRecordType::CAA => DnsRecord::CAA(parse_caa(&record.target)?),
         DnsRecordType::TLSA => parse_tlsa(&record.target)?,
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Infomaniak".to_string(),
+            ));
+        }
     })
 }
 

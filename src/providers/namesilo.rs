@@ -376,6 +376,11 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
                 "TLSA records are not supported by NameSilo".to_string(),
             ));
         }
+        DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by NameSilo".to_string(),
+            ));
+        }
     })
 }
 
@@ -408,6 +413,11 @@ fn parse_record(record_type: DnsRecordType, raw: &ResourceRecord) -> crate::Resu
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by NameSilo".to_string(),
         )),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by NameSilo".to_string(),
+            ));
+        }
     }
 }
 

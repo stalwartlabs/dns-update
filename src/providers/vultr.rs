@@ -356,6 +356,11 @@ fn record_target(record: &DnsRecord) -> Result<String, Error> {
             let (flags, tag, value) = caa.clone().decompose();
             Ok(format!("{flags} {tag} \"{value}\""))
         }
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Vultr".to_string(),
+            ));
+        }
     }
 }
 

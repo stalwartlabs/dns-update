@@ -575,6 +575,11 @@ fn lightsail_record_type(record_type: DnsRecordType) -> Result<&'static str> {
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Lightsail".to_string(),
         )),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Lightsail".to_string(),
+            ));
+        }
     }
 }
 
@@ -631,6 +636,11 @@ impl LightsailRecord {
             DnsRecord::TLSA(_) => {
                 return Err(Error::Unsupported(
                     "TLSA records are not supported by Lightsail".to_string(),
+                ));
+            }
+            &DnsRecord::PTR(_) => {
+                return Err(Error::Unsupported(
+                    "PTR records are not supported by Lightsail".to_string(),
                 ));
             }
         };
@@ -704,6 +714,11 @@ fn parse_target(record_type: DnsRecordType, target: &str) -> Result<DnsRecord> {
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Lightsail".to_string(),
         )),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Lightsail".to_string(),
+            ));
+        }
     }
 }
 

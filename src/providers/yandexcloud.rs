@@ -511,6 +511,11 @@ fn record_to_entry(record: &DnsRecord) -> crate::Result<RecordEntry> {
                 "TLSA records are not supported by Yandex Cloud".into(),
             ));
         }
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Yandex Cloud".to_string(),
+            ));
+        }
     };
     Ok(entry)
 }
@@ -578,6 +583,11 @@ fn record_type_str(record_type: DnsRecordType) -> crate::Result<&'static str> {
         DnsRecordType::TLSA => {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Yandex Cloud".into(),
+            ));
+        }
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Yandex Cloud".to_string(),
             ));
         }
     })
@@ -700,6 +710,11 @@ fn parse_rrdata(record_type: DnsRecordType, text: &str) -> crate::Result<DnsReco
         DnsRecordType::TLSA => {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Yandex Cloud".into(),
+            ));
+        }
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Yandex Cloud".to_string(),
             ));
         }
     })

@@ -403,6 +403,7 @@ impl TryFrom<DnsRecord> for RecordData {
                     tag,
                 })
             }
+            DnsRecord::PTR(_) => Err("PTR records are not supported by DigitalOcean"),
         }
     }
 }

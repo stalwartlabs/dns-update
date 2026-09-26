@@ -148,6 +148,11 @@ impl From<&DnsRecord> for OvhRecordFormat {
                 field_type: "CAA".to_string(),
                 target: caa.to_string(),
             },
+            // TODO(human): this PTR arm was left as `unimplemented!` on purpose - the
+            // enclosing function returns `Self`, not a Result or bool, so
+            // there is no established not-supported precedent (TLSA/CAA style) to follow
+            // here without changing the function signature. Needs human judgment.
+            &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
         }
     }
 }
@@ -580,6 +585,11 @@ fn parse_ovh_target(record_type: DnsRecordType, target: &str) -> crate::Result<D
             }))
         }
         DnsRecordType::CAA => parse_caa(target),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by OVH".to_string(),
+            ));
+        }
     }
 }
 

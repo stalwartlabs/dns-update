@@ -471,6 +471,11 @@ fn render_zone_entries(host: &str, record: &DnsRecord, ttl: u32) -> crate::Resul
             let (flags, tag, value) = caa.clone().decompose();
             ("CAA", 0, vec![format!("{flags} {tag} \"{value}\"")])
         }
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Joker.com".to_string(),
+            ));
+        }
     };
 
     Ok(values
@@ -679,6 +684,11 @@ fn parse_zone_record(
         DnsRecordType::TLSA => {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Joker.com".to_string(),
+            ));
+        }
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Joker.com".to_string(),
             ));
         }
     }))

@@ -308,6 +308,11 @@ fn render_value(record: &DnsRecord) -> crate::Result<String> {
                 "CAA records are not supported by Dreamhost".to_string(),
             ));
         }
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Dreamhost".to_string(),
+            ));
+        }
     })
 }
 
@@ -363,6 +368,11 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
             "{} records are not supported by Dreamhost",
             record_type.as_str()
         ))),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Dreamhost".to_string(),
+            ));
+        }
     }
 }
 

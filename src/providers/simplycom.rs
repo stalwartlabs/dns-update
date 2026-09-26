@@ -416,6 +416,11 @@ impl TryFrom<DnsRecord> for SimplyComRecordContent {
                 data: caa.to_string(),
                 priority: None,
             },
+            DnsRecord::PTR(_) => {
+                return Err(Error::Unsupported(
+                    "PTR records are not supported by Simply.com".to_string(),
+                ));
+            }
         })
     }
 }

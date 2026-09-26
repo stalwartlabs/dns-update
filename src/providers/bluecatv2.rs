@@ -514,6 +514,11 @@ fn bluecat_record_type(record_type: DnsRecordType) -> crate::Result<&'static str
                 "TLSA records are not supported by Bluecat".into(),
             ));
         }
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Bluecat".to_string(),
+            ));
+        }
     })
 }
 
@@ -602,6 +607,11 @@ fn record_to_normalized(record: DnsRecord) -> crate::Result<NormalizedContent> {
                 "TLSA records are not supported by Bluecat".into(),
             ));
         }
+        DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Bluecat".to_string(),
+            ));
+        }
     })
 }
 
@@ -650,6 +660,11 @@ fn normalize_listed(
             value: listed.value.clone()?,
         }),
         DnsRecordType::TLSA => None,
+        // TODO(human): this PTR arm was left as `unimplemented!` on purpose - the
+        // enclosing function returns `Option<NormalizedContent>`, not a Result or bool, so
+        // there is no established not-supported precedent (TLSA/CAA style) to follow
+        // here without changing the function signature. Needs human judgment.
+        DnsRecordType::PTR => unimplemented!("PTR is not supported by this provider"),
     }
 }
 

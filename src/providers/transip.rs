@@ -398,6 +398,11 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
             let (flags, tag, value) = caa.decompose();
             format!("{flags} {tag} \"{value}\"")
         }
+        DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by TransIP".to_string(),
+            ));
+        }
     })
 }
 
@@ -497,6 +502,11 @@ fn parse_dns_entry(entry: &DnsEntry, record_type: DnsRecordType) -> crate::Resul
             }))
         }
         DnsRecordType::CAA => Ok(DnsRecord::CAA(parse_caa_content(&entry.content)?)),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by TransIP".to_string(),
+            ));
+        }
     }
 }
 

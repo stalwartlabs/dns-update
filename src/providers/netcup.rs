@@ -504,6 +504,11 @@ fn encode_record(record: &DnsRecord, hostname: &str) -> crate::Result<NetcupReco
             ),
             String::new(),
         ),
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Netcup".to_string(),
+            ));
+        }
     };
 
     Ok(NetcupRecord {
@@ -555,6 +560,11 @@ fn decode_record(record_type: DnsRecordType, record: &NetcupRecord) -> crate::Re
         DnsRecordType::SRV => parse_srv(record)?,
         DnsRecordType::TLSA => parse_tlsa(&record.destination)?,
         DnsRecordType::CAA => parse_caa(&record.destination)?,
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Netcup".to_string(),
+            ));
+        }
     })
 }
 

@@ -28,7 +28,7 @@ use hickory_proto::op::ResponseCode;
 use hickory_proto::rr::rdata::caa::KeyValue;
 use hickory_proto::rr::rdata::tlsa::{CertUsage, Matching, Selector};
 use hickory_proto::rr::rdata::tsig::TsigAlgorithm;
-use hickory_proto::rr::rdata::{A, AAAA, CAA, CNAME, MX, NS, SRV, TLSA, TXT};
+use hickory_proto::rr::rdata::{A, AAAA, CAA, CNAME, MX, NS, PTR, SRV, TLSA, TXT};
 use hickory_proto::rr::{DNSClass, Name, RData, Record, RecordSet, RecordType, TSigner};
 use std::net::{AddrParseError, SocketAddr};
 
@@ -215,6 +215,7 @@ fn rdata_to_dns_record(data: &RData) -> crate::Result<DnsRecord> {
         RData::AAAA(aaaa) => DnsRecord::AAAA(aaaa.0),
         RData::CNAME(cname) => DnsRecord::CNAME(strip_trailing_dot(&cname.0.to_utf8()).to_string()),
         RData::NS(ns) => DnsRecord::NS(strip_trailing_dot(&ns.0.to_utf8()).to_string()),
+        RData::PTR(ptr) => DnsRecord::PTR(strip_trailing_dot(&ptr.0.to_utf8()).to_string()),
         RData::MX(mx) => DnsRecord::MX(MXRecord {
             priority: mx.preference,
             exchange: strip_trailing_dot(&mx.exchange.to_utf8()).to_string(),
@@ -335,6 +336,7 @@ impl From<DnsRecordType> for RecordType {
             DnsRecordType::AAAA => RecordType::AAAA,
             DnsRecordType::CNAME => RecordType::CNAME,
             DnsRecordType::NS => RecordType::NS,
+            DnsRecordType::PTR => RecordType::PTR,
             DnsRecordType::MX => RecordType::MX,
             DnsRecordType::TXT => RecordType::TXT,
             DnsRecordType::SRV => RecordType::SRV,
@@ -355,6 +357,10 @@ fn convert_record(record: DnsRecord) -> crate::Result<(RecordType, RData)> {
         DnsRecord::NS(content) => (
             RecordType::NS,
             RData::NS(NS(Name::from_str_relaxed(content)?)),
+        ),
+        DnsRecord::PTR(content) => (
+            RecordType::PTR,
+            RData::PTR(PTR(Name::from_str_relaxed(content)?)),
         ),
         DnsRecord::MX(content) => (
             RecordType::MX,

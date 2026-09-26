@@ -590,6 +590,11 @@ fn rrdata_for_record(record: &DnsRecord) -> String {
             let (flags, tag, value) = caa.clone().decompose();
             format!("{} {} \"{}\"", flags, tag, value)
         }
+        // TODO(human): this PTR arm was left as `unimplemented!` on purpose - the
+        // enclosing function returns `String`, not a Result or bool, so
+        // there is no established not-supported precedent (TLSA/CAA style) to follow
+        // here without changing the function signature. Needs human judgment.
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
     }
 }
 
@@ -691,6 +696,11 @@ fn parse_rrdata(record_type: DnsRecordType, text: &str) -> Result<DnsRecord> {
             })
         }
         DnsRecordType::CAA => parse_caa_rrdata(text)?,
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Google Cloud DNS".to_string(),
+            ));
+        }
     })
 }
 

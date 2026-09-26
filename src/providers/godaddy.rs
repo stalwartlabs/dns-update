@@ -374,6 +374,11 @@ fn build_record(record: DnsRecord, ttl: u32) -> crate::Result<GodaddyRecord> {
                 "TLSA records are not supported by GoDaddy".to_string(),
             ));
         }
+        DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by GoDaddy".to_string(),
+            ));
+        }
     })
 }
 
@@ -408,6 +413,11 @@ fn parse_record(record_type: DnsRecordType, record: &GodaddyRecord) -> crate::Re
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by GoDaddy".to_string(),
         )),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by GoDaddy".to_string(),
+            ));
+        }
     }
 }
 

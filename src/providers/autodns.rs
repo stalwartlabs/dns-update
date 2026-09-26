@@ -367,6 +367,11 @@ fn resource_record_to_dns_record(
             })
         }
         DnsRecordType::CAA => DnsRecord::CAA(autodns_parse_caa(&rr.value)?),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by AutoDNS".to_string(),
+            ));
+        }
     })
 }
 
@@ -472,6 +477,11 @@ fn build_resource_record(name: &str, record: &DnsRecord, ttl: u32) -> ResourceRe
         ),
         DnsRecord::TLSA(tlsa) => (tlsa.to_string(), 0),
         DnsRecord::CAA(caa) => (caa.to_string(), 0),
+        // TODO(human): this PTR arm was left as `unimplemented!` on purpose - the
+        // enclosing function returns `ResourceRecord`, not a Result or bool, so
+        // there is no established not-supported precedent (TLSA/CAA style) to follow
+        // here without changing the function signature. Needs human judgment.
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
     };
     ResourceRecord {
         name: name.to_string(),

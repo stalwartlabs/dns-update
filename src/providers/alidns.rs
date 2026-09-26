@@ -559,6 +559,11 @@ fn record_from_listed(
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Alibaba Cloud DNS".to_string(),
         )),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by Alibaba Cloud DNS".to_string(),
+            ));
+        }
     }
 }
 
@@ -688,6 +693,11 @@ impl TryFrom<DnsRecord> for AlidnsRecord {
             DnsRecord::TLSA(_) => Err(Error::Unsupported(
                 "TLSA records are not supported by Alibaba Cloud DNS".to_string(),
             )),
+            DnsRecord::PTR(_) => {
+                return Err(Error::Unsupported(
+                    "PTR records are not supported by Alibaba Cloud DNS".to_string(),
+                ));
+            }
         }
     }
 }

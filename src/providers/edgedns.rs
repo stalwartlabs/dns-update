@@ -438,6 +438,11 @@ fn edgedns_record_type(record_type: DnsRecordType) -> Result<&'static str> {
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by EdgeDNS".to_string(),
         )),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by EdgeDNS".to_string(),
+            ));
+        }
     }
 }
 
@@ -501,6 +506,11 @@ impl TryFrom<&DnsRecord> for EdgeDnsRecord {
             DnsRecord::TLSA(_) => {
                 return Err(Error::Unsupported(
                     "TLSA records are not supported by EdgeDNS".to_string(),
+                ));
+            }
+            &DnsRecord::PTR(_) => {
+                return Err(Error::Unsupported(
+                    "PTR records are not supported by EdgeDNS".to_string(),
                 ));
             }
         })
@@ -646,6 +656,11 @@ fn rdata_to_record(record_type: DnsRecordType, entry: &str) -> Result<DnsRecord>
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by EdgeDNS".to_string(),
         )),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by EdgeDNS".to_string(),
+            ));
+        }
     }
 }
 

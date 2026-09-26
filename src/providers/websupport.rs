@@ -455,6 +455,11 @@ fn record_to_content(record: DnsRecord) -> crate::Result<RecordContent> {
                 "TLSA records are not supported by WebSupport".into(),
             ));
         }
+        DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by WebSupport".to_string(),
+            ));
+        }
     })
 }
 
@@ -505,6 +510,11 @@ fn record_from_listed(
         DnsRecordType::TLSA => {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by WebSupport".into(),
+            ));
+        }
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by WebSupport".to_string(),
             ));
         }
     })

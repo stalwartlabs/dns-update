@@ -387,6 +387,11 @@ fn build_record_payload(
                 "TLSA records are not supported by ibmcloud".to_string(),
             ));
         }
+        &DnsRecord::PTR(_) => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by ibmcloud".to_string(),
+            ));
+        }
     }
 
     Ok(payload)
@@ -458,6 +463,11 @@ fn softlayer_record_type(rt: &DnsRecordType) -> Result<&'static str> {
         DnsRecordType::TLSA => {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by ibmcloud".to_string(),
+            ));
+        }
+        &DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by ibmcloud".to_string(),
             ));
         }
     })

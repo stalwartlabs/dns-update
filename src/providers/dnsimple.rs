@@ -309,6 +309,11 @@ fn record_content_and_priority(record: &DnsRecord) -> (String, Option<u16>) {
         ),
         DnsRecord::TLSA(value) => (value.to_string(), None),
         DnsRecord::CAA(caa) => (caa.to_string(), None),
+        // TODO(human): this PTR arm was left as `unimplemented!` on purpose - the
+        // enclosing function returns `(String, Option<u16>)`, not a Result or bool, so
+        // there is no established not-supported precedent (TLSA/CAA style) to follow
+        // here without changing the function signature. Needs human judgment.
+        &DnsRecord::PTR(_) => unimplemented!("PTR is not supported by this provider"),
     }
 }
 
@@ -337,6 +342,11 @@ fn record_from_content(
         DnsRecordType::SRV => parse_srv(&content.content, content.priority.unwrap_or(0)),
         DnsRecordType::TLSA => parse_tlsa(&content.content),
         DnsRecordType::CAA => parse_caa(&content.content).map(DnsRecord::CAA),
+        DnsRecordType::PTR => {
+            return Err(Error::Unsupported(
+                "PTR records are not supported by dnsimple".to_string(),
+            ));
+        }
     }
 }
 
