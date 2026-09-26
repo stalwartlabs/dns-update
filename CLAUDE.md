@@ -6,8 +6,9 @@ Notes for Claude (and future contributors) working on `dns-update`.
 
 `dns-update` is an async Rust library for dynamic DNS updates. It exposes a
 single enum `DnsUpdater` that fronts many backend providers behind a uniform
-`create` / `update` / `delete` API for record types `A`, `AAAA`, `CNAME`, `NS`,
-`MX`, `TXT`, `SRV`, `TLSA`, `CAA`. It targets RFC 2136 (with TSIG) and a
+RRSet API (`set_rrset` / `add_to_rrset` / `remove_from_rrset` / `list_rrset`)
+for record types `A`, `AAAA`, `CNAME`, `NS`, `MX`, `TXT`, `SRV`, `TLSA`,
+`CAA`. It targets RFC 2136 (with TSIG) and a
 growing list of cloud / registrar DNS APIs. The stated goal in `README.md` is
 to eventually cover as many providers as Go's
 [lego](https://go-acme.github.io/lego/dns/) library.
@@ -19,16 +20,17 @@ to eventually cover as many providers as Go's
   `Algorithm`, `IntoFqdn`, and the `DnsUpdater` enum that dispatches to a
   provider.
 - `src/update.rs`: the `impl DnsUpdater` factories (`new_*`) and the
-  `create` / `update` / `delete` match arms that fan out to each provider.
+  `set_rrset` / `add_to_rrset` / `remove_from_rrset` / `list_rrset` match
+  arms that fan out to each provider.
 - `src/providers/`: one file per provider. Each file is self-contained and
-  exposes a `pub struct <Name>Provider` plus `pub(crate) async fn new`,
-  `create`, `update`, `delete` methods called from `update.rs`.
+  exposes a `pub struct <Name>Provider` plus `pub(crate) fn new` and the
+  four `pub(crate) async fn` RRSet methods called from `update.rs`.
 - `src/tests/`: one `*_tests.rs` file per provider, registered in
   `src/tests/mod.rs`.
-- `src/http.rs`: shared `HttpClientBuilder` / `HttpClient` over `reqwest`.
-  Handles JSON bodies, retries on 429 with `retry-after`, maps statuses to
-  `Error::Unauthorized` / `Error::NotFound` / `Error::BadRequest` /
-  `Error::Api`.
+- `src/http.rs`: shared `HttpClientBuilder` / `HttpClient` / `HttpRequest`
+  over `reqwest`. Handles JSON bodies, retries on 429 / 503 with
+  `retry-after`, maps statuses to `Error::Unauthorized` / `Error::NotFound`
+  / `Error::Api`.
 - `src/utils.rs`: `strip_origin_from_name`, `txt_chunks*`, `IntoFqdn` impls,
   `Display` for record types, helpers like `CAARecord::decompose`. Reuse
   these.
@@ -42,25 +44,35 @@ For a vanilla token-based REST provider, follow `digitalocean.rs` or
 `desec.rs` as the template. Steps:
 
 1. Create `src/providers/<name>.rs` defining:
-   - `#[derive(Clone)] pub struct <Name>Provider { client: HttpClientBuilder, ... }`
+   - `#[derive(Clone)] pub struct <Name>Provider { client: HttpClient, endpoint: ..., ... }`
    - `pub(crate) fn new(...) -> crate::Result<Self>` (or `-> Self` if no
      fallible setup). Inject auth headers via
-     `HttpClientBuilder::default().with_header(...).with_timeout(timeout)`.
-   - `pub(crate) async fn create / update / delete` with the same signatures
-     used elsewhere:
+     `HttpClientBuilder::default().with_header(...).with_timeout(timeout).build()`.
+   - The four RRSet methods with the same signatures used elsewhere:
      ```rust
-     async fn create(&self, name: impl IntoFqdn<'_>, record: DnsRecord, ttl: u32, origin: impl IntoFqdn<'_>) -> crate::Result<()>
-     async fn update(&self, name: impl IntoFqdn<'_>, record: DnsRecord, ttl: u32, origin: impl IntoFqdn<'_>) -> crate::Result<()>
-     async fn delete(&self, name: impl IntoFqdn<'_>, origin: impl IntoFqdn<'_>, record_type: DnsRecordType) -> crate::Result<()>
+     async fn set_rrset(&self, name: impl IntoFqdn<'_>, record_type: DnsRecordType, ttl: u32, records: Vec<DnsRecord>, origin: impl IntoFqdn<'_>) -> crate::Result<()>
+     async fn add_to_rrset(&self, name: impl IntoFqdn<'_>, record_type: DnsRecordType, ttl: u32, records: Vec<DnsRecord>, origin: impl IntoFqdn<'_>) -> crate::Result<()>
+     async fn remove_from_rrset(&self, name: impl IntoFqdn<'_>, record_type: DnsRecordType, records: Vec<DnsRecord>, origin: impl IntoFqdn<'_>) -> crate::Result<()>
+     async fn list_rrset(&self, name: impl IntoFqdn<'_>, record_type: DnsRecordType, origin: impl IntoFqdn<'_>) -> crate::Result<Vec<DnsRecord>>
      ```
+     Semantics (see the doc comments in `update.rs`): `set_rrset` replaces
+     the whole RRSet and an empty `records` deletes it; `add_to_rrset` /
+     `remove_from_rrset` are idempotent (values already present / absent are
+     skipped, empty input is a no-op, removing the last value deletes the
+     RRSet); `list_rrset` returns an empty `Vec` when the RRSet is missing.
+     Reject records whose `as_type()` differs from `record_type` with
+     `Error::Api("RRSet record type mismatch: ...")` before any request.
    - A test-only `with_endpoint` setter (gated `#[cfg(test)]`) so mockito can
-     point the provider at a local URL.
+     point the provider at a local URL. Skip it when the endpoint is already a
+     constructor argument (self-hosted APIs such as PowerDNS, Plesk, cPanel).
 2. Register it in `src/providers/mod.rs` (`pub mod <name>;`).
 3. Wire it into `src/lib.rs`: add a variant on `DnsUpdater` and import the
    provider type.
 4. Wire it into `src/update.rs`:
    - Add a `new_<name>(...)` constructor.
-   - Add match arms in `create` / `update` / `delete`.
+   - Add match arms in `set_rrset` / `add_to_rrset` / `remove_from_rrset` /
+     `list_rrset`.
+6. Add a row to the provider table in `README.md`.
 5. Write `src/tests/<name>_tests.rs` and register the module in
    `src/tests/mod.rs`. Use `mockito::Server::new_async()` for unit tests; the
    existing `cloudflare_tests.rs` is the canonical example. Also include a
@@ -78,14 +90,22 @@ For a vanilla token-based REST provider, follow `digitalocean.rs` or
   bare subdomain relative to a zone use
   `utils::strip_origin_from_name(name, origin, Some(""))` (or `None` for the
   `@` default).
-- **Zone discovery**: when the API exposes zones by name, walk up the
+- **Zone discovery**: when the API can look up a zone by name, walk up the
   origin one label at a time until a zone matches (see Cloudflare's
-  `obtain_zone_id`). For providers that always require an explicit zone,
-  trust the caller's `origin`.
-- **Record-ID resolution**: providers that need an ID for update / delete
-  usually do a list-records lookup filtered by name + type. Reuse the
-  Cloudflare and DigitalOcean patterns. For update specifically, resolve
-  the record ID before issuing PATCH / PUT (see issue #52 / commit 707b82c).
+  `obtain_zone_id`, deSEC's `resolve_domain` with its 5 minute cache). Using
+  the caller's `origin` verbatim has caused bugs more than once (deSEC #72,
+  INWX #79): callers often pass a registrable domain or a subdomain that
+  differs from the zone actually hosted. Only trust `origin` as-is when the
+  API gives no way to test for a zone.
+- **Record-ID resolution**: providers that store records individually (not
+  as RRSets) need a list-records lookup filtered by name + type, then diff
+  against the desired values. Reuse the `list_at` helpers in Cloudflare and
+  DigitalOcean. Resolve record IDs before issuing PATCH / PUT / DELETE (see
+  issue #52 / commit 707b82c).
+- **Read-modify-write**: when the API only offers whole-RRSet replace,
+  `add_to_rrset` / `remove_from_rrset` must GET the current RRSet, merge,
+  then write it back (see `desec.rs`). Prefer a server-side
+  name + type filter over downloading the whole zone.
 - **TXT quoting / chunking**: some APIs want raw text, others want quoted
   with `\"`-escaping, others want chunks of <=255 bytes. Reuse
   `utils::txt_chunks_to_text` / `utils::txt_chunks`. Be deliberate about
@@ -96,12 +116,13 @@ For a vanilla token-based REST provider, follow `digitalocean.rs` or
   by `CAARecord::Display`.
 - **TLSA**: `TLSARecord::Display` produces `"<usage> <selector> <matching>
   <hex>"`. Many providers can take that directly. Some don't support TLSA at
-  all: return `Error::Api("TLSA records are not supported by ...")` (see
-  `digitalocean.rs`'s `TryFrom<DnsRecord> for RecordData`).
+  all: return `Error::Unsupported("TLSA records are not supported by ...")`
+  (see `digitalocean.rs`'s `reject_unsupported`).
 - **Errors**: don't invent new error variants for one provider; use the
-  existing `Error::{Api, Unauthorized, NotFound, BadRequest, Parse,
-  Serialize, Client, Response, Protocol}`. API-level failure messages go
-  into `Error::Api(_)`.
+  existing `Error::{Api, Unauthorized, NotFound, BadRequest, Unsupported,
+  Parse, Serialize, Client, Response, Protocol}`. API-level failure messages
+  go into `Error::Api(_)`; record types or features the provider cannot
+  handle go into `Error::Unsupported(_)`.
 - **No new dependencies** unless you've checked with the maintainer. Most
   things we need (HTTP, JSON, urlencoded form bodies, base64, hex, HMAC,
   SHA, RSA, XML) are already in `Cargo.toml`. `quick-xml` is available for
@@ -115,9 +136,11 @@ For a vanilla token-based REST provider, follow `digitalocean.rs` or
 
 ```rust
 let updater = DnsUpdater::new_cloudflare(token, None::<&str>, Some(Duration::from_secs(30)))?;
-updater.create("test._domainkey.example.org", DnsRecord::TXT("v=DKIM1; ...".into()), 300, "example.org").await?;
-updater.update(..., DnsRecord::A(addr), ttl, origin).await?;
-updater.delete(name, origin, DnsRecordType::TXT).await?;
+updater.set_rrset("test._domainkey.example.org", DnsRecordType::TXT, 300, vec![DnsRecord::TXT("v=DKIM1; ...".into())], "example.org").await?;
+updater.add_to_rrset("_acme-challenge.example.org", DnsRecordType::TXT, 60, vec![DnsRecord::TXT(token)], "example.org").await?;
+updater.remove_from_rrset("_acme-challenge.example.org", DnsRecordType::TXT, vec![DnsRecord::TXT(token)], "example.org").await?;
+let records = updater.list_rrset(name, DnsRecordType::A, origin).await?;
+updater.set_rrset(name, DnsRecordType::A, ttl, vec![], origin).await?;
 ```
 
 ## Helpers reference (reuse, do not reinvent)
@@ -127,29 +150,42 @@ exists here, use it.
 
 ### `src/http.rs`
 
-The default HTTP layer. `HttpClientBuilder` is `Clone`able; build one in
-`Provider::new` with the right auth headers and timeout, store it on the
-provider struct, and call `.get(url) / .post(url) / .put(url) / .patch(url)
-/ .delete(url)` to get an `HttpClient` per request.
+The default HTTP layer, in three steps: configure an `HttpClientBuilder` in
+`Provider::new` with the right auth headers and timeout, `.build()` it into
+an `HttpClient` (`Clone`, wraps one `reqwest::Client`), and store that on the
+provider struct. Per request, call `.get(url) / .post(url) / .put(url) /
+.patch(url) / .delete(url)` (or `.request(Method, url)`) on the client to get
+an `HttpRequest`.
 
-- `HttpClientBuilder::default()`: starts with `Content-Type: application/json`.
-- `.with_header(name: &'static str, value: impl AsRef<str>)`: chainable, repeatable.
-- `.with_timeout(Option<Duration>)`: chainable.
-- `HttpClient::with_header(...)`: per-request override.
-- `HttpClient::with_body(B: Serialize)`: JSON-serialize the body. Returns `crate::Result<HttpClient>`.
-- `HttpClient::with_raw_body(String)`: pre-rendered body (XML, form-encoded, etc).
-- `HttpClient::send_raw() -> crate::Result<String>`: discards JSON parsing.
-- `HttpClient::send<T: DeserializeOwned>() -> crate::Result<T>`.
-- `HttpClient::send_with_retry<T>(max_retries: u32)`: retries on `429` honoring
-  `Retry-After`, otherwise identical to `send`. Use this by default.
+- `HttpClientBuilder::default()`: starts with `Content-Type: application/json`
+  and a 30s timeout.
+- `.with_header(name: &'static str, value: impl AsRef<str>)`: chainable,
+  appends (repeatable). `.set_header(...)` replaces; `.without_header(name)`
+  removes (e.g. drop the default `Content-Type`).
+- `.with_timeout(Option<Duration>)`: chainable; `None` keeps the default.
+- `.build() -> HttpClient`.
+- `HttpRequest::with_header(...)` / `set_header(...)`: per-request headers.
+- `HttpRequest::with_body(B: Serialize)`: JSON-serialize the body. Returns
+  `crate::Result<HttpRequest>`.
+- `HttpRequest::with_raw_body(String)`: pre-rendered body (XML, form-encoded,
+  etc).
+- `HttpRequest::send_raw() -> crate::Result<String>`: skips JSON parsing.
+  `send_raw_with_headers()` also returns the response `HeaderMap`.
+- `HttpRequest::send<T: DeserializeOwned>() -> crate::Result<T>`.
+- `HttpRequest::send_with_retry<T>(max_retries: u32)`: retries on `429` and
+  `503` honoring `Retry-After` (else exponential backoff, capped at 60s).
+  Use this by default.
 
-Status mapping (do not re-implement): `204` -> empty `{}` JSON, `2xx` -> body,
-`400` -> `Error::Api("BadRequest ...")`, `401` -> `Error::Unauthorized`,
-`404` -> `Error::NotFound`, other -> `Error::Api(...)`.
+Status mapping (do not re-implement): `2xx` -> body, `401` ->
+`Error::Unauthorized`, `404` -> `Error::NotFound`, `400` ->
+`Error::Api("BadRequest ...")`, other -> `Error::Api("HTTP <code>: <body>")`.
+`send_with_retry` parses a `204` or empty `2xx` body as `{}`, so an empty
+`#[derive(Deserialize)] struct EmptyResponse {}` works as `T`; plain `send`
+does not, so use `send_raw` there.
 
 If you need form-encoded bodies use `serde_urlencoded::to_string(...)` and
-`HttpClient::with_raw_body(...)` together (override the content-type header
-on the builder or per-request via `.with_header`). If you need XML bodies use
+`HttpRequest::with_raw_body(...)` together (override the content-type header
+on the builder or per-request via `.set_header`). If you need XML bodies use
 `quick_xml::se::to_string(...)` plus `with_raw_body`.
 
 ### `src/utils.rs`
@@ -265,10 +301,12 @@ RSA signing primitives are exposed by `ring` / `aws-lc-rs` directly.
 - **Bearer + zone-walk by suffix** (provider gives a zone-by-name endpoint,
   the user supplies a subdomain or apex): `cloudflare.rs`'s
   `obtain_zone_id` loop.
-- **List + find by name+type for update/delete**: `cloudflare.rs`'s
-  `obtain_record_id` and `digitalocean.rs`'s `obtain_record_id` are the
-  two patterns (one walks all records with a name filter, one filters
-  server-side). Pick whichever the API supports.
+- **List + find by name+type for per-record APIs**: `cloudflare.rs`'s and
+  `digitalocean.rs`'s `list_at` are the two patterns. Pick whichever filter
+  the API supports.
+- **Native RRSet APIs** (the API replaces a whole name + type in one call):
+  `desec.rs` and `pdns.rs`. `set_rrset` maps to a single replace / delete;
+  add / remove are read-merge-write.
 - **OAuth2 client_credentials -> Bearer** (azuredns, ibmcloud): write a
   tiny `ensure_token` method on the provider; cache the token + expiry in
   `Arc<Mutex<Option<(String, Instant)>>>` exactly like
@@ -293,13 +331,14 @@ crate is feature-flagged where relevant.
 - `serde`, `serde_json`, `serde_urlencoded`.
 - `quick-xml` (XML serde for Route53; also use for SOAP-ish APIs).
 - `base64`, `hex`.
-- `chrono` (with `std`, `clock`, `now`) for date formatting and timestamps.
+- `jiff` (with `std`) for date formatting and timestamps (`chrono` was
+  removed; do not reintroduce it).
 - `ring` / `aws-lc-rs` (feature-gated): SHA1/SHA256/SHA512, HMAC, RSA, ECDSA.
 - `rustls` (feature-gated): TLS plumbing if you need a custom config.
 - Dev-only: `mockito` (preferred for new tests), `httpmock`.
 
-If you find yourself wanting `chrono::DateTime<Utc>::now()` for HTTP signing,
-look at how Route53 already does it before writing your own helper.
+If you need a current timestamp for HTTP signing, look at how Route53 does it
+(`jiff::Timestamp::now()`) before writing your own helper.
 
 ## Testing
 
@@ -312,5 +351,5 @@ look at how Route53 already does it before writing your own helper.
 
 ## Misc
 
-- `examples/` has small `main.rs` programs that exercise the public API.
+- User-visible changes get an entry in `CHANGELOG.md`.
 - License: dual Apache-2.0 / MIT. New files keep the existing header.
