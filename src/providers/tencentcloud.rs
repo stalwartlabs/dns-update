@@ -426,7 +426,7 @@ impl TencentCloudProvider {
             .client
             .post(self.endpoint.clone())
             .with_header("Authorization", authorization)
-            .with_header("Content-Type", content_type)
+            .set_header("Content-Type", content_type)
             .with_header("Host", self.host.clone())
             .with_header("X-TC-Action", action)
             .with_header("X-TC-Timestamp", timestamp)
