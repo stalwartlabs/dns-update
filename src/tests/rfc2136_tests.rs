@@ -26,7 +26,7 @@
 
 #![cfg(test)]
 
-use base64::{Engine, engine::general_purpose};
+use encodify::base64;
 use hickory_net::client::{Client, ClientHandle};
 use hickory_net::runtime::TokioRuntimeProvider;
 use hickory_net::tcp::TcpClientStream;
@@ -67,7 +67,7 @@ fn key_name() -> String {
 }
 
 fn key_bytes() -> Vec<u8> {
-    general_purpose::STANDARD
+    base64::STANDARD
         .decode(env_or("RFC2136_KEY_B64", KEY_B64_DEFAULT))
         .expect("invalid base64 key")
 }

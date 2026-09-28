@@ -17,7 +17,7 @@ mod tests {
         crypto::hmac_sha256,
         providers::exoscale::{ExoscaleProvider, signing_string},
     };
-    use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
+    use encodify::base64::STANDARD as BASE64_STANDARD;
     use mockito::{Matcher, Mock, Request, ServerGuard};
     use serde_json::json;
     use std::time::Duration;

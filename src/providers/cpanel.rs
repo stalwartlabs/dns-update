@@ -17,7 +17,7 @@ use crate::{
     http::{HttpClient, HttpClientBuilder},
     utils::txt_chunks_to_text,
 };
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use encodify::base64::STANDARD as BASE64;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -483,8 +483,8 @@ fn encode_record_data(record: &DnsRecord) -> crate::Result<Vec<String>> {
 }
 
 fn extract_zone_serial(zone: &[ZoneRecord], domain: &str) -> crate::Result<u32> {
-    let target = BASE64.encode(domain.trim_end_matches('.').as_bytes());
-    let target_with_dot = BASE64.encode(format!("{}.", domain.trim_end_matches('.')).as_bytes());
+    let target = BASE64.encode(domain.trim_end_matches('.'));
+    let target_with_dot = BASE64.encode(format!("{}.", domain.trim_end_matches('.')));
 
     for record in zone {
         if record.record_class != "record" || record.record_type != "SOA" {
@@ -496,11 +496,9 @@ fn extract_zone_serial(zone: &[ZoneRecord], domain: &str) -> crate::Result<u32> 
         if record.data_b64.len() < 3 {
             continue;
         }
-        let decoded = BASE64
-            .decode(&record.data_b64[2])
+        let serial_str = BASE64
+            .decode_to_string(&record.data_b64[2])
             .map_err(|err| Error::Parse(format!("Failed to decode SOA serial: {err}")))?;
-        let serial_str = String::from_utf8(decoded)
-            .map_err(|err| Error::Parse(format!("Failed to parse SOA serial: {err}")))?;
         return serial_str
             .trim()
             .parse::<u32>()
@@ -513,26 +511,19 @@ fn extract_zone_serial(zone: &[ZoneRecord], domain: &str) -> crate::Result<u32> 
 }
 
 fn decoded_dname_matches(dname_b64: &str, name: &str) -> bool {
-    BASE64
-        .decode(dname_b64)
-        .ok()
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .map(|s| {
-            s.trim_end_matches('.')
-                .eq_ignore_ascii_case(name.trim_end_matches('.'))
-        })
-        .unwrap_or(false)
+    BASE64.decode_to_string(dname_b64).is_ok_and(|s| {
+        s.trim_end_matches('.')
+            .eq_ignore_ascii_case(name.trim_end_matches('.'))
+    })
 }
 
 fn decode_data_fields(data_b64: &[String]) -> crate::Result<Vec<String>> {
     data_b64
         .iter()
         .map(|encoded| {
-            let bytes = BASE64
-                .decode(encoded)
-                .map_err(|err| Error::Parse(format!("Failed to decode data field: {err}")))?;
-            String::from_utf8(bytes)
-                .map_err(|err| Error::Parse(format!("Failed to parse data field: {err}")))
+            BASE64
+                .decode_to_string(encoded)
+                .map_err(|err| Error::Parse(format!("Failed to decode data field: {err}")))
         })
         .collect()
 }

@@ -16,8 +16,8 @@ use crate::{
     http::{HttpClient, HttpClientBuilder},
     utils::txt_chunks_to_text,
 };
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use jiff::Timestamp;
+use encodify::base64::STANDARD as BASE64_STANDARD;
 use quick_xml::se::to_string as xml_to_string;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -199,7 +199,7 @@ impl NifcloudProvider {
             .strftime("%a, %d %b %Y %H:%M:%S GMT")
             .to_string();
         let mac = hmac_sha256(self.secret_key.as_bytes(), date.as_bytes());
-        let signature = BASE64_STANDARD.encode(&mac);
+        let signature = BASE64_STANDARD.display(&mac);
         let auth = format!(
             "NIFTY3-HTTPS NiftyAccessKeyId={},Algorithm=HmacSHA256,Signature={}",
             self.access_key, signature

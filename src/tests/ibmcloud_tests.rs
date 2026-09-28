@@ -26,7 +26,7 @@ mod tests {
     }
 
     fn basic_auth_header() -> String {
-        use base64::{Engine, engine::general_purpose::STANDARD};
+        use encodify::base64::STANDARD;
         format!("Basic {}", STANDARD.encode("user:key"))
     }
 

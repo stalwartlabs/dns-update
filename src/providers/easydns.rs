@@ -15,7 +15,7 @@ use crate::{
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use encodify::base64::STANDARD;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -91,9 +91,10 @@ impl EasyDnsProvider {
             ));
         }
 
-        let credentials = STANDARD.encode(format!("{token}:{key}"));
+        let mut authorization = String::from("Basic ");
+        STANDARD.encode_append(format!("{token}:{key}"), &mut authorization);
         let client = HttpClientBuilder::default()
-            .with_header("Authorization", format!("Basic {credentials}"))
+            .with_header("Authorization", authorization)
             .with_header("Accept", "application/json")
             .with_timeout(timeout)
             .build();

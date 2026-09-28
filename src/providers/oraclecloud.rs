@@ -18,8 +18,8 @@ use crate::utils::strip_trailing_dot;
 use crate::utils::txt_chunks_to_text;
 use crate::utils::{parse_mx, parse_srv, parse_tlsa};
 use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, Result};
-use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use jiff::Timestamp;
+use encodify::base64::STANDARD as B64;
 use reqwest::Method;
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
@@ -196,7 +196,7 @@ impl OracleCloudProvider {
             .join("\n");
         let signature = rsa_sha256_sign(&self.key_pair, signing_string.as_bytes())
             .map_err(|e| Error::Client(format!("Failed to sign request: {}", e)))?;
-        let signature_b64 = B64.encode(&signature);
+        let signature_b64 = B64.display(&signature);
 
         let headers_list = signed_pairs
             .iter()

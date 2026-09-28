@@ -13,6 +13,7 @@
 
 #[cfg(test)]
 mod tests {
+    use crate::jwt::rsa_private_key_pem_to_pkcs8_der;
     use crate::providers::oraclecloud::{OracleCloudConfig, OracleCloudProvider};
     use crate::{
         DnsRecord, DnsRecordType, Error, MXRecord, TLSARecord, TlsaCertUsage, TlsaMatching,
@@ -72,6 +73,31 @@ mod tests {
             Err(other) => panic!("expected Unsupported error, got {:?}", other),
             Ok(_) => panic!("expected error"),
         }
+    }
+
+    #[test]
+    fn provider_accepts_bare_base64_private_keys() {
+        let wrapped = TEST_PRIVATE_KEY
+            .lines()
+            .filter(|line| !line.starts_with("-----"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let der = rsa_private_key_pem_to_pkcs8_der(TEST_PRIVATE_KEY).expect("pem key");
+        for bare in [wrapped.replace('\n', ""), wrapped] {
+            assert_eq!(
+                rsa_private_key_pem_to_pkcs8_der(&bare).expect("bare base64 key"),
+                der
+            );
+            let mut cfg = config();
+            cfg.private_key_pem = bare;
+            assert!(OracleCloudProvider::new(cfg).is_ok());
+        }
+    }
+
+    #[test]
+    fn bare_private_key_rejects_invalid_base64() {
+        let err = rsa_private_key_pem_to_pkcs8_der("not*base64").expect_err("invalid key");
+        assert!(err.to_string().starts_with("Invalid base64 in private key"));
     }
 
     #[tokio::test]

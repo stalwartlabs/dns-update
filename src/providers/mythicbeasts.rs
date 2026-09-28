@@ -19,7 +19,7 @@ use crate::{
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use encodify::base64::STANDARD;
 use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::{Arc, Mutex};
@@ -160,12 +160,16 @@ impl MythicBeastsProvider {
             }
         }
 
-        let credentials = STANDARD.encode(format!("{}:{}", self.username, self.password));
+        let mut authorization = String::from("Basic ");
+        STANDARD.encode_append(
+            format!("{}:{}", self.username, self.password),
+            &mut authorization,
+        );
 
         let body: TokenResponse = self
             .client
             .post(self.auth_endpoint.clone())
-            .with_header("Authorization", format!("Basic {credentials}"))
+            .with_header("Authorization", authorization)
             .with_header("Content-Type", "application/x-www-form-urlencoded")
             .with_raw_body("grant_type=client_credentials".to_string())
             .send()

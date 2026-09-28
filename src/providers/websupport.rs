@@ -16,8 +16,8 @@ use crate::{
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use jiff::Timestamp;
+use encodify::base64::STANDARD as BASE64_STANDARD;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -150,9 +150,13 @@ impl WebSupportProvider {
         let date = now.strftime("%Y-%m-%dT%H:%M:%SZ").to_string();
         let canonical = format!("{} {} {}", method.as_str(), path, timestamp);
         let signature = hex::encode(hmac_sha1(self.secret.as_bytes(), canonical.as_bytes()));
-        let basic = BASE64_STANDARD.encode(format!("{}:{}", self.api_key, signature));
+        let mut authorization = String::from("Basic ");
+        BASE64_STANDARD.encode_append(
+            format!("{}:{}", self.api_key, signature),
+            &mut authorization,
+        );
         request
-            .with_header("Authorization", format!("Basic {}", basic))
+            .with_header("Authorization", authorization)
             .with_header("Date", date)
     }
 

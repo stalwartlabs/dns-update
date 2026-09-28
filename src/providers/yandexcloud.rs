@@ -16,7 +16,7 @@ use crate::jwt::{JwtSignAlgorithm, sign_jwt};
 use crate::utils::split_caa_value;
 use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
 use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord};
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STD};
+use encodify::base64::STANDARD as BASE64_STD;
 use serde::Deserialize;
 use serde_json::Value;
 use std::net::{Ipv4Addr, Ipv6Addr};

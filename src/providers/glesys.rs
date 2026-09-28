@@ -17,7 +17,7 @@ use crate::{
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
+use encodify::base64::STANDARD as B64;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -96,9 +96,10 @@ impl GlesysProvider {
         timeout: Option<Duration>,
     ) -> Self {
         let raw = format!("{}:{}", api_user.as_ref(), api_key.as_ref());
-        let encoded = B64.encode(raw);
+        let mut authorization = String::from("Basic ");
+        B64.encode_append(raw, &mut authorization);
         let client = HttpClientBuilder::default()
-            .with_header("Authorization", format!("Basic {encoded}"))
+            .with_header("Authorization", authorization)
             .with_header("Accept", "application/json")
             .with_timeout(timeout)
             .build();

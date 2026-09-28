@@ -15,7 +15,7 @@ use crate::{
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use encodify::base64::STANDARD as BASE64;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -79,9 +79,10 @@ impl NameDotComProvider {
             ));
         }
 
-        let credentials = BASE64.encode(format!("{username}:{token}"));
+        let mut authorization = String::from("Basic ");
+        BASE64.encode_append(format!("{username}:{token}"), &mut authorization);
         let client = HttpClientBuilder::default()
-            .with_header("Authorization", format!("Basic {credentials}"))
+            .with_header("Authorization", authorization)
             .with_timeout(timeout)
             .build();
 

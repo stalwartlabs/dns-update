@@ -16,7 +16,7 @@ use crate::{
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
-use base64::{Engine, engine::general_purpose::STANDARD};
+use encodify::base64::STANDARD;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -81,10 +81,11 @@ impl AutodnsProvider {
         if pass.is_empty() {
             return Err(Error::Api("AutoDNS password is empty".to_string()));
         }
-        let encoded = STANDARD.encode(format!("{user}:{pass}"));
+        let mut authorization = String::from("Basic ");
+        STANDARD.encode_append(format!("{user}:{pass}"), &mut authorization);
         let ctx = context.unwrap_or(DEFAULT_CONTEXT);
         let client = HttpClientBuilder::default()
-            .with_header("Authorization", format!("Basic {encoded}"))
+            .with_header("Authorization", authorization)
             .with_header("X-Domainrobot-Context", ctx.to_string())
             .with_header("Accept", "application/json")
             .with_timeout(timeout)

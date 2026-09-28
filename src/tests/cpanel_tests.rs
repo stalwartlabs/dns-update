@@ -14,7 +14,7 @@ mod tests {
     use crate::{
         DnsRecord, DnsRecordType, DnsUpdater, Error, MXRecord, providers::cpanel::CpanelProvider,
     };
-    use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+    use encodify::base64::STANDARD as BASE64;
     use mockito::Matcher;
     use std::time::Duration;
 

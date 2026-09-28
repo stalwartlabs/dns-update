@@ -22,7 +22,7 @@ use crate::{
     jwt::rsa_sha512_sign,
     utils::strip_origin_from_name,
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use encodify::base64::STANDARD;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};

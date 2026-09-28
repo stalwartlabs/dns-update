@@ -17,7 +17,7 @@ use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, Result, SRVRecord, TLSARecord,
     http::{HttpClient, HttpClientBuilder},
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use encodify::base64::STANDARD as BASE64_STANDARD;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -80,7 +80,8 @@ impl InfobloxProvider {
         };
 
         let credentials = format!("{}:{}", config.username, config.password);
-        let auth_header = format!("Basic {}", BASE64_STANDARD.encode(credentials.as_bytes()));
+        let mut auth_header = String::from("Basic ");
+        BASE64_STANDARD.encode_append(credentials, &mut auth_header);
 
         let client = HttpClientBuilder::default()
             .with_header("Authorization", auth_header)

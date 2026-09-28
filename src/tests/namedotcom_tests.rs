@@ -15,6 +15,7 @@ mod tests {
         CAARecord, DnsRecord, DnsRecordType, Error, MXRecord, SRVRecord, TLSARecord, TlsaCertUsage,
         TlsaMatching, TlsaSelector, providers::namedotcom::NameDotComProvider,
     };
+    use encodify::base64::STANDARD;
     use mockito::{Matcher, Mock, ServerGuard};
     use serde_json::json;
     use std::time::Duration;
@@ -26,9 +27,7 @@ mod tests {
     }
 
     fn basic_auth_value() -> String {
-        let credentials =
-            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, "user:token");
-        format!("Basic {credentials}")
+        format!("Basic {}", STANDARD.display(b"user:token"))
     }
 
     fn mock_list_page(

@@ -11,7 +11,11 @@
 
 //! Generic JWT utility for providers that need JWT authentication.
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use encodify::{
+    Error as CodecError,
+    base64::{LENIENT, URL_SAFE_NO_PAD},
+    pem::STANDARD as PEM,
+};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -52,43 +56,21 @@ struct JwtClaims {
     iat: u64,
 }
 
-/// Encode a byte slice as base64url without padding.
-fn base64_url_encode(input: &[u8]) -> String {
-    URL_SAFE_NO_PAD.encode(input)
-}
-
 /// Decode a PEM-encoded RSA private key (PKCS#8 `BEGIN PRIVATE KEY` or PKCS#1
-/// `BEGIN RSA PRIVATE KEY`) and return PKCS#8 DER bytes.
+/// `BEGIN RSA PRIVATE KEY`), or an unarmored base64 PKCS#8 body, and return
+/// PKCS#8 DER bytes.
 pub fn rsa_private_key_pem_to_pkcs8_der(pem: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    if pem.contains("ENCRYPTED PRIVATE KEY") {
-        return Err("encrypted PEM private keys are not supported".into());
+    match PEM.decode(pem) {
+        Ok(block) => match block.label {
+            "ENCRYPTED PRIVATE KEY" => Err("encrypted PEM private keys are not supported".into()),
+            "RSA PRIVATE KEY" => Ok(wrap_pkcs1_in_pkcs8(&block.contents)),
+            _ => Ok(block.contents),
+        },
+        Err(CodecError::NotFound) => LENIENT
+            .decode(pem)
+            .map_err(|e| format!("Invalid base64 in private key: {}", e).into()),
+        Err(e) => Err(format!("Invalid PEM private key: {}", e).into()),
     }
-    let is_pkcs1 = pem.contains("BEGIN RSA PRIVATE KEY");
-    let body = strip_pem_armor(pem);
-    let der_bytes = base64::engine::general_purpose::STANDARD
-        .decode(&body)
-        .map_err(|e| format!("Invalid base64 in private key: {}", e))?;
-    if is_pkcs1 {
-        Ok(wrap_pkcs1_in_pkcs8(&der_bytes))
-    } else {
-        Ok(der_bytes)
-    }
-}
-
-fn strip_pem_armor(pem: &str) -> String {
-    let mut out = String::with_capacity(pem.len());
-    for line in pem.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("-----") {
-            continue;
-        }
-        for ch in trimmed.chars() {
-            if !ch.is_ascii_whitespace() {
-                out.push(ch);
-            }
-        }
-    }
-    out
 }
 
 /// Wrap a PKCS#1 `RSAPrivateKey` DER blob in a PKCS#8 `PrivateKeyInfo` envelope.
@@ -154,7 +136,7 @@ pub fn rsa_sha256_sign(
 /// Returns the JWT as a compact string.
 pub fn create_jwt(sa: &ServiceAccount, scopes: &str) -> Result<String, Box<dyn std::error::Error>> {
     let header = serde_json::json!({"alg": "RS256", "typ": "JWT"});
-    let header_b64 = base64_url_encode(serde_json::to_string(&header)?.as_bytes());
+    let mut jwt = URL_SAFE_NO_PAD.encode(serde_json::to_string(&header)?);
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let exp = now + 3600;
@@ -166,15 +148,15 @@ pub fn create_jwt(sa: &ServiceAccount, scopes: &str) -> Result<String, Box<dyn s
         exp,
         iat: now,
     };
-    let claims_b64 = base64_url_encode(serde_json::to_string(&claims)?.as_bytes());
-
-    let signing_input = format!("{}.{}", header_b64, claims_b64);
+    jwt.push('.');
+    URL_SAFE_NO_PAD.encode_append(serde_json::to_string(&claims)?, &mut jwt);
 
     let key_pair = parse_rsa_pkcs8_pem(&sa.private_key)?;
-    let signature = rsa_sha256_sign(&key_pair, signing_input.as_bytes())?;
-    let signature_b64 = base64_url_encode(&signature);
+    let signature = rsa_sha256_sign(&key_pair, jwt.as_bytes())?;
+    jwt.push('.');
+    URL_SAFE_NO_PAD.encode_append(signature, &mut jwt);
 
-    Ok(format!("{}.{}", signing_input, signature_b64))
+    Ok(jwt)
 }
 
 /// Exchange a JWT for an OAuth2 access token.
@@ -230,31 +212,22 @@ pub fn sign_jwt(
     private_key_pem: &str,
     algorithm: JwtSignAlgorithm,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let header_b64 = base64_url_encode(serde_json::to_string(header)?.as_bytes());
-    let claims_b64 = base64_url_encode(serde_json::to_string(claims)?.as_bytes());
-    let signing_input = format!("{}.{}", header_b64, claims_b64);
+    let mut jwt = URL_SAFE_NO_PAD.encode(serde_json::to_string(header)?);
+    jwt.push('.');
+    URL_SAFE_NO_PAD.encode_append(serde_json::to_string(claims)?, &mut jwt);
 
     let key_pair = parse_rsa_pkcs8_pem(private_key_pem)?;
     let mut signature = vec![0u8; signature_len(&key_pair)];
     let rng = SystemRandom::new();
     match algorithm {
         JwtSignAlgorithm::Rs256 => {
-            key_pair.sign(
-                &RSA_PKCS1_SHA256,
-                &rng,
-                signing_input.as_bytes(),
-                &mut signature,
-            )?;
+            key_pair.sign(&RSA_PKCS1_SHA256, &rng, jwt.as_bytes(), &mut signature)?;
         }
         JwtSignAlgorithm::Ps256 => {
-            key_pair.sign(
-                &RSA_PSS_SHA256,
-                &rng,
-                signing_input.as_bytes(),
-                &mut signature,
-            )?;
+            key_pair.sign(&RSA_PSS_SHA256, &rng, jwt.as_bytes(), &mut signature)?;
         }
     }
-    let signature_b64 = base64_url_encode(&signature);
-    Ok(format!("{}.{}", signing_input, signature_b64))
+    jwt.push('.');
+    URL_SAFE_NO_PAD.encode_append(signature, &mut jwt);
+    Ok(jwt)
 }

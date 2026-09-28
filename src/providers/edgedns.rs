@@ -15,9 +15,8 @@ use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::utils::txt_chunks_to_text;
 use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, Result, SRVRecord};
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use jiff::Timestamp;
+use encodify::base64::STANDARD as BASE64_STANDARD;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -351,9 +350,12 @@ impl EdgeDnsProvider {
             self.client_secret.as_bytes(),
             timestamp.as_bytes(),
         ));
-        let signature =
-            BASE64_STANDARD.encode(hmac_sha256(signing_key.as_bytes(), data_to_sign.as_bytes()));
-        let authorization = format!("{}signature={}", auth_without_signature, signature);
+        let mut authorization = auth_without_signature;
+        authorization.push_str("signature=");
+        BASE64_STANDARD.encode_append(
+            hmac_sha256(signing_key.as_bytes(), data_to_sign.as_bytes()),
+            &mut authorization,
+        );
 
         let mut request = match method {
             "GET" => self.client.get(url),

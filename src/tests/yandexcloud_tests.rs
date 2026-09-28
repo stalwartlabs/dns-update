@@ -17,6 +17,7 @@ mod tests {
         DnsRecord, DnsRecordType, DnsUpdater, Error, MXRecord,
         providers::yandexcloud::{YandexCloudConfig, YandexCloudProvider},
     };
+    use encodify::base64::STANDARD;
     use mockito::{Matcher, Mock, ServerGuard};
     use serde_json::json;
     use std::time::Duration;
@@ -27,12 +28,8 @@ mod tests {
             "service_account_id": "svc-account",
             "private_key": "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n",
         });
-        let encoded = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            key_json.to_string().as_bytes(),
-        );
         YandexCloudConfig {
-            iam_token_b64: encoded,
+            iam_token_b64: STANDARD.encode(key_json.to_string()),
             folder_id: "folder-1".into(),
             request_timeout: Some(Duration::from_secs(2)),
         }

@@ -27,7 +27,7 @@ mod tests {
     }
 
     fn basic_auth_value() -> String {
-        use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+        use encodify::base64::STANDARD as BASE64;
         format!("Basic {}", BASE64.encode(b"token:secret"))
     }
 
