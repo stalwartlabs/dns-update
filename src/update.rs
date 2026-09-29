@@ -51,6 +51,7 @@ use crate::{
         dynu::DynuProvider,
         easydns::EasyDnsProvider,
         edgedns::{EdgeDnsConfig, EdgeDnsProvider},
+        enum_dns::EnumProvider,
         exoscale::ExoscaleProvider,
         freemyip::FreeMyIpProvider,
         gandiv5::GandiV5Provider,
@@ -814,6 +815,17 @@ impl DnsUpdater {
         Ok(DnsUpdater::Infoblox(InfobloxProvider::new(config)?))
     }
 
+    /// Create a new DNS updater using the enum API.
+    pub fn new_enum(
+        api_key: impl AsRef<str>,
+        project_id: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Enum(EnumProvider::new(
+            api_key, project_id, timeout,
+        )))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -1192,6 +1204,11 @@ impl DnsUpdater {
                     .await
             }
             DnsUpdater::Infoblox(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Enum(provider) => {
                 provider
                     .set_rrset(name, record_type, ttl, records, origin)
                     .await
@@ -1581,6 +1598,11 @@ impl DnsUpdater {
                     .add_to_rrset(name, record_type, ttl, records, origin)
                     .await
             }
+            DnsUpdater::Enum(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => {
                 provider
@@ -1965,6 +1987,11 @@ impl DnsUpdater {
                     .remove_from_rrset(name, record_type, records, origin)
                     .await
             }
+            DnsUpdater::Enum(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => {
                 provider
@@ -2098,6 +2125,7 @@ impl DnsUpdater {
             DnsUpdater::EdgeDns(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::UltraDns(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Infoblox(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Enum(provider) => provider.list_rrset(name, record_type, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.list_rrset(name, record_type, origin).await,
             #[cfg(feature = "test_provider")]
