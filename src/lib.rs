@@ -47,10 +47,11 @@ use providers::{
 use providers::{
     arvancloud::ArvanCloudProvider, autodns::AutodnsProvider, azuredns::AzureDnsProvider,
     baiducloud::BaiduCloudProvider, cpanel::CpanelProvider, domeneshop::DomeneshopProvider,
-    edgedns::EdgeDnsProvider, hostinger::HostingerProvider, huaweicloud::HuaweiCloudProvider,
-    hurricane::HurricaneProvider, ibmcloud::IbmCloudProvider, infoblox::InfobloxProvider,
-    inwx::InwxProvider, lightsail::LightsailProvider, plesk::PleskProvider,
-    safedns::SafeDnsProvider, simplycom::SimplyComProvider, ultradns::UltraDnsProvider,
+    edgedns::EdgeDnsProvider, enum_dns::EnumProvider, hostinger::HostingerProvider,
+    huaweicloud::HuaweiCloudProvider, hurricane::HurricaneProvider, ibmcloud::IbmCloudProvider,
+    infoblox::InfobloxProvider, inwx::InwxProvider, lightsail::LightsailProvider,
+    plesk::PleskProvider, safedns::SafeDnsProvider, simplycom::SimplyComProvider,
+    ultradns::UltraDnsProvider,
 };
 use std::{
     borrow::Cow,
@@ -297,6 +298,7 @@ pub enum DnsUpdater {
     Inwx(InwxProvider),
     UltraDns(UltraDnsProvider),
     Infoblox(InfobloxProvider),
+    Enum(EnumProvider),
 }
 
 pub trait IntoFqdn<'x> {

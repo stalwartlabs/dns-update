@@ -34,6 +34,7 @@ and over 70 cloud, registrar, and self-hosted DNS provider APIs. It was designed
 | [Dynu](https://www.dynu.com/) | `new_dynu` | |
 | [EasyDNS](https://www.easydns.com/) | `new_easydns` | |
 | [Akamai Edge DNS](https://www.akamai.com/products/edge-dns) | `new_edgedns` | EG1-HMAC-SHA256 |
+| [enum](https://enum.co/) | `new_enum` | Service account API key |
 | [Exoscale](https://www.exoscale.com/) | `new_exoscale` | EXO2-HMAC-SHA256 |
 | [FreeMyIP](https://freemyip.com/) | `new_freemyip` | TXT only |
 | [Gandi v5](https://www.gandi.net/) | `new_gandiv5` | LiveDNS |

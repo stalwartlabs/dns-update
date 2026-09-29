@@ -33,6 +33,7 @@ pub mod duckdns;
 pub mod dynu;
 pub mod easydns;
 pub mod edgedns;
+pub mod enum_dns;
 pub mod exoscale;
 pub mod freemyip;
 pub mod gandiv5;

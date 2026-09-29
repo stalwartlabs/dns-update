@@ -32,6 +32,7 @@ pub mod dynu_tests;
 pub mod easydns_tests;
 #[cfg(test)]
 pub mod edgedns_tests;
+pub mod enum_dns_tests;
 pub mod exoscale_tests;
 pub mod freemyip_tests;
 pub mod gandiv5_tests;
