@@ -470,4 +470,52 @@ mod tests {
             )
             .await;
     }
+
+    #[tokio::test]
+    async fn token_request_sends_a_single_content_type() {
+        // The shared HttpClient defaults to `Content-Type: application/json`. The token
+        // request must replace it rather than add a second one: Azure AD rejects a request
+        // carrying two Content-Type headers with an HTML "400 Invalid Header" page.
+        let mut server = mockito::Server::new_async().await;
+        let token = server
+            .mock("POST", "/tenant-123/oauth2/v2.0/token")
+            .match_request(|req| {
+                let values = req.header("content-type");
+                values.len() == 1 && values[0] == "application/x-www-form-urlencoded"
+            })
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"access_token":"fresh-token","expires_in":3600}"#)
+            .create_async()
+            .await;
+        let put = server
+            .mock(
+                "PUT",
+                "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.Network/dnsZones/example.com/TXT/@",
+            )
+            .match_query(Matcher::Any)
+            .match_header("authorization", "Bearer fresh-token")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body("{}")
+            .create_async()
+            .await;
+
+        let provider = AzureDnsProvider::new(config())
+            .expect("provider")
+            .with_endpoints(server.url(), server.url());
+        provider
+            .set_rrset(
+                "example.com",
+                DnsRecordType::TXT,
+                300,
+                vec![DnsRecord::TXT("v=spf1 mx -all".to_string())],
+                "example.com",
+            )
+            .await
+            .expect("set_rrset");
+
+        token.assert_async().await;
+        put.assert_async().await;
+    }
 }

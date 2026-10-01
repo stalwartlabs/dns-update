@@ -150,7 +150,7 @@ impl AzureDnsProvider {
         let token_response: AzureTokenResponse = self
             .client
             .post(&url)
-            .with_header("content-type", "application/x-www-form-urlencoded")
+            .set_header("content-type", "application/x-www-form-urlencoded")
             .with_raw_body(form)
             .send_with_retry(3)
             .await?;

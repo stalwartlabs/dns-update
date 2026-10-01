@@ -205,7 +205,7 @@ impl BluecatV2Provider {
         let session: SessionResponse = self
             .client
             .post(url)
-            .with_header("Content-Type", "application/json")
+            .set_header("Content-Type", "application/json")
             .with_body(LoginInfo {
                 username: &self.config.username,
                 password: &self.config.password,
@@ -266,7 +266,7 @@ impl BluecatV2Provider {
         }
         let url = format!("{}/api/v2/zones/{}/deployments", self.endpoint, zone_id);
         self.authed_post(url, token)
-            .with_header("Content-Type", "application/json")
+            .set_header("Content-Type", "application/json")
             .with_body(QuickDeploymentPayload {
                 rr_type: "QuickDeployment",
             })?
@@ -491,7 +491,7 @@ impl BluecatV2Provider {
         let payload = build_payload_from_normalized(subdomain, ttl, content);
         let url = format!("{}/api/v2/zones/{}/resourceRecords", self.endpoint, zone_id);
         self.authed_post(url, token)
-            .with_header("Content-Type", "application/json")
+            .set_header("Content-Type", "application/json")
             .with_body(payload)?
             .send_raw()
             .await
