@@ -12,7 +12,8 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        DnsRecord, DnsRecordType, DnsUpdater, Error, MXRecord, providers::cloudns::ClouDnsProvider,
+        DnsRecord, DnsRecordType, DnsUpdater, Error, MXRecord, TLSARecord, TlsaCertUsage,
+        TlsaMatching, TlsaSelector, providers::cloudns::ClouDnsProvider,
     };
     use std::time::Duration;
 
@@ -402,20 +403,93 @@ mod tests {
         assert!(matches!(result, Err(Error::Api(_))));
     }
 
+    fn tlsa(cert_data: Vec<u8>) -> DnsRecord {
+        DnsRecord::TLSA(TLSARecord {
+            cert_usage: TlsaCertUsage::DaneEe,
+            selector: TlsaSelector::Spki,
+            matching: TlsaMatching::Sha256,
+            cert_data,
+        })
+    }
+
     #[tokio::test]
-    async fn test_set_rrset_rejects_tlsa() {
-        let server = mockito::Server::new_async().await;
+    async fn test_set_rrset_tlsa_diff() {
+        let mut server = mockito::Server::new_async().await;
+        let lookup = server
+            .mock("GET", mockito::Matcher::Regex("^/records.json".into()))
+            .with_status(200)
+            .with_body(
+                r#"{
+                    "1": {"id": "1", "type": "TLSA", "host": "_25._tcp.mail", "record": "ABCD", "tlsa_usage": "3", "tlsa_selector": "1", "tlsa_matching_type": "1"},
+                    "2": {"id": "2", "type": "TLSA", "host": "_25._tcp.mail", "record": "1234", "tlsa_usage": "3", "tlsa_selector": "1", "tlsa_matching_type": "1"}
+                }"#,
+            )
+            .create();
+
+        let delete_stale = server
+            .mock("POST", "/delete-record.json")
+            .match_body(mockito::Matcher::UrlEncoded("record-id".into(), "2".into()))
+            .with_status(200)
+            .with_body(r#"{"status":"Success","statusDescription":"removed"}"#)
+            .expect(1)
+            .create();
+
+        let add_new = server
+            .mock("POST", "/add-record.json")
+            .match_body(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("host".into(), "_25._tcp.mail".into()),
+                mockito::Matcher::UrlEncoded("record-type".into(), "TLSA".into()),
+                mockito::Matcher::UrlEncoded("record".into(), "5678".into()),
+                mockito::Matcher::UrlEncoded("tlsa_usage".into(), "3".into()),
+                mockito::Matcher::UrlEncoded("tlsa_selector".into(), "1".into()),
+                mockito::Matcher::UrlEncoded("tlsa_matching_type".into(), "1".into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"status":"Success","statusDescription":"added"}"#)
+            .expect(1)
+            .create();
+
         let provider = setup_provider(server.url().as_str());
         let result = provider
             .set_rrset(
-                "www.example.com",
+                "_25._tcp.mail.example.com",
                 DnsRecordType::TLSA,
                 300,
-                Vec::new(),
+                vec![tlsa(vec![0xab, 0xcd]), tlsa(vec![0x56, 0x78])],
                 "example.com",
             )
             .await;
-        assert!(matches!(result, Err(Error::Unsupported(_))));
+
+        assert!(result.is_ok(), "set_rrset(tlsa) failed: {result:?}");
+        lookup.assert();
+        delete_stale.assert();
+        add_new.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_rrset_returns_tlsa() {
+        let mut server = mockito::Server::new_async().await;
+        let lookup = server
+            .mock("GET", mockito::Matcher::Regex("^/records.json".into()))
+            .with_status(200)
+            .with_body(
+                r#"{
+                    "1": {"id": "1", "type": "TLSA", "host": "_25._tcp.mail", "record": "abcd", "tlsa_usage": "3", "tlsa_selector": "1", "tlsa_matching_type": "1"}
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .list_rrset(
+                "_25._tcp.mail.example.com",
+                DnsRecordType::TLSA,
+                "example.com",
+            )
+            .await
+            .unwrap();
+        assert_eq!(result, vec![tlsa(vec![0xab, 0xcd])]);
+        lookup.assert();
     }
 
     #[tokio::test]

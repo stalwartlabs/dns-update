@@ -9,7 +9,7 @@
  * except according to those terms.
  */
 
-use crate::utils::build_caa;
+use crate::utils::{build_caa, parse_tlsa};
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder, HttpRequest},
@@ -58,6 +58,12 @@ struct ClouDnsRecord {
     caa_type: Option<String>,
     #[serde(default)]
     caa_value: Option<String>,
+    #[serde(default)]
+    tlsa_usage: Option<String>,
+    #[serde(default)]
+    tlsa_selector: Option<String>,
+    #[serde(default)]
+    tlsa_matching_type: Option<String>,
 }
 
 impl ClouDnsProvider {
@@ -264,7 +270,7 @@ impl ClouDnsProvider {
         ttl: u32,
         record: &DnsRecord,
     ) -> crate::Result<()> {
-        let mut params = build_record_params(record)?;
+        let mut params = build_record_params(record);
         params.push(("domain-name", zone.to_string()));
         params.push(("host", host.to_string()));
         params.push(("ttl", ttl_rounder(ttl).to_string()));
@@ -290,7 +296,6 @@ impl ClouDnsProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
-        reject_tlsa(record_type)?;
         let name = name.into_name().into_owned();
         let zone = origin.into_name().to_string();
         let host = strip_origin_from_name(&name, &zone, Some(""));
@@ -339,7 +344,6 @@ impl ClouDnsProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
-        reject_tlsa(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -368,7 +372,6 @@ impl ClouDnsProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
-        reject_tlsa(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -395,7 +398,6 @@ impl ClouDnsProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
-        reject_tlsa(record_type)?;
         let name = name.into_name().into_owned();
         let zone = origin.into_name().to_string();
         let host = strip_origin_from_name(&name, &zone, Some(""));
@@ -421,7 +423,7 @@ fn is_rate_limited(body: &str) -> bool {
         .is_some_and(|d| d.to_ascii_lowercase().contains("request blocked"))
 }
 
-fn build_record_params(record: &DnsRecord) -> crate::Result<Vec<(&'static str, String)>> {
+fn build_record_params(record: &DnsRecord) -> Vec<(&'static str, String)> {
     let mut params: Vec<(&'static str, String)> = Vec::new();
     let rr_type = record.as_type().as_str();
     params.push(("record-type", rr_type.to_string()));
@@ -445,10 +447,11 @@ fn build_record_params(record: &DnsRecord) -> crate::Result<Vec<(&'static str, S
             params.push(("weight", srv.weight.to_string()));
             params.push(("port", srv.port.to_string()));
         }
-        DnsRecord::TLSA(_) => {
-            return Err(Error::Unsupported(
-                "TLSA records are not supported by ClouDNS".to_string(),
-            ));
+        DnsRecord::TLSA(tlsa) => {
+            params.push(("record", hex::encode(&tlsa.cert_data)));
+            params.push(("tlsa_usage", u8::from(tlsa.cert_usage).to_string()));
+            params.push(("tlsa_selector", u8::from(tlsa.selector).to_string()));
+            params.push(("tlsa_matching_type", u8::from(tlsa.matching).to_string()));
         }
         DnsRecord::CAA(caa) => {
             let (flags, tag, value) = caa.clone().decompose();
@@ -457,7 +460,7 @@ fn build_record_params(record: &DnsRecord) -> crate::Result<Vec<(&'static str, S
             params.push(("caa_value", value));
         }
     }
-    Ok(params)
+    params
 }
 
 fn normalize_records(records: Vec<DnsRecord>) -> Vec<DnsRecord> {
@@ -504,7 +507,7 @@ fn record_matches(existing: &ClouDnsRecord, desired: &DnsRecord) -> bool {
                 && existing.caa_type.as_deref() == Some(tag.as_str())
                 && existing.caa_value.as_deref() == Some(value.as_str())
         }
-        DnsRecord::TLSA(_) => false,
+        DnsRecord::TLSA(_) => record_to_dns_record(existing.clone()).is_ok_and(|r| r == *desired),
     }
 }
 
@@ -583,6 +586,18 @@ fn record_to_dns_record(record: ClouDnsRecord) -> crate::Result<DnsRecord> {
                 .ok_or_else(|| Error::Parse("ClouDNS CAA missing caa_value".to_string()))?;
             Ok(DnsRecord::CAA(build_caa(flags, &tag, &value)?))
         }
+        "TLSA" => match (
+            &record.tlsa_usage,
+            &record.tlsa_selector,
+            &record.tlsa_matching_type,
+        ) {
+            (Some(usage), Some(selector), Some(matching)) => {
+                parse_tlsa(&format!("{usage} {selector} {matching} {}", record.record))
+            }
+            _ => Err(Error::Parse(
+                "ClouDNS TLSA missing tlsa_usage, tlsa_selector or tlsa_matching_type".to_string(),
+            )),
+        },
         other => Err(Error::Parse(format!(
             "unsupported ClouDNS record type: {other}"
         ))),
@@ -600,16 +615,6 @@ fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::
         }
     }
     Ok(())
-}
-
-fn reject_tlsa(record_type: DnsRecordType) -> crate::Result<()> {
-    if matches!(record_type, DnsRecordType::TLSA) {
-        Err(Error::Unsupported(
-            "TLSA records are not supported by ClouDNS".to_string(),
-        ))
-    } else {
-        Ok(())
-    }
 }
 
 fn ttl_rounder(ttl: u32) -> u32 {
