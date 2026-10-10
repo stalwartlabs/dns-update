@@ -16,8 +16,8 @@ use crate::{
     http::{HttpClient, HttpClientBuilder},
     utils::txt_chunks_to_text,
 };
-use jiff::Timestamp;
 use encodify::base64::STANDARD as BASE64_STANDARD;
+use jiff::Timestamp;
 use quick_xml::se::to_string as xml_to_string;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;

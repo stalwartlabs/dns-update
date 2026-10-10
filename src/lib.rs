@@ -67,6 +67,7 @@ pub mod update;
 pub mod utils;
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
     Protocol(String),
     Parse(String),
@@ -78,6 +79,7 @@ pub enum Error {
     NotFound,
     BadRequest,
     Unsupported(String),
+    InvalidRegion,
 }
 
 /// A DNS record type.

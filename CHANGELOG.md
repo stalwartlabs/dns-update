@@ -2,10 +2,15 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.5.10] - 2026-09-XX
+## [0.6.0] - 2026-10-XX
 
 ### Changed
 - Replaced `base64` with `encodify`.
+- HTTP redirects are no longer followed by any provider; a 3xx response is returned as an error.
+- Response bodies included in error messages are truncated to 512 bytes.
+
+### Fixed
+- Alidns, HuaweiCloud, Lightsail, OracleCloud, Route53, TencentCloud and Volcengine reject regions that are not 1 to 64 characters from `[a-z0-9-]` (new `Error::InvalidRegion`).
 
 ## [0.5.9] - 2026-09-26
 

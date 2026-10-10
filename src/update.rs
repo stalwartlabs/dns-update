@@ -95,6 +95,7 @@ use crate::{
         vultr::VultrProvider,
         websupport::WebSupportProvider,
     },
+    utils::validate_region,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -359,6 +360,9 @@ impl DnsUpdater {
 
     /// Create a new DNS updater using the Route53 API.
     pub fn new_route53(config: crate::providers::route53::Route53Config) -> crate::Result<Self> {
+        if let Some(region) = &config.region {
+            validate_region(region)?;
+        }
         Ok(DnsUpdater::Route53(Route53Provider::new(config)))
     }
 

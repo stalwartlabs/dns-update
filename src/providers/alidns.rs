@@ -9,7 +9,7 @@
  * except according to those terms.
  */
 
-use crate::utils::split_caa_value;
+use crate::utils::{split_caa_value, validate_region};
 use std::time::Duration;
 
 use jiff::Timestamp;
@@ -106,17 +106,14 @@ impl AlidnsProvider {
         line: Option<impl AsRef<str>>,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
+        let host = match region.as_ref().map(AsRef::as_ref) {
+            Some(region) if !region.is_empty() => {
+                validate_region(region)?;
+                format!("alidns.{region}.aliyuncs.com")
+            }
+            _ => DEFAULT_HOST.to_string(),
+        };
         let client = HttpClientBuilder::default().with_timeout(timeout).build();
-        let host = region
-            .map(|r| {
-                let region = r.as_ref();
-                if region.is_empty() {
-                    DEFAULT_HOST.to_string()
-                } else {
-                    format!("alidns.{}.aliyuncs.com", region)
-                }
-            })
-            .unwrap_or_else(|| DEFAULT_HOST.to_string());
         Ok(Self {
             client,
             access_key: access_key.as_ref().to_string(),

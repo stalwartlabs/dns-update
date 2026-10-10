@@ -11,8 +11,9 @@
 
 use crate::Error;
 use reqwest::{
-    Method,
+    Client, Method,
     header::{CONTENT_TYPE, HeaderMap, HeaderValue},
+    redirect::Policy,
 };
 use serde::{Serialize, de::DeserializeOwned};
 use std::time::Duration;
@@ -26,7 +27,7 @@ pub struct HttpClientBuilder {
 #[derive(Debug, Clone)]
 pub struct HttpClient {
     headers: HeaderMap<HeaderValue>,
-    client: reqwest::Client,
+    client: Client,
 }
 
 #[derive(Debug, Clone)]
@@ -35,7 +36,7 @@ pub struct HttpRequest {
     url: String,
     headers: HeaderMap<HeaderValue>,
     body: Option<String>,
-    client: reqwest::Client,
+    client: Client,
 }
 
 impl Default for HttpClientBuilder {
@@ -82,13 +83,9 @@ impl HttpClientBuilder {
     }
 
     pub fn build(self) -> HttpClient {
-        let client = reqwest::Client::builder()
-            .timeout(self.timeout)
-            .build()
-            .unwrap_or_default();
         HttpClient {
             headers: self.headers,
-            client,
+            client: build_client(Some(self.timeout)),
         }
     }
 }
@@ -265,16 +262,29 @@ impl HttpRequest {
     }
 }
 
-const MAX_RETRY_DELAY: Duration = Duration::from_secs(60);
-const MAX_BODY_SNIPPET: usize = 512;
-
-fn body_snippet(body: &str) -> &str {
-    let trimmed = body.trim();
-    if trimmed.len() <= MAX_BODY_SNIPPET {
-        trimmed
-    } else {
-        &trimmed[..trimmed.ceil_char_boundary(MAX_BODY_SNIPPET)]
+pub(crate) fn try_build_client(timeout: Option<Duration>) -> crate::Result<Client> {
+    let mut builder = Client::builder().redirect(Policy::none());
+    if let Some(timeout) = timeout {
+        builder = builder.timeout(timeout);
     }
+    builder
+        .build()
+        .map_err(|err| Error::Client(format!("Failed to build HTTP client: {err}")))
+}
+
+#[inline(always)]
+pub(crate) fn build_client(timeout: Option<Duration>) -> Client {
+    try_build_client(timeout).unwrap_or_default()
+}
+
+const MAX_RETRY_DELAY: Duration = Duration::from_secs(60);
+pub(crate) const MAX_BODY_SNIPPET: usize = 512;
+
+pub(crate) fn body_snippet(body: &str) -> &str {
+    let trimmed = body.trim();
+    trimmed
+        .get(..trimmed.floor_char_boundary(MAX_BODY_SNIPPET))
+        .unwrap_or(trimmed)
 }
 
 fn retry_after(headers: &HeaderMap<HeaderValue>) -> Option<Duration> {
@@ -288,7 +298,7 @@ fn retry_after(headers: &HeaderMap<HeaderValue>) -> Option<Duration> {
 }
 
 fn http_status_message(code: u16, body: &str) -> String {
-    let trimmed = body.trim();
+    let trimmed = body_snippet(body);
     if code == 400 {
         if trimmed.is_empty() {
             "BadRequest".to_string()
