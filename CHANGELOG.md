@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file. This projec
 
 ## [0.6.0] - 2026-10-15
 
+### Added
+- enum DNS API support.
+
 ### Changed
 - Replaced `base64` with `encodify`.
 - HTTP redirects are no longer followed by any provider; a 3xx response is returned as an error.
