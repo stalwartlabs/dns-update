@@ -43,6 +43,7 @@ mod tests {
     fn mock_domain_list(server: &mut ServerGuard) -> Mock {
         server
             .mock("POST", "/")
+            .match_header("content-type", "application/json; charset=utf-8")
             .match_header("X-TC-Action", "DescribeDomainList")
             .with_status(200)
             .with_body(DOMAIN_LIST_BODY)
@@ -53,6 +54,7 @@ mod tests {
     fn mock_describe_records(server: &mut ServerGuard, body: &str) -> Mock {
         server
             .mock("POST", "/")
+            .match_header("content-type", "application/json; charset=utf-8")
             .match_header("X-TC-Action", "DescribeRecordList")
             .with_status(200)
             .with_body(body)
@@ -62,6 +64,7 @@ mod tests {
     fn mock_create(server: &mut ServerGuard, partial_body: serde_json::Value) -> Mock {
         server
             .mock("POST", "/")
+            .match_header("content-type", "application/json; charset=utf-8")
             .match_header("X-TC-Action", "CreateRecord")
             .match_body(Matcher::PartialJson(partial_body))
             .with_status(200)
@@ -72,6 +75,7 @@ mod tests {
     fn mock_delete(server: &mut ServerGuard, record_id: u64) -> Mock {
         server
             .mock("POST", "/")
+            .match_header("content-type", "application/json; charset=utf-8")
             .match_header("X-TC-Action", "DeleteRecord")
             .match_body(Matcher::PartialJson(serde_json::json!({
                 "Domain": "example.com",
@@ -373,6 +377,7 @@ mod tests {
         let domain = mock_domain_list(&mut server);
         let list = server
             .mock("POST", "/")
+            .match_header("content-type", "application/json; charset=utf-8")
             .match_header("X-TC-Action", "DescribeRecordList")
             .with_status(200)
             .with_body(
@@ -429,6 +434,7 @@ mod tests {
         let domain = mock_domain_list(&mut server);
         let list = server
             .mock("POST", "/")
+            .match_header("content-type", "application/json; charset=utf-8")
             .match_header("X-TC-Action", "DescribeRecordList")
             .match_body(Matcher::PartialJson(serde_json::json!({
                 "RecordType": "A",
@@ -465,6 +471,7 @@ mod tests {
         let domain = mock_domain_list(&mut server);
         let list = server
             .mock("POST", "/")
+            .match_header("content-type", "application/json; charset=utf-8")
             .match_header("X-TC-Action", "DescribeRecordList")
             .with_status(200)
             .with_body(

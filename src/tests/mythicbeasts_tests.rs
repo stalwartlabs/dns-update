@@ -28,6 +28,8 @@ mod tests {
     fn mock_token(server: &mut mockito::ServerGuard) -> mockito::Mock {
         server
             .mock("POST", "/auth/login")
+            .match_header("content-type", "application/x-www-form-urlencoded")
+            .match_body("grant_type=client_credentials")
             .with_status(200)
             .with_body(r#"{"access_token":"tok","expires_in":3600,"token_type":"bearer"}"#)
             .create()

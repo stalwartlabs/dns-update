@@ -84,7 +84,7 @@ impl JokerProvider {
     pub(crate) fn new(auth: JokerAuth, timeout: Option<Duration>) -> crate::Result<Self> {
         auth.validate()?;
         let client = HttpClientBuilder::default()
-            .with_header("Content-Type", "application/x-www-form-urlencoded")
+            .set_header("Content-Type", "application/x-www-form-urlencoded")
             .with_header("Accept", "text/plain")
             .with_timeout(timeout)
             .build();

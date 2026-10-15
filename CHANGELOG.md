@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.6.0] - 2026-10-XX
+## [0.6.0] - 2026-10-15
 
 ### Changed
 - Replaced `base64` with `encodify`.
@@ -11,6 +11,9 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 - Alidns, HuaweiCloud, Lightsail, OracleCloud, Route53, TencentCloud and Volcengine reject regions that are not 1 to 64 characters from `[a-z0-9-]` (new `Error::InvalidRegion`).
+- Mythic Beasts: fix HTTP 400 `invalid_request` on every login (followed by HTTP 429 from repeated logins) caused by sending a second `Content-Type: application/json` header on the token request.
+- Joker: stop sending a duplicate `Content-Type: application/json` header alongside the form content type on every request.
+- BlueCat v2, EdgeDNS and TencentCloud: send a single `Content-Type` header instead of appending to the default one.
 
 ## [0.5.9] - 2026-09-26
 

@@ -376,7 +376,7 @@ impl EdgeDnsProvider {
         }
         if let Some(body) = body {
             request = request
-                .with_header("Content-Type", "application/json")
+                .set_header("Content-Type", "application/json")
                 .with_raw_body(body.to_string());
         }
 
