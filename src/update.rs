@@ -424,15 +424,16 @@ impl DnsUpdater {
     }
 
     /// Create a new DNS updater using the Simply.com API.
+    ///
+    /// The API key alone identifies the account and is sent as a Bearer token.
+    /// The account name is ignored and only kept for compatibility.
     pub fn new_simplycom(
-        account_name: impl AsRef<str>,
+        _account_name: impl AsRef<str>,
         api_key: impl AsRef<str>,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::SimplyCom(SimplyComProvider::new(
-            account_name,
-            api_key,
-            timeout,
+            api_key, timeout,
         )))
     }
 

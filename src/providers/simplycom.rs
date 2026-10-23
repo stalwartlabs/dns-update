@@ -14,7 +14,6 @@ use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
 };
-use encodify::base64::STANDARD as BASE64;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -86,16 +85,9 @@ pub struct SimplyComRecordContent {
 }
 
 impl SimplyComProvider {
-    pub(crate) fn new(
-        account_name: impl AsRef<str>,
-        api_key: impl AsRef<str>,
-        timeout: Option<Duration>,
-    ) -> Self {
-        let credentials = format!("{}:{}", account_name.as_ref(), api_key.as_ref());
-        let mut authorization = String::from("Basic ");
-        BASE64.encode_append(credentials, &mut authorization);
+    pub(crate) fn new(api_key: impl AsRef<str>, timeout: Option<Duration>) -> Self {
         let client = HttpClientBuilder::default()
-            .with_header("Authorization", authorization)
+            .with_header("Authorization", format!("Bearer {}", api_key.as_ref()))
             .with_timeout(timeout)
             .build();
         Self {

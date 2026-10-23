@@ -110,11 +110,10 @@ mod tests {
         }
     }
 
-    const AUTH: &str = "Basic UzEyMzQ1Njp0ZXN0a2V5";
+    const AUTH: &str = "Bearer testkey";
 
     fn setup_provider(endpoint: String) -> SimplyComProvider {
-        SimplyComProvider::new("S123456", "testkey", Some(Duration::from_secs(1)))
-            .with_endpoint(endpoint)
+        SimplyComProvider::new("testkey", Some(Duration::from_secs(1))).with_endpoint(endpoint)
     }
 
     fn mock_products(server: &mut ServerGuard) -> Mock {
@@ -673,12 +672,11 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires Simply.com credentials in SIMPLY_ACCOUNT, SIMPLY_API_KEY, SIMPLY_DOMAIN"]
+    #[ignore = "requires Simply.com credentials in SIMPLY_API_KEY, SIMPLY_DOMAIN"]
     async fn test_live_simply_txt_roundtrip() {
-        let account = std::env::var("SIMPLY_ACCOUNT").unwrap();
         let api_key = std::env::var("SIMPLY_API_KEY").unwrap();
         let domain = std::env::var("SIMPLY_DOMAIN").unwrap();
-        let provider = SimplyComProvider::new(account, api_key, Some(Duration::from_secs(30)));
+        let provider = SimplyComProvider::new(api_key, Some(Duration::from_secs(30)));
         let name = format!("_dnsupdate-test.{domain}");
 
         provider
