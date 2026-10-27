@@ -51,6 +51,7 @@ use providers::{
     hurricane::HurricaneProvider, ibmcloud::IbmCloudProvider, infoblox::InfobloxProvider,
     inwx::InwxProvider, lightsail::LightsailProvider, plesk::PleskProvider,
     safedns::SafeDnsProvider, simplycom::SimplyComProvider, ultradns::UltraDnsProvider,
+    zoneeu::ZoneEuProvider,
 };
 use std::{
     borrow::Cow,
@@ -299,6 +300,7 @@ pub enum DnsUpdater {
     Inwx(InwxProvider),
     UltraDns(UltraDnsProvider),
     Infoblox(InfobloxProvider),
+    ZoneEu(ZoneEuProvider),
 }
 
 pub trait IntoFqdn<'x> {

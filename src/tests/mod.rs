@@ -92,3 +92,4 @@ pub mod vultr_tests;
 pub mod websupport_tests;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod yandexcloud_tests;
+pub mod zoneeu_tests;

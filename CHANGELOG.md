@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Zone.eu (ZoneID API v2) support.
+
 ## [0.6.0] - 2026-10-15
 
 ### Changed
