@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 - Zone.eu (ZoneID API v2) support.
+- ClouDNS: TLSA record support (`tlsa_usage`, `tlsa_selector` and `tlsa_matching_type` on add and list).
 
 ## [0.6.0] - 2026-10-15
 
