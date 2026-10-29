@@ -30,6 +30,7 @@ mod tests {
     fn login_mock(server: &mut mockito::ServerGuard, sid: &str) -> mockito::Mock {
         server
             .mock("POST", "/login")
+            .match_header("content-type", "application/x-www-form-urlencoded")
             .match_body(Matcher::UrlEncoded("api-key".into(), "api-key-1".into()))
             .with_status(200)
             .with_body(format!(
@@ -46,6 +47,7 @@ mod tests {
     ) -> mockito::Mock {
         server
             .mock("POST", "/dns-zone-get")
+            .match_header("content-type", "application/x-www-form-urlencoded")
             .match_body(Matcher::AllOf(vec![
                 Matcher::UrlEncoded("auth-sid".into(), sid.into()),
                 Matcher::UrlEncoded("domain".into(), domain.into()),
@@ -63,6 +65,7 @@ mod tests {
     ) -> mockito::Mock {
         server
             .mock("POST", "/dns-zone-put")
+            .match_header("content-type", "application/x-www-form-urlencoded")
             .match_body(Matcher::AllOf(vec![
                 Matcher::UrlEncoded("auth-sid".into(), sid.into()),
                 Matcher::UrlEncoded("domain".into(), domain.into()),
@@ -507,6 +510,7 @@ mod tests {
 
         let first_login = server
             .mock("POST", "/login")
+            .match_header("content-type", "application/x-www-form-urlencoded")
             .match_body(Matcher::UrlEncoded("api-key".into(), "api-key-1".into()))
             .with_status(200)
             .with_body("Status-Code: 0\nStatus-Text: OK\nAuth-Sid: stale-sid\n\n")
@@ -515,6 +519,7 @@ mod tests {
 
         let stale_get = server
             .mock("POST", "/dns-zone-get")
+            .match_header("content-type", "application/x-www-form-urlencoded")
             .match_body(Matcher::AllOf(vec![
                 Matcher::UrlEncoded("auth-sid".into(), "stale-sid".into()),
                 Matcher::UrlEncoded("domain".into(), "example.com".into()),
@@ -526,6 +531,7 @@ mod tests {
 
         let second_login = server
             .mock("POST", "/login")
+            .match_header("content-type", "application/x-www-form-urlencoded")
             .match_body(Matcher::UrlEncoded("api-key".into(), "api-key-1".into()))
             .with_status(200)
             .with_body("Status-Code: 0\nStatus-Text: OK\nAuth-Sid: fresh-sid\n\n")
@@ -534,6 +540,7 @@ mod tests {
 
         let fresh_get = server
             .mock("POST", "/dns-zone-get")
+            .match_header("content-type", "application/x-www-form-urlencoded")
             .match_body(Matcher::AllOf(vec![
                 Matcher::UrlEncoded("auth-sid".into(), "fresh-sid".into()),
                 Matcher::UrlEncoded("domain".into(), "example.com".into()),

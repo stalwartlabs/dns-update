@@ -12,16 +12,17 @@
 #![cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 
 use crate::crypto::sha256_digest;
+use crate::http::{body_snippet, try_build_client};
 use crate::jwt::{parse_rsa_pkcs8_pem, rsa_sha256_sign};
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
-use crate::utils::txt_chunks_to_text;
 use crate::utils::{parse_mx, parse_srv, parse_tlsa};
+use crate::utils::{txt_chunks_to_text, validate_region};
 use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, Result};
-use jiff::Timestamp;
 use encodify::base64::STANDARD as B64;
-use reqwest::Method;
+use jiff::Timestamp;
 use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
 use std::net::AddrParseError;
 use std::sync::Arc;
@@ -50,6 +51,7 @@ pub struct OracleCloudConfig {
 
 #[derive(Clone)]
 pub struct OracleCloudProvider {
+    client: Client,
     config: OracleCloudConfig,
     key_pair: Arc<RsaKeyPair>,
     endpoint: String,
@@ -110,6 +112,7 @@ impl OracleCloudProvider {
         if config.region.is_empty() {
             return Err(Error::Client("region is required".into()));
         }
+        validate_region(&config.region)?;
         if config.compartment_ocid.is_empty() {
             return Err(Error::Client("compartment_ocid is required".into()));
         }
@@ -127,8 +130,12 @@ impl OracleCloudProvider {
             .map_err(|e| Error::Client(format!("Failed to parse OCI private key: {}", e)))?;
 
         let endpoint = format!("https://dns.{}.oraclecloud.com", config.region);
+        let client = try_build_client(Some(
+            config.request_timeout.unwrap_or(Duration::from_secs(30)),
+        ))?;
 
         Ok(Self {
+            client,
             config,
             key_pair: Arc::new(key_pair),
             endpoint,
@@ -249,19 +256,10 @@ impl OracleCloudProvider {
         url: &str,
         body: Option<String>,
     ) -> Result<(reqwest::StatusCode, String, HeaderMap)> {
-        let client = reqwest::Client::builder()
-            .timeout(
-                self.config
-                    .request_timeout
-                    .unwrap_or(Duration::from_secs(30)),
-            )
-            .build()
-            .map_err(|e| Error::Client(format!("Failed to build HTTP client: {}", e)))?;
-
         let mut attempts: u32 = 0;
         loop {
             let headers = self.sign_request(&method, url, body.as_deref())?;
-            let mut request = client.request(method.clone(), url).headers(headers);
+            let mut request = self.client.request(method.clone(), url).headers(headers);
             if let Some(b) = body.as_ref() {
                 request = request.body(b.clone());
             }
@@ -607,7 +605,11 @@ fn map_error(status: reqwest::StatusCode, body: &str) -> Error {
         400 => Error::BadRequest,
         401 | 403 => Error::Unauthorized,
         404 => Error::NotFound,
-        _ => Error::Api(format!("Oracle Cloud DNS error {}: {}", status, body)),
+        _ => Error::Api(format!(
+            "Oracle Cloud DNS error {}: {}",
+            status,
+            body_snippet(body)
+        )),
     }
 }
 

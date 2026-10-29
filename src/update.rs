@@ -94,7 +94,9 @@ use crate::{
         vercel::VercelProvider,
         vultr::VultrProvider,
         websupport::WebSupportProvider,
+        zoneeu::ZoneEuProvider,
     },
+    utils::validate_region,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -359,6 +361,9 @@ impl DnsUpdater {
 
     /// Create a new DNS updater using the Route53 API.
     pub fn new_route53(config: crate::providers::route53::Route53Config) -> crate::Result<Self> {
+        if let Some(region) = &config.region {
+            validate_region(region)?;
+        }
         Ok(DnsUpdater::Route53(Route53Provider::new(config)))
     }
 
@@ -814,6 +819,17 @@ impl DnsUpdater {
         Ok(DnsUpdater::Infoblox(InfobloxProvider::new(config)?))
     }
 
+    /// Create a new DNS updater using the Zone.eu ZoneID API (v2).
+    pub fn new_zoneeu(
+        username: impl AsRef<str>,
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::ZoneEu(ZoneEuProvider::new(
+            username, api_key, timeout,
+        )))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -1192,6 +1208,11 @@ impl DnsUpdater {
                     .await
             }
             DnsUpdater::Infoblox(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::ZoneEu(provider) => {
                 provider
                     .set_rrset(name, record_type, ttl, records, origin)
                     .await
@@ -1581,6 +1602,11 @@ impl DnsUpdater {
                     .add_to_rrset(name, record_type, ttl, records, origin)
                     .await
             }
+            DnsUpdater::ZoneEu(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => {
                 provider
@@ -1965,6 +1991,11 @@ impl DnsUpdater {
                     .remove_from_rrset(name, record_type, records, origin)
                     .await
             }
+            DnsUpdater::ZoneEu(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => {
                 provider
@@ -2098,6 +2129,7 @@ impl DnsUpdater {
             DnsUpdater::EdgeDns(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::UltraDns(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Infoblox(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::ZoneEu(provider) => provider.list_rrset(name, record_type, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.list_rrset(name, record_type, origin).await,
             #[cfg(feature = "test_provider")]

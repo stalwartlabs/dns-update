@@ -11,6 +11,7 @@
 
 //! Generic JWT utility for providers that need JWT authentication.
 
+use crate::http::try_build_client;
 use encodify::{
     Error as CodecError,
     base64::{LENIENT, URL_SAFE_NO_PAD},
@@ -164,7 +165,7 @@ pub async fn exchange_jwt_for_token(
     token_uri: &str,
     jwt: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let client = reqwest::Client::new();
+    let client = try_build_client(None)?;
     let params = [
         ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
         ("assertion", jwt),

@@ -82,6 +82,7 @@ and over 70 cloud, registrar, and self-hosted DNS provider APIs. It was designed
 | [Vultr](https://www.vultr.com/) | `new_vultr` | |
 | [Websupport](https://www.websupport.sk/) | `new_websupport` | HMAC-SHA1 |
 | [Yandex Cloud DNS](https://cloud.yandex.com/services/dns) | `new_yandexcloud` | PS256 JWT |
+| [Zone.eu](https://www.zone.eu/) | `new_zoneeu` | ZoneID API |
 
 ## API
 

@@ -51,6 +51,7 @@ use providers::{
     hurricane::HurricaneProvider, ibmcloud::IbmCloudProvider, infoblox::InfobloxProvider,
     inwx::InwxProvider, lightsail::LightsailProvider, plesk::PleskProvider,
     safedns::SafeDnsProvider, simplycom::SimplyComProvider, ultradns::UltraDnsProvider,
+    zoneeu::ZoneEuProvider,
 };
 use std::{
     borrow::Cow,
@@ -67,6 +68,7 @@ pub mod update;
 pub mod utils;
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
     Protocol(String),
     Parse(String),
@@ -78,6 +80,7 @@ pub enum Error {
     NotFound,
     BadRequest,
     Unsupported(String),
+    InvalidRegion,
 }
 
 /// A DNS record type.
@@ -297,6 +300,7 @@ pub enum DnsUpdater {
     Inwx(InwxProvider),
     UltraDns(UltraDnsProvider),
     Infoblox(InfobloxProvider),
+    ZoneEu(ZoneEuProvider),
 }
 
 pub trait IntoFqdn<'x> {

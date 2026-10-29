@@ -90,6 +90,7 @@ pub mod vultr;
 pub mod websupport;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod yandexcloud;
+pub mod zoneeu;
 
 impl DnsRecord {
     pub fn priority(&self) -> Option<u16> {

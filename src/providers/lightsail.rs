@@ -10,8 +10,9 @@
  */
 
 use crate::crypto::{hmac_sha256, sha256_digest};
-use crate::utils::unquote_txt;
+use crate::http::{body_snippet, try_build_client};
 use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
+use crate::utils::{unquote_txt, validate_region};
 use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, Result, SRVRecord};
 use jiff::Timestamp;
 use reqwest::Client;
@@ -117,13 +118,8 @@ struct LightsailDomainEntry {
 impl LightsailProvider {
     pub(crate) fn new(config: LightsailConfig) -> Result<Self> {
         let region = config.region.unwrap_or_else(|| DEFAULT_REGION.to_string());
-        let mut builder = Client::builder();
-        if let Some(timeout) = config.request_timeout {
-            builder = builder.timeout(timeout);
-        }
-        let client = builder
-            .build()
-            .map_err(|e| Error::Client(format!("lightsail client: {e}")))?;
+        validate_region(&region)?;
+        let client = try_build_client(config.request_timeout)?;
         Ok(Self {
             client,
             access_key_id: config.access_key_id,
@@ -205,8 +201,14 @@ impl LightsailProvider {
             200..=299 => Ok(text),
             401 | 403 => Err(Error::Unauthorized),
             404 => Err(Error::NotFound),
-            400 => Err(Error::Api(format!("lightsail BadRequest: {text}"))),
-            code => Err(Error::Api(format!("lightsail HTTP {code}: {text}"))),
+            400 => Err(Error::Api(format!(
+                "lightsail BadRequest: {}",
+                body_snippet(&text)
+            ))),
+            code => Err(Error::Api(format!(
+                "lightsail HTTP {code}: {}",
+                body_snippet(&text)
+            ))),
         }
     }
 

@@ -20,6 +20,21 @@ use std::{
 };
 
 const MAX_CHUNK_BYTES: usize = 255;
+pub(crate) const MAX_REGION_LEN: usize = 64;
+
+pub(crate) fn validate_region(region: &str) -> crate::Result<()> {
+    let bytes = region.as_bytes();
+    if !bytes.is_empty()
+        && bytes.len() <= MAX_REGION_LEN
+        && bytes
+            .iter()
+            .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'-'))
+    {
+        Ok(())
+    } else {
+        Err(Error::InvalidRegion)
+    }
+}
 
 pub(crate) fn txt_chunks_to_text(output: &mut String, text: &str, separator: &str) {
     output.push('"');
@@ -578,6 +593,10 @@ impl Display for Error {
             Error::NotFound => write!(f, "Not found"),
             Error::BadRequest => write!(f, "Bad request"),
             Error::Unsupported(e) => write!(f, "Unsupported: {}", e),
+            Error::InvalidRegion => write!(
+                f,
+                "Invalid region: expected 1 to {MAX_REGION_LEN} characters from [a-z0-9-]"
+            ),
         }
     }
 }
