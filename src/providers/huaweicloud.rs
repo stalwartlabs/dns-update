@@ -9,9 +9,9 @@
  * except according to those terms.
  */
 
-use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::utils::{parse_mx, parse_srv};
+use crate::utils::{split_caa_value, validate_region};
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn,
     crypto::{hmac_sha256, sha256_digest},
@@ -113,6 +113,7 @@ impl HuaweiCloudProvider {
         if access_key.is_empty() || secret_key.is_empty() || region.is_empty() {
             return Err(Error::Api("huaweicloud: credentials missing".to_string()));
         }
+        validate_region(&region)?;
 
         let endpoint = format!("https://dns.{}.myhuaweicloud.com", region);
         let client = HttpClientBuilder::default().with_timeout(timeout).build();

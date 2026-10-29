@@ -10,8 +10,8 @@
  */
 
 use crate::utils::parse_srv;
-use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
+use crate::utils::{split_caa_value, validate_region};
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -28,6 +28,7 @@ const DEFAULT_HOST: &str = "dnspod.tencentcloudapi.com";
 const SERVICE: &str = "dnspod";
 const API_VERSION: &str = "2021-03-23";
 const ALGORITHM: &str = "TC3-HMAC-SHA256";
+const DEFAULT_RECORD_LINE: &str = "默认";
 const DEFAULT_RECORD_LINE_ID: &str = "0";
 
 #[derive(Clone)]
@@ -115,12 +116,16 @@ impl TencentCloudProvider {
         session_token: Option<impl AsRef<str>>,
         timeout: Option<Duration>,
     ) -> crate::Result<Self> {
+        let region = region.map(|r| r.as_ref().to_string()).unwrap_or_default();
+        if !region.is_empty() {
+            validate_region(&region)?;
+        }
         let client = HttpClientBuilder::default().with_timeout(timeout).build();
         Ok(Self {
             client,
             secret_id: secret_id.as_ref().to_string(),
             secret_key: secret_key.as_ref().to_string(),
-            region: region.map(|r| r.as_ref().to_string()).unwrap_or_default(),
+            region,
             session_token: session_token.map(|s| s.as_ref().to_string()),
             endpoint: format!("https://{}", DEFAULT_HOST),
             host: DEFAULT_HOST.to_string(),
@@ -285,6 +290,7 @@ impl TencentCloudProvider {
             "DomainId": zone.domain_id,
             "SubDomain": subdomain,
             "RecordType": record.record_type,
+            "RecordLine": DEFAULT_RECORD_LINE,
             "RecordLineId": DEFAULT_RECORD_LINE_ID,
             "Value": record.value,
             "TTL": ttl,

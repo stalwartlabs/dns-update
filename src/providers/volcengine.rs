@@ -13,8 +13,8 @@
 
 use crate::crypto::{hmac_sha256, sha256_digest};
 use crate::http::{HttpClient, HttpClientBuilder};
-use crate::utils::split_caa_value;
 use crate::utils::unquote_txt;
+use crate::utils::{split_caa_value, validate_region};
 use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
 use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord};
 use jiff::Timestamp;
@@ -77,6 +77,7 @@ impl VolcengineProvider {
         let region = config
             .region
             .unwrap_or_else(|| VOLCENGINE_DEFAULT_REGION.to_string());
+        validate_region(&region)?;
         let host = config
             .host
             .unwrap_or_else(|| VOLCENGINE_DEFAULT_HOST.to_string());

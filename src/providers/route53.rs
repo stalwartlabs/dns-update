@@ -10,6 +10,7 @@
  */
 
 use crate::crypto::{hmac_sha256, sha256_digest};
+use crate::http::{body_snippet, build_client};
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::utils::txt_chunks_to_text;
@@ -63,7 +64,7 @@ impl Route53Provider {
         };
 
         Self {
-            client: Client::new(),
+            client: build_client(None),
             config,
             region,
             endpoint,
@@ -628,8 +629,14 @@ impl Route53Provider {
         let err = match code {
             401 => Error::Unauthorized,
             404 => Error::NotFound,
-            400 if !retryable => Error::Api(format!("Route53 BadRequest: {}", body_text)),
-            _ => Error::Api(format!("Route53 API error: {} - {}", status, body_text)),
+            400 if !retryable => {
+                Error::Api(format!("Route53 BadRequest: {}", body_snippet(&body_text)))
+            }
+            _ => Error::Api(format!(
+                "Route53 API error: {} - {}",
+                status,
+                body_snippet(&body_text)
+            )),
         };
         if retryable {
             Err(SignedRequestError::Retryable(err))

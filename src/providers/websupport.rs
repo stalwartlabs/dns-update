@@ -16,8 +16,8 @@ use crate::{
     http::{HttpClient, HttpClientBuilder},
     utils::strip_origin_from_name,
 };
-use jiff::Timestamp;
 use encodify::base64::STANDARD as BASE64_STANDARD;
+use jiff::Timestamp;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;

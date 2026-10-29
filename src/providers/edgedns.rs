@@ -15,8 +15,8 @@ use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::utils::txt_chunks_to_text;
 use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, Result, SRVRecord};
-use jiff::Timestamp;
 use encodify::base64::STANDARD as BASE64_STANDARD;
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
