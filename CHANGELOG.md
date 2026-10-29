@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 - Zone.eu (ZoneID API v2) support.
+- `CONTRIBUTING.md` with build, test and new provider instructions.
 - ClouDNS: TLSA record support.
 
 ### Fixed
