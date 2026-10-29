@@ -72,6 +72,7 @@ and over 70 cloud, registrar, and self-hosted DNS provider APIs. It was designed
 | [AWS Route 53](https://aws.amazon.com/route53/) | `new_route53` | AWS Sigv4 |
 | [ANS SafeDNS](https://www.ans.co.uk/) | `new_safedns` | |
 | [Scaleway](https://www.scaleway.com/) | `new_scaleway` | |
+| [Selectel](https://selectel.ru/) | `new_selectel` | DNS API v2, Keystone service user; no TLSA |
 | [Simply.com](https://www.simply.com/) | `new_simplycom` | |
 | [Spaceship](https://www.spaceship.com/) | `new_spaceship` | |
 | [Tencent Cloud DNSPod](https://cloud.tencent.com/product/dns) | `new_tencentcloud` | TC3-HMAC-SHA256 |

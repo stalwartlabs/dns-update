@@ -87,6 +87,7 @@ use crate::{
         route53::Route53Provider,
         safedns::SafeDnsProvider,
         scaleway::ScalewayProvider,
+        selectel::SelectelProvider,
         simplycom::SimplyComProvider,
         spaceship::SpaceshipProvider,
         tencentcloud::TencentCloudProvider,
@@ -380,6 +381,20 @@ impl DnsUpdater {
         Ok(DnsUpdater::Scaleway(ScalewayProvider::new(
             api_token, timeout,
         )))
+    }
+
+    /// Create a new DNS updater using the Selectel DNS API v2, authenticating as a
+    /// service user scoped to the given account and project.
+    pub fn new_selectel(
+        username: impl AsRef<str>,
+        password: impl AsRef<str>,
+        account_id: impl AsRef<str>,
+        project_id: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Selectel(SelectelProvider::new(
+            username, password, account_id, project_id, timeout,
+        )?))
     }
 
     /// Create a new DNS updater using the Gcore DNS API.
@@ -1004,6 +1019,11 @@ impl DnsUpdater {
                     .set_rrset(name, record_type, ttl, records, origin)
                     .await
             }
+            DnsUpdater::Selectel(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
             DnsUpdater::Gcore(provider) => {
                 provider
                     .set_rrset(name, record_type, ttl, records, origin)
@@ -1390,6 +1410,11 @@ impl DnsUpdater {
                     .await
             }
             DnsUpdater::Scaleway(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Selectel(provider) => {
                 provider
                     .add_to_rrset(name, record_type, ttl, records, origin)
                     .await
@@ -1783,6 +1808,11 @@ impl DnsUpdater {
                     .remove_from_rrset(name, record_type, records, origin)
                     .await
             }
+            DnsUpdater::Selectel(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
             DnsUpdater::Gcore(provider) => {
                 provider
                     .remove_from_rrset(name, record_type, records, origin)
@@ -2067,6 +2097,7 @@ impl DnsUpdater {
             DnsUpdater::Route53(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Vultr(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Scaleway(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Selectel(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Gcore(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Vercel(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Ionos(provider) => provider.list_rrset(name, record_type, origin).await,
