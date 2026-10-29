@@ -6,15 +6,13 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 - Zone.eu (ZoneID API v2) support.
+- ClouDNS: TLSA record support.
 
 ### Fixed
 - Azure DNS: send a single `Content-Type` header on the token request, which Azure AD rejected with HTTP 400 "Invalid Header".
 - TencentCloud: send the required `RecordLine` parameter on `CreateRecord`, which DNSPod rejected with `MissingParameter: RecordLine`.
 
 ## [0.6.0] - 2026-10-15
-
-### Added
-- ClouDNS: add TLSA support.
 
 ### Changed
 - Replaced `base64` with `encodify`.

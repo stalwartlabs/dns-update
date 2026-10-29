@@ -9,9 +9,11 @@
  * except according to those terms.
  */
 
-use crate::utils::{build_caa, parse_tlsa};
+use crate::utils::{
+    build_caa, decode_hex, tlsa_cert_usage_from_u8, tlsa_matching_from_u8, tlsa_selector_from_u8,
+};
 use crate::{
-    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord, TLSARecord,
     http::{HttpClient, HttpClientBuilder, HttpRequest},
     utils::strip_origin_from_name,
 };
@@ -507,7 +509,7 @@ fn record_matches(existing: &ClouDnsRecord, desired: &DnsRecord) -> bool {
                 && existing.caa_type.as_deref() == Some(tag.as_str())
                 && existing.caa_value.as_deref() == Some(value.as_str())
         }
-        DnsRecord::TLSA(_) => record_to_dns_record(existing.clone()).is_ok_and(|r| r == *desired),
+        DnsRecord::TLSA(tlsa) => tlsa_from_record(existing).is_ok_and(|parsed| parsed == *tlsa),
     }
 }
 
@@ -586,22 +588,35 @@ fn record_to_dns_record(record: ClouDnsRecord) -> crate::Result<DnsRecord> {
                 .ok_or_else(|| Error::Parse("ClouDNS CAA missing caa_value".to_string()))?;
             Ok(DnsRecord::CAA(build_caa(flags, &tag, &value)?))
         }
-        "TLSA" => match (
-            &record.tlsa_usage,
-            &record.tlsa_selector,
-            &record.tlsa_matching_type,
-        ) {
-            (Some(usage), Some(selector), Some(matching)) => {
-                parse_tlsa(&format!("{usage} {selector} {matching} {}", record.record))
-            }
-            _ => Err(Error::Parse(
-                "ClouDNS TLSA missing tlsa_usage, tlsa_selector or tlsa_matching_type".to_string(),
-            )),
-        },
+        "TLSA" => tlsa_from_record(&record).map(DnsRecord::TLSA),
         other => Err(Error::Parse(format!(
             "unsupported ClouDNS record type: {other}"
         ))),
     }
+}
+
+fn tlsa_from_record(record: &ClouDnsRecord) -> crate::Result<TLSARecord> {
+    let (Some(usage), Some(selector), Some(matching)) = (
+        record.tlsa_usage.as_deref(),
+        record.tlsa_selector.as_deref(),
+        record.tlsa_matching_type.as_deref(),
+    ) else {
+        return Err(Error::Parse(
+            "ClouDNS TLSA missing tlsa_usage, tlsa_selector or tlsa_matching_type".to_string(),
+        ));
+    };
+    Ok(TLSARecord {
+        cert_usage: tlsa_cert_usage_from_u8(parse_tlsa_field(usage)?)?,
+        selector: tlsa_selector_from_u8(parse_tlsa_field(selector)?)?,
+        matching: tlsa_matching_from_u8(parse_tlsa_field(matching)?)?,
+        cert_data: decode_hex(&record.record)?,
+    })
+}
+
+fn parse_tlsa_field(value: &str) -> crate::Result<u8> {
+    value
+        .parse()
+        .map_err(|err| Error::Parse(format!("invalid ClouDNS TLSA field '{value}': {err}")))
 }
 
 fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {

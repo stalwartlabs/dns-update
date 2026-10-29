@@ -493,6 +493,65 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_set_rrset_tlsa_idempotent_ignores_hex_case() {
+        // An uppercase hex row equal to the desired record causes no writes.
+        let mut server = mockito::Server::new_async().await;
+        let lookup = server
+            .mock("GET", mockito::Matcher::Regex("^/records.json".into()))
+            .with_status(200)
+            .with_body(
+                r#"{
+                    "7": {"id": "7", "type": "TLSA", "host": "_25._tcp.mail", "record": "0AFF10", "tlsa_usage": "3", "tlsa_selector": "1", "tlsa_matching_type": "1"}
+                }"#,
+            )
+            .create();
+        let no_writes = server
+            .mock("POST", mockito::Matcher::Any)
+            .expect(0)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .set_rrset(
+                "_25._tcp.mail.example.com",
+                DnsRecordType::TLSA,
+                3600,
+                vec![tlsa(vec![0x0a, 0xff, 0x10])],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "set_rrset failed: {result:?}");
+        lookup.assert();
+        no_writes.assert();
+    }
+
+    #[tokio::test]
+    async fn test_list_rrset_tlsa_missing_field_is_parse_error() {
+        // A TLSA row without tlsa_usage is reported as a parse error.
+        let mut server = mockito::Server::new_async().await;
+        let _lookup = server
+            .mock("GET", mockito::Matcher::Regex("^/records.json".into()))
+            .with_status(200)
+            .with_body(
+                r#"{
+                    "7": {"id": "7", "type": "TLSA", "host": "_25._tcp.mail", "record": "0aff10", "tlsa_selector": "1", "tlsa_matching_type": "1"}
+                }"#,
+            )
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        let result = provider
+            .list_rrset(
+                "_25._tcp.mail.example.com",
+                DnsRecordType::TLSA,
+                "example.com",
+            )
+            .await;
+        assert!(matches!(result, Err(Error::Parse(_))), "got {result:?}");
+    }
+
+    #[tokio::test]
     async fn test_set_rrset_normalizes_trailing_dot_on_cname() {
         let mut server = mockito::Server::new_async().await;
         let lookup = server
