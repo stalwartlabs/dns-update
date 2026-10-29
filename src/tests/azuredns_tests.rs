@@ -473,9 +473,7 @@ mod tests {
 
     #[tokio::test]
     async fn token_request_sends_a_single_content_type() {
-        // The shared HttpClient defaults to `Content-Type: application/json`. The token
-        // request must replace it rather than add a second one: Azure AD rejects a request
-        // carrying two Content-Type headers with an HTML "400 Invalid Header" page.
+        // The token request must replace the default JSON Content-Type, not add a second one.
         let mut server = mockito::Server::new_async().await;
         let token = server
             .mock("POST", "/tenant-123/oauth2/v2.0/token")
