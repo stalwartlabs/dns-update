@@ -168,6 +168,10 @@ client
     .unwrap();
 ```
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test and add a provider.
+
 ## License
 
 Licensed under either of
