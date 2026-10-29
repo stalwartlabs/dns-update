@@ -28,6 +28,7 @@ const DEFAULT_HOST: &str = "dnspod.tencentcloudapi.com";
 const SERVICE: &str = "dnspod";
 const API_VERSION: &str = "2021-03-23";
 const ALGORITHM: &str = "TC3-HMAC-SHA256";
+const DEFAULT_RECORD_LINE: &str = "默认";
 const DEFAULT_RECORD_LINE_ID: &str = "0";
 
 #[derive(Clone)]
@@ -289,6 +290,7 @@ impl TencentCloudProvider {
             "DomainId": zone.domain_id,
             "SubDomain": subdomain,
             "RecordType": record.record_type,
+            "RecordLine": DEFAULT_RECORD_LINE,
             "RecordLineId": DEFAULT_RECORD_LINE_ID,
             "Value": record.value,
             "TTL": ttl,

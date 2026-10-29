@@ -7,6 +7,9 @@ All notable changes to this project will be documented in this file. This projec
 ### Added
 - Zone.eu (ZoneID API v2) support.
 
+### Fixed
+- TencentCloud: send the required `RecordLine` parameter on `CreateRecord`, which DNSPod rejected with `MissingParameter: RecordLine`.
+
 ## [0.6.0] - 2026-10-15
 
 ### Changed
