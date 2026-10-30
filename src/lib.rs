@@ -50,8 +50,8 @@ use providers::{
     edgedns::EdgeDnsProvider, hostinger::HostingerProvider, huaweicloud::HuaweiCloudProvider,
     hurricane::HurricaneProvider, ibmcloud::IbmCloudProvider, infoblox::InfobloxProvider,
     inwx::InwxProvider, lightsail::LightsailProvider, plesk::PleskProvider,
-    safedns::SafeDnsProvider, simplycom::SimplyComProvider, ultradns::UltraDnsProvider,
-    zoneeu::ZoneEuProvider,
+    safedns::SafeDnsProvider, selectel::SelectelProvider, simplycom::SimplyComProvider,
+    ultradns::UltraDnsProvider, zoneeu::ZoneEuProvider,
 };
 use std::{
     borrow::Cow,
@@ -272,6 +272,7 @@ pub enum DnsUpdater {
     InMemory(InMemoryProvider),
     Route53(Route53Provider),
     Scaleway(ScalewayProvider),
+    Selectel(SelectelProvider),
     Gcore(GcoreProvider),
     Vercel(VercelProvider),
     Vultr(VultrProvider),
