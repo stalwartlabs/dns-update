@@ -56,6 +56,8 @@ struct CreateRecordRequest<'a> {
 #[derive(Deserialize, Debug)]
 struct ListedRecord {
     id: i64,
+    #[serde(default)]
+    name: String,
     #[serde(rename = "type")]
     record_type: String,
     value: String,
@@ -138,7 +140,7 @@ impl DnsMadeEasyProvider {
 
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, None);
+        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
         let domain_id = self.obtain_domain_id(&domain).await?;
 
         let existing = self.list_at(domain_id, &subdomain, record_type).await?;
@@ -189,7 +191,7 @@ impl DnsMadeEasyProvider {
 
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, None);
+        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
         let domain_id = self.obtain_domain_id(&domain).await?;
 
         let existing = self.list_at(domain_id, &subdomain, record_type).await?;
@@ -232,7 +234,7 @@ impl DnsMadeEasyProvider {
 
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, None);
+        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
         let domain_id = self.obtain_domain_id(&domain).await?;
 
         let existing = self.list_at(domain_id, &subdomain, record_type).await?;
@@ -265,7 +267,7 @@ impl DnsMadeEasyProvider {
         ensure_supported_type(record_type)?;
         let name = name.into_name();
         let domain = origin.into_name();
-        let subdomain = strip_origin_from_name(&name, &domain, None);
+        let subdomain = strip_origin_from_name(&name, &domain, Some(""));
         let domain_id = self.obtain_domain_id(&domain).await?;
         let listed = self.list_at(domain_id, &subdomain, record_type).await?;
         listed
@@ -293,17 +295,21 @@ impl DnsMadeEasyProvider {
         subdomain: &str,
         record_type: DnsRecordType,
     ) -> crate::Result<Vec<ListedRecord>> {
-        let url = format!(
-            "{}/dns/managed/{}/records?recordName={}&type={}",
+        let mut url = format!(
+            "{}/dns/managed/{}/records?type={}",
             self.endpoint,
             domain_id,
-            urlencode(subdomain),
             record_type.as_str()
         );
-        let page: ListedRecordPage = self
+        if !subdomain.is_empty() {
+            url.push_str("&recordName=");
+            url.push_str(&urlencode(subdomain));
+        }
+        let mut page: ListedRecordPage = self
             .signed_request(self.client.get(url))
             .send_with_retry(3)
             .await?;
+        page.data.retain(|listed| listed.name == subdomain);
         Ok(page.data)
     }
 

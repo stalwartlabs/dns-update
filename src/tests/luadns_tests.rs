@@ -104,7 +104,7 @@ mod tests {
             r#"[
                 {"id":21,"name":"mx.example.com.","type":"MX","content":"10 mail1.example.com.","ttl":300,"zone_id":1},
                 {"id":22,"name":"mx.example.com.","type":"MX","content":"20 mail2.example.com.","ttl":300,"zone_id":1},
-                {"id":23,"name":"mx.example.com.","type":"TXT","content":"\"keep\"","ttl":300,"zone_id":1}
+                {"id":23,"name":"mx.example.com.","type":"TXT","content":"keep","ttl":300,"zone_id":1}
             ]"#,
         );
 
@@ -304,7 +304,7 @@ mod tests {
             r#"[
                 {"id":70,"name":"www.example.com.","type":"A","content":"1.1.1.1","ttl":300,"zone_id":1},
                 {"id":71,"name":"www.example.com.","type":"A","content":"2.2.2.2","ttl":300,"zone_id":1},
-                {"id":72,"name":"www.example.com.","type":"TXT","content":"\"ignore\"","ttl":300,"zone_id":1},
+                {"id":72,"name":"www.example.com.","type":"TXT","content":"ignore","ttl":300,"zone_id":1},
                 {"id":73,"name":"other.example.com.","type":"A","content":"9.9.9.9","ttl":300,"zone_id":1}
             ]"#,
         );
@@ -326,13 +326,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_list_rrset_txt_unquotes() {
+    async fn test_list_rrset_txt_is_raw() {
         let mut server = mockito::Server::new_async().await;
         let _zones = mock_zone_lookup(&mut server);
         let _list = mock_list_records(
             &mut server,
             r#"[
-                {"id":80,"name":"_acme.example.com.","type":"TXT","content":"\"hello world\"","ttl":60,"zone_id":1}
+                {"id":80,"name":"_acme.example.com.","type":"TXT","content":"\"hello\" world","ttl":60,"zone_id":1}
             ]"#,
         );
 
@@ -341,7 +341,47 @@ mod tests {
             .list_rrset("_acme.example.com", DnsRecordType::TXT, "example.com")
             .await
             .expect("list_rrset failed");
-        assert_eq!(result, vec![DnsRecord::TXT("hello world".to_string())]);
+        assert_eq!(result, vec![DnsRecord::TXT("\"hello\" world".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_long_txt_sent_raw() {
+        let mut server = mockito::Server::new_async().await;
+        let _zones = mock_zone_lookup(&mut server);
+        let dkim = format!("v=DKIM1; k=rsa; p={}", "A".repeat(400));
+        let _list = mock_list_records(
+            &mut server,
+            &format!(
+                r#"[{{"id":90,"name":"sel._domainkey.example.com.","type":"TXT","content":"{dkim}","ttl":300,"zone_id":1}}]"#
+            ),
+        );
+        let create = server
+            .mock("POST", "/v1/zones/1/records")
+            .match_body(Matcher::Json(json!({
+                "name": "sel._domainkey.example.com.",
+                "type": "TXT",
+                "content": format!("v=DKIM1; k=ed25519; p={}", "B".repeat(300)),
+                "ttl": 300,
+            })))
+            .with_status(200)
+            .with_body(r#"{"id":91,"name":"sel._domainkey.example.com.","type":"TXT","content":"x","ttl":300,"zone_id":1}"#)
+            .create();
+
+        let provider = setup_provider(server.url().as_str());
+        provider
+            .set_rrset(
+                "sel._domainkey.example.com",
+                DnsRecordType::TXT,
+                300,
+                vec![
+                    DnsRecord::TXT(dkim.clone()),
+                    DnsRecord::TXT(format!("v=DKIM1; k=ed25519; p={}", "B".repeat(300))),
+                ],
+                "example.com",
+            )
+            .await
+            .expect("set_rrset failed");
+        create.assert();
     }
 
     #[tokio::test]

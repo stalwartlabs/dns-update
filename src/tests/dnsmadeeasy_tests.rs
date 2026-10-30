@@ -100,7 +100,7 @@ mod tests {
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"data":[{"id":1,"type":"A","value":"1.2.3.4","ttl":300},{"id":2,"type":"A","value":"5.6.7.8","ttl":300}]}"#)
+            .with_body(r#"{"data":[{"id":1,"name":"test","type":"A","value":"1.2.3.4","ttl":300},{"id":2,"name":"test","type":"A","value":"5.6.7.8","ttl":300}]}"#)
             .create();
 
         let provider = setup_provider(server.url());
@@ -135,7 +135,7 @@ mod tests {
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"data":[{"id":10,"type":"A","value":"1.2.3.4","ttl":300},{"id":11,"type":"A","value":"9.9.9.9","ttl":300}]}"#)
+            .with_body(r#"{"data":[{"id":10,"name":"test","type":"A","value":"1.2.3.4","ttl":300},{"id":11,"name":"test","type":"A","value":"9.9.9.9","ttl":300}]}"#)
             .create();
 
         let bulk_delete = server
@@ -190,7 +190,7 @@ mod tests {
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"data":[{"id":1,"type":"A","value":"1.2.3.4","ttl":300},{"id":2,"type":"A","value":"5.6.7.8","ttl":300}]}"#)
+            .with_body(r#"{"data":[{"id":1,"name":"test","type":"A","value":"1.2.3.4","ttl":300},{"id":2,"name":"test","type":"A","value":"5.6.7.8","ttl":300}]}"#)
             .create();
 
         let bulk_delete = server
@@ -360,7 +360,9 @@ mod tests {
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"data":[{"id":5,"type":"A","value":"1.2.3.4","ttl":300}]}"#)
+            .with_body(
+                r#"{"data":[{"id":5,"name":"test","type":"A","value":"1.2.3.4","ttl":300}]}"#,
+            )
             .create();
 
         let create_multi = server
@@ -406,7 +408,9 @@ mod tests {
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"data":[{"id":5,"type":"A","value":"1.2.3.4","ttl":300}]}"#)
+            .with_body(
+                r#"{"data":[{"id":5,"name":"test","type":"A","value":"1.2.3.4","ttl":300}]}"#,
+            )
             .create();
 
         let provider = setup_provider(server.url());
@@ -448,7 +452,7 @@ mod tests {
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"data":[{"id":50,"type":"A","value":"1.2.3.4","ttl":300},{"id":51,"type":"A","value":"5.6.7.8","ttl":300}]}"#)
+            .with_body(r#"{"data":[{"id":50,"name":"test","type":"A","value":"1.2.3.4","ttl":300},{"id":51,"name":"test","type":"A","value":"5.6.7.8","ttl":300}]}"#)
             .create();
 
         let bulk_delete = server
@@ -492,7 +496,9 @@ mod tests {
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"data":[{"id":50,"type":"A","value":"1.2.3.4","ttl":300}]}"#)
+            .with_body(
+                r#"{"data":[{"id":50,"name":"test","type":"A","value":"1.2.3.4","ttl":300}]}"#,
+            )
             .create();
 
         let provider = setup_provider(server.url());
@@ -517,13 +523,10 @@ mod tests {
 
         let record_lookup = server
             .mock("GET", "/dns/managed/12345/records")
-            .match_query(Matcher::AllOf(vec![
-                Matcher::UrlEncoded("recordName".into(), "@".into()),
-                Matcher::UrlEncoded("type".into(), "MX".into()),
-            ]))
+            .match_query(Matcher::Exact("type=MX".into()))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"data":[{"id":1,"type":"MX","value":"mail.example.com.","ttl":3600,"mxLevel":10},{"id":2,"type":"MX","value":"mail2.example.com.","ttl":3600,"mxLevel":20}]}"#)
+            .with_body(r#"{"data":[{"id":1,"name":"","type":"MX","value":"mail.example.com.","ttl":3600,"mxLevel":10},{"id":3,"name":"sub","type":"MX","value":"mx.sub.example.com.","ttl":3600,"mxLevel":5},{"id":2,"name":"","type":"MX","value":"mail2.example.com.","ttl":3600,"mxLevel":20}]}"#)
             .create();
 
         let provider = setup_provider(server.url());
@@ -532,7 +535,7 @@ mod tests {
             .await;
         assert!(result.is_ok(), "list_rrset returned: {result:?}");
         let records = result.unwrap();
-        assert_eq!(records.len(), 2);
+        assert_eq!(records.len(), 2, "{records:?}");
         assert!(records.contains(&DnsRecord::MX(MXRecord {
             exchange: "mail.example.com.".into(),
             priority: 10
@@ -553,10 +556,7 @@ mod tests {
 
         let record_lookup = server
             .mock("GET", "/dns/managed/12345/records")
-            .match_query(Matcher::AllOf(vec![
-                Matcher::UrlEncoded("recordName".into(), "@".into()),
-                Matcher::UrlEncoded("type".into(), "MX".into()),
-            ]))
+            .match_query(Matcher::Exact("type=MX".into()))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(r#"{"data":[]}"#)
@@ -565,7 +565,7 @@ mod tests {
         let create_multi = server
             .mock("POST", "/dns/managed/12345/records/createMulti")
             .match_body(Matcher::Json(json!([
-                {"type": "MX", "name": "@", "value": "mail.example.com.", "ttl": 3600, "mxLevel": 10, "gtdLocation": "DEFAULT"}
+                {"type": "MX", "name": "", "value": "mail.example.com.", "ttl": 3600, "mxLevel": 10, "gtdLocation": "DEFAULT"}
             ])))
             .with_status(201)
             .with_header("content-type", "application/json")
@@ -588,6 +588,58 @@ mod tests {
         assert!(result.is_ok(), "set_rrset returned: {result:?}");
         domain_lookup.assert();
         record_lookup.assert();
+        create_multi.assert();
+    }
+
+    #[tokio::test]
+    async fn test_set_rrset_apex_txt_keeps_other_names() {
+        let mut server = mockito::Server::new_async().await;
+
+        let domain_lookup = mock_domain_lookup(&mut server);
+
+        let record_lookup = server
+            .mock("GET", "/dns/managed/12345/records")
+            .match_query(Matcher::Exact("type=TXT".into()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"data":[{"id":7,"name":"","type":"TXT","value":"v=spf1 -all","ttl":300},{"id":8,"name":"_dmarc","type":"TXT","value":"v=DMARC1; p=none","ttl":300},{"id":9,"name":"","type":"TXT","value":"old","ttl":300}]}"#)
+            .create();
+
+        let delete_multi = server
+            .mock("DELETE", "/dns/managed/12345/records")
+            .match_query(Matcher::Exact("ids=9".into()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body("{}")
+            .create();
+
+        let create_multi = server
+            .mock("POST", "/dns/managed/12345/records/createMulti")
+            .match_body(Matcher::Json(json!([
+                {"type": "TXT", "name": "", "value": "google-site-verification=abc", "ttl": 300, "gtdLocation": "DEFAULT"}
+            ])))
+            .with_status(201)
+            .with_header("content-type", "application/json")
+            .with_body(r#"[{"id":10}]"#)
+            .create();
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .set_rrset(
+                "example.com.",
+                DnsRecordType::TXT,
+                300,
+                vec![
+                    DnsRecord::TXT("v=spf1 -all".into()),
+                    DnsRecord::TXT("google-site-verification=abc".into()),
+                ],
+                "example.com",
+            )
+            .await;
+        assert!(result.is_ok(), "set_rrset returned: {result:?}");
+        domain_lookup.assert();
+        record_lookup.assert();
+        delete_multi.assert();
         create_multi.assert();
     }
 }

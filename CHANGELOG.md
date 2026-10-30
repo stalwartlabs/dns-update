@@ -13,6 +13,8 @@ All notable changes to this project will be documented in this file. This projec
 ### Fixed
 - Azure DNS: send a single `Content-Type` header on the token request, which Azure AD rejected with HTTP 400 "Invalid Header".
 - TencentCloud: send the required `RecordLine` parameter on `CreateRecord`, which DNSPod rejected with `MissingParameter: RecordLine`.
+- DNSMadeEasy: name zone apex records with an empty string instead of `@`, which the API rejected with "Record name '@' contains invalid characters", and match listed records by name.
+- LuaDNS: send and read TXT content as raw text instead of zone-file quoted strings, which LuaDNS stored with literal quotes.
 
 ## [0.6.0] - 2026-10-15
 

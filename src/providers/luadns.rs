@@ -15,7 +15,6 @@ use crate::utils::{parse_mx, parse_srv, parse_tlsa};
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn,
     http::{HttpClient, HttpClientBuilder},
-    utils::txt_chunks_to_text,
 };
 use encodify::base64::STANDARD as B64;
 use serde::{Deserialize, Serialize};
@@ -301,11 +300,7 @@ fn render_content(record: DnsRecord) -> String {
         DnsRecord::AAAA(addr) => addr.to_string(),
         DnsRecord::CNAME(content) => ensure_dot(content),
         DnsRecord::NS(content) => ensure_dot(content),
-        DnsRecord::TXT(content) => {
-            let mut out = String::with_capacity(content.len() + 4);
-            txt_chunks_to_text(&mut out, &content, " ");
-            out
-        }
+        DnsRecord::TXT(content) => content,
         DnsRecord::MX(mx) => format!("{} {}", mx.priority, ensure_dot(mx.exchange)),
         DnsRecord::SRV(srv) => format!(
             "{} {} {} {}",
@@ -365,40 +360,11 @@ fn parse_content(record_type: DnsRecordType, content: &str) -> crate::Result<Dns
         DnsRecordType::CNAME => DnsRecord::CNAME(strip_trailing_dot(content).to_string()),
         DnsRecordType::NS => DnsRecord::NS(strip_trailing_dot(content).to_string()),
         DnsRecordType::MX => parse_mx(content)?,
-        DnsRecordType::TXT => DnsRecord::TXT(parse_txt(content)),
+        DnsRecordType::TXT => DnsRecord::TXT(content.to_string()),
         DnsRecordType::SRV => parse_srv(content)?,
         DnsRecordType::TLSA => parse_tlsa(content)?,
         DnsRecordType::CAA => parse_caa(content)?,
     })
-}
-
-fn parse_txt(value: &str) -> String {
-    let trimmed = value.trim();
-    let mut out = String::with_capacity(trimmed.len());
-    let mut bytes = trimmed.bytes().peekable();
-    while let Some(&b) = bytes.peek() {
-        if b != b'"' {
-            bytes.next();
-            continue;
-        }
-        bytes.next();
-        loop {
-            match bytes.next() {
-                Some(b'"') => break,
-                Some(b'\\') => {
-                    if let Some(next) = bytes.next() {
-                        out.push(next as char);
-                    }
-                }
-                Some(other) => out.push(other as char),
-                None => break,
-            }
-        }
-    }
-    if out.is_empty() && !trimmed.is_empty() && !trimmed.starts_with('"') {
-        return trimmed.to_string();
-    }
-    out
 }
 
 fn parse_caa(value: &str) -> crate::Result<DnsRecord> {
