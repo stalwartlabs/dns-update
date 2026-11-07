@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::{
@@ -242,6 +244,7 @@ impl NamecheapProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Namecheap", record_type, &records)?;
         check_record_types(record_type, &records)?;
         reject_unsupported(record_type)?;
 
@@ -277,6 +280,7 @@ impl NamecheapProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Namecheap", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -320,6 +324,7 @@ impl NamecheapProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Namecheap", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -355,6 +360,7 @@ impl NamecheapProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Namecheap", record_type, &[])?;
         reject_unsupported(record_type)?;
 
         let name = name.into_name();
@@ -526,6 +532,7 @@ fn build_hosts_for_record(
                 caa_tag: None,
             });
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Namecheap")),
     }
     Ok(hosts)
 }
@@ -573,6 +580,7 @@ fn host_to_dns_record(host: &Host, record_type: DnsRecordType) -> crate::Result<
                 "TLSA records are not supported by Namecheap".to_string(),
             ));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("Namecheap")),
     }))
 }
 

@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn,
     http::{HttpClient, HttpClientBuilder},
@@ -107,6 +109,7 @@ impl PdnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("PowerDNS", record_type, &records)?;
         let records = build_records(record_type, records)?;
         let name = name.into_fqdn().into_owned();
         let origin = origin.into_fqdn();
@@ -127,6 +130,7 @@ impl PdnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("PowerDNS", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -182,6 +186,7 @@ impl PdnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("PowerDNS", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -224,6 +229,7 @@ impl PdnsProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("PowerDNS", record_type, &[])?;
         let name = name.into_fqdn().into_owned();
         let origin = origin.into_fqdn();
         let Some(rrset) = self
@@ -461,6 +467,7 @@ fn render_record(record: DnsRecord) -> String {
                 value.replace('\\', "\\\\").replace('"', "\\\"")
             )
         }
+        DnsRecord::PTR(_) => unreachable!(),
     }
 }
 
@@ -481,6 +488,7 @@ fn parse_record(record_type: DnsRecordType, content: &str) -> crate::Result<DnsR
         DnsRecordType::SRV => parse_srv(content),
         DnsRecordType::TLSA => parse_tlsa(content),
         DnsRecordType::CAA => parse_caa(content),
+        DnsRecordType::PTR => Err(ptr_unsupported("PowerDNS")),
     }
 }
 

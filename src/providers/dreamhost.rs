@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
@@ -163,6 +165,7 @@ impl DreamhostProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Dreamhost", record_type, &records)?;
         ensure_supported_type(record_type)?;
         let desired = build_values(record_type, records)?;
         let fqdn = name.into_name().to_string();
@@ -197,6 +200,7 @@ impl DreamhostProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Dreamhost", record_type, &records)?;
         ensure_supported_type(record_type)?;
         if records.is_empty() {
             return Ok(());
@@ -222,6 +226,7 @@ impl DreamhostProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Dreamhost", record_type, &records)?;
         ensure_supported_type(record_type)?;
         if records.is_empty() {
             return Ok(());
@@ -245,6 +250,7 @@ impl DreamhostProvider {
         record_type: DnsRecordType,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Dreamhost", record_type, &[])?;
         ensure_supported_type(record_type)?;
         let fqdn = name.into_name().to_string();
         let rr_type = record_type.as_str();
@@ -308,6 +314,7 @@ fn render_value(record: &DnsRecord) -> crate::Result<String> {
                 "CAA records are not supported by Dreamhost".to_string(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Dreamhost")),
     })
 }
 
@@ -363,6 +370,7 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
             "{} records are not supported by Dreamhost",
             record_type.as_str()
         ))),
+        DnsRecordType::PTR => Err(ptr_unsupported("Dreamhost")),
     }
 }
 

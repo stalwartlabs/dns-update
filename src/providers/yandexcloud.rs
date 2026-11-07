@@ -13,6 +13,8 @@
 
 use crate::http::{HttpClient, HttpClientBuilder};
 use crate::jwt::{JwtSignAlgorithm, sign_jwt};
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
 use crate::{CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord};
@@ -179,6 +181,7 @@ impl YandexCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Yandex Cloud", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let type_str = record_type_str(record_type)?;
         let name = name.into_name().to_string();
@@ -214,6 +217,7 @@ impl YandexCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Yandex Cloud", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -259,6 +263,7 @@ impl YandexCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Yandex Cloud", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -307,6 +312,7 @@ impl YandexCloudProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Yandex Cloud", record_type, &[])?;
         let type_str = record_type_str(record_type)?;
         let name = name.into_name().to_string();
         let origin = origin.into_name().to_string();
@@ -511,6 +517,7 @@ fn record_to_entry(record: &DnsRecord) -> crate::Result<RecordEntry> {
                 "TLSA records are not supported by Yandex Cloud".into(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Yandex Cloud")),
     };
     Ok(entry)
 }
@@ -580,6 +587,7 @@ fn record_type_str(record_type: DnsRecordType) -> crate::Result<&'static str> {
                 "TLSA records are not supported by Yandex Cloud".into(),
             ));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("Yandex Cloud")),
     })
 }
 
@@ -702,6 +710,7 @@ fn parse_rrdata(record_type: DnsRecordType, text: &str) -> crate::Result<DnsReco
                 "TLSA records are not supported by Yandex Cloud".into(),
             ));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("Yandex Cloud")),
     })
 }
 

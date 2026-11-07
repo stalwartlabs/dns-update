@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::{
     decode_hex, tlsa_cert_usage_from_u8, tlsa_matching_from_u8, tlsa_selector_from_u8,
 };
@@ -175,6 +177,7 @@ impl SpaceshipProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Spaceship", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let name = name.into_name();
         let domain = origin.into_name();
@@ -242,6 +245,7 @@ impl SpaceshipProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Spaceship", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -291,6 +295,7 @@ impl SpaceshipProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Spaceship", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -341,6 +346,7 @@ impl SpaceshipProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Spaceship", record_type, &[])?;
         let name = name.into_name();
         let domain = origin.into_name();
         let raw_subdomain = strip_origin_from_name(&name, &domain, None);
@@ -471,6 +477,7 @@ impl SpaceshipDnsRecord {
                 DnsRecord::SRV(_) => "SRV",
                 DnsRecord::TLSA(_) => "TLSA",
                 DnsRecord::CAA(_) => "CAA",
+                DnsRecord::PTR(_) => return Err(ptr_unsupported("Spaceship")),
             }
             .to_string(),
             name: name.to_string(),
@@ -548,6 +555,7 @@ impl SpaceshipDnsRecord {
                 item.tag = Some(tag);
                 item.value = Some(value);
             }
+            DnsRecord::PTR(_) => return Err(ptr_unsupported("Spaceship")),
         }
 
         Ok(item)

@@ -11,6 +11,8 @@
 
 #![cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::utils::{
@@ -181,6 +183,7 @@ impl TransipProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("TransIP", record_type, &records)?;
         check_record_types(record_type, &records)?;
 
         let name = name.into_name();
@@ -238,6 +241,7 @@ impl TransipProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("TransIP", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -279,6 +283,7 @@ impl TransipProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("TransIP", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -316,6 +321,7 @@ impl TransipProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("TransIP", record_type, &[])?;
         let name = name.into_name();
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, Some("@"));
@@ -398,6 +404,7 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
             let (flags, tag, value) = caa.decompose();
             format!("{flags} {tag} \"{value}\"")
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("TransIP")),
     })
 }
 
@@ -497,6 +504,7 @@ fn parse_dns_entry(entry: &DnsEntry, record_type: DnsRecordType) -> crate::Resul
             }))
         }
         DnsRecordType::CAA => Ok(DnsRecord::CAA(parse_caa_content(&entry.content)?)),
+        DnsRecordType::PTR => Err(ptr_unsupported("TransIP")),
     }
 }
 

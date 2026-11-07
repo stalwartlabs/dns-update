@@ -9,6 +9,7 @@
  * except according to those terms.
  */
 
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn,
     http::{HttpClient, HttpClientBuilder},
@@ -53,6 +54,7 @@ impl DdnssProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("DDNSS", record_type, &records)?;
         if record_type != DnsRecordType::TXT {
             return Err(Error::Api(
                 "Only TXT records are supported by DDNSS".to_string(),

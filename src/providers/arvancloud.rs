@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::strip_trailing_dot;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn,
@@ -135,6 +137,7 @@ impl ArvanCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("ArvanCloud", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let fqdn = name.into_name();
         let domain = origin.into_name();
@@ -177,6 +180,7 @@ impl ArvanCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("ArvanCloud", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -209,6 +213,7 @@ impl ArvanCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("ArvanCloud", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -244,6 +249,7 @@ impl ArvanCloudProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("ArvanCloud", record_type, &[])?;
         let fqdn = name.into_name();
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&fqdn, &domain, Some("@"));
@@ -338,6 +344,7 @@ fn record_type_to_wire(record_type: DnsRecordType) -> &'static str {
         DnsRecordType::SRV => "srv",
         DnsRecordType::TLSA => "tlsa",
         DnsRecordType::CAA => "caa",
+        DnsRecordType::PTR => unreachable!(),
     }
 }
 
@@ -627,6 +634,7 @@ fn listed_to_dns_record(record_type: DnsRecordType, value: &Value) -> Option<Dns
                 _ => None,
             }
         }
+        DnsRecordType::PTR => None,
     }
 }
 
@@ -715,6 +723,7 @@ impl TryFrom<DnsRecord> for ArvanRecordContent {
                     }),
                 })
             }
+            DnsRecord::PTR(_) => Err(ptr_unsupported("ArvanCloud")),
         }
     }
 }

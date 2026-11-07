@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- PTR record type (`DnsRecordType::PTR`, `DnsRecord::PTR`), supported by the RFC 2136 provider. All other providers return `Error::Unsupported` for PTR in `set_rrset`, `add_to_rrset`, `remove_from_rrset` and `list_rrset`, before they send a request.
+
+### Changed
+- Breaking: `DnsRecord` and `DnsRecordType` have a new `PTR` variant. Exhaustive `match` expressions on these enums must add a PTR arm.
+
 ## [0.6.1] - 2026-11-01
 
 ### Added

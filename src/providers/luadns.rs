@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::utils::{parse_mx, parse_srv, parse_tlsa};
@@ -151,6 +153,7 @@ impl LuaDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("LuaDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let origin_name = origin.into_name().to_string();
         let zone = self.find_zone(&origin_name).await?;
@@ -187,6 +190,7 @@ impl LuaDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("LuaDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -214,6 +218,7 @@ impl LuaDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("LuaDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -240,6 +245,7 @@ impl LuaDnsProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("LuaDNS", record_type, &[])?;
         let origin_name = origin.into_name().to_string();
         let zone = self.find_zone(&origin_name).await?;
         let fqdn = name.into_fqdn().to_string();
@@ -311,6 +317,7 @@ fn render_content(record: DnsRecord) -> String {
         ),
         DnsRecord::TLSA(tlsa) => tlsa.to_string(),
         DnsRecord::CAA(caa) => caa.to_string(),
+        DnsRecord::PTR(_) => unreachable!(),
     }
 }
 
@@ -364,6 +371,7 @@ fn parse_content(record_type: DnsRecordType, content: &str) -> crate::Result<Dns
         DnsRecordType::SRV => parse_srv(content)?,
         DnsRecordType::TLSA => parse_tlsa(content)?,
         DnsRecordType::CAA => parse_caa(content)?,
+        DnsRecordType::PTR => return Err(ptr_unsupported("LuaDNS")),
     })
 }
 

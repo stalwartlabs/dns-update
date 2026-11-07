@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord, TLSARecord,
@@ -116,6 +118,7 @@ impl AutodnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("AutoDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let domain = origin.into_name();
         let fqdn = name.into_fqdn();
@@ -160,6 +163,7 @@ impl AutodnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("AutoDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -197,6 +201,7 @@ impl AutodnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("AutoDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -234,6 +239,7 @@ impl AutodnsProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("AutoDNS", record_type, &[])?;
         let domain = origin.into_name();
         let fqdn = name.into_fqdn();
         let existing = self.find_existing(&domain, &fqdn, record_type).await?;
@@ -368,6 +374,7 @@ fn resource_record_to_dns_record(
             })
         }
         DnsRecordType::CAA => DnsRecord::CAA(autodns_parse_caa(&rr.value)?),
+        DnsRecordType::PTR => return Err(ptr_unsupported("AutoDNS")),
     })
 }
 
@@ -473,6 +480,7 @@ fn build_resource_record(name: &str, record: &DnsRecord, ttl: u32) -> ResourceRe
         ),
         DnsRecord::TLSA(tlsa) => (tlsa.to_string(), 0),
         DnsRecord::CAA(caa) => (caa.to_string(), 0),
+        DnsRecord::PTR(_) => unreachable!(),
     };
     ResourceRecord {
         name: name.to_string(),

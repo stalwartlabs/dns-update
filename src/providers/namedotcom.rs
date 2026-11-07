@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
@@ -108,6 +110,7 @@ impl NameDotComProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Name.com", record_type, &records)?;
         validate_type(record_type)?;
         let name = name.into_name();
         let domain = origin.into_name();
@@ -144,6 +147,7 @@ impl NameDotComProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Name.com", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -171,6 +175,7 @@ impl NameDotComProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Name.com", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -195,6 +200,7 @@ impl NameDotComProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Name.com", record_type, &[])?;
         validate_type(record_type)?;
         let name = name.into_name();
         let domain = origin.into_name();
@@ -338,6 +344,7 @@ fn render_answer(record: DnsRecord) -> crate::Result<String> {
                 "TLSA records are not supported by Name.com".to_string(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Name.com")),
     })
 }
 
@@ -368,6 +375,7 @@ fn normalized_to_record(
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Name.com".to_string(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("Name.com")),
     }
 }
 

@@ -11,6 +11,8 @@
 
 use crate::crypto::{hmac_sha256, sha256_digest};
 use crate::http::{body_snippet, build_client};
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::utils::txt_chunks_to_text;
@@ -87,6 +89,7 @@ impl Route53Provider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Route53", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let name = name.into_fqdn().into_owned();
         let hosted_zone_id = self.resolve_zone_id(&name).await?;
@@ -143,6 +146,7 @@ impl Route53Provider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Route53", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -197,6 +201,7 @@ impl Route53Provider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Route53", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -277,6 +282,7 @@ impl Route53Provider {
         record_type: DnsRecordType,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Route53", record_type, &[])?;
         let name = name.into_fqdn().into_owned();
         let hosted_zone_id = self.resolve_zone_id(&name).await?;
         let existing = self
@@ -703,6 +709,7 @@ fn render_record_value(record: &DnsRecord) -> String {
         DnsRecord::SRV(srv) => srv.to_string(),
         DnsRecord::TLSA(tlsa) => tlsa.to_string(),
         DnsRecord::CAA(caa) => caa.to_string(),
+        DnsRecord::PTR(_) => unreachable!(),
     }
 }
 
@@ -721,6 +728,7 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
         DnsRecordType::SRV => parse_srv(value)?,
         DnsRecordType::TLSA => parse_tlsa(value)?,
         DnsRecordType::CAA => parse_caa(value)?,
+        DnsRecordType::PTR => return Err(ptr_unsupported("Route53")),
     })
 }
 

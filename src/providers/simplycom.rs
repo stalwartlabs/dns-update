@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::{build_caa, parse_tlsa, strip_origin_from_name, strip_trailing_dot};
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
@@ -120,6 +122,7 @@ impl SimplyComProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Simply.com", record_type, &records)?;
         let name = name.into_name().into_owned();
         let origin = origin.into_name().into_owned();
         let desired = build_contents(record_type, records)?;
@@ -158,6 +161,7 @@ impl SimplyComProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Simply.com", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -184,6 +188,7 @@ impl SimplyComProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Simply.com", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -208,6 +213,7 @@ impl SimplyComProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Simply.com", record_type, &[])?;
         let name = name.into_name().into_owned();
         let origin = origin.into_name().into_owned();
         let (object, zone) = self.find_object(&origin).await?;
@@ -417,6 +423,7 @@ impl TryFrom<DnsRecord> for SimplyComRecordContent {
                 data: caa.to_string(),
                 priority: None,
             },
+            DnsRecord::PTR(_) => return Err(ptr_unsupported("Simply.com")),
         })
     }
 }

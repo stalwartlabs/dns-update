@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::{
     decode_hex, tlsa_cert_usage_from_u8, tlsa_matching_from_u8, tlsa_selector_from_u8,
 };
@@ -109,6 +111,7 @@ impl InfobloxProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Infoblox", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let object = wapi_object_for_type(record_type)?;
         let name = name.into_name().into_owned();
@@ -154,6 +157,7 @@ impl InfobloxProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Infoblox", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -183,6 +187,7 @@ impl InfobloxProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Infoblox", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -209,6 +214,7 @@ impl InfobloxProvider {
         record_type: DnsRecordType,
         _origin: impl IntoFqdn<'_>,
     ) -> Result<Vec<DnsRecord>> {
+        reject_ptr("Infoblox", record_type, &[])?;
         let object = wapi_object_for_type(record_type)?;
         let name = name.into_name().into_owned();
         let listed = self.list_records(object, &name).await?;
@@ -307,6 +313,7 @@ fn wapi_object_for_type(record_type: DnsRecordType) -> Result<&'static str> {
         DnsRecordType::SRV => "record:srv",
         DnsRecordType::CAA => "record:caa",
         DnsRecordType::TLSA => "record:tlsa",
+        DnsRecordType::PTR => return Err(ptr_unsupported("Infoblox")),
     })
 }
 
@@ -355,6 +362,7 @@ fn build_update_body(record: &DnsRecord, ttl: u32) -> Result<Value> {
                 "ca_value": value,
             })
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Infoblox")),
     };
     if let Value::Object(ref mut map) = body
         && ttl > 0
@@ -466,6 +474,7 @@ fn infoblox_value_matches(value: &Value, record: &DnsRecord) -> bool {
                 .unwrap_or(false);
             usage_matches && selector_matches && matched_matches && cert_matches
         }
+        DnsRecord::PTR(_) => false,
     }
 }
 
@@ -601,6 +610,7 @@ fn infoblox_value_to_record(value: &Value, record_type: DnsRecordType) -> Result
                 cert_data: decode_hex(cert_hex)?,
             }))
         }
+        DnsRecordType::PTR => Err(ptr_unsupported("Infoblox")),
     }
 }
 

@@ -13,6 +13,8 @@
 
 use crate::crypto::{hmac_sha256, sha256_digest};
 use crate::http::{HttpClient, HttpClientBuilder};
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::unquote_txt;
 use crate::utils::{split_caa_value, validate_region};
 use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
@@ -119,6 +121,7 @@ impl VolcengineProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Volcengine", record_type, &records)?;
         let type_str = record_type_str(record_type)?;
         let desired = build_values(record_type, records)?;
         let name = name.into_name().to_string();
@@ -155,6 +158,7 @@ impl VolcengineProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Volcengine", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -188,6 +192,7 @@ impl VolcengineProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Volcengine", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -213,6 +218,7 @@ impl VolcengineProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Volcengine", record_type, &[])?;
         let type_str = record_type_str(record_type)?;
         let name = name.into_name().to_string();
         let origin = origin.into_name().to_string();
@@ -433,6 +439,7 @@ fn record_to_value(record: &DnsRecord) -> crate::Result<(&'static str, String)> 
                 "TLSA records are not supported by Volcengine".into(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Volcengine")),
     })
 }
 
@@ -502,6 +509,7 @@ fn value_to_record(record_type: DnsRecordType, value: &str) -> crate::Result<Dns
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Volcengine".into(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("Volcengine")),
     }
 }
 
@@ -563,6 +571,7 @@ fn record_type_str(record_type: DnsRecordType) -> crate::Result<&'static str> {
                 "TLSA records are not supported by Volcengine".into(),
             ));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("Volcengine")),
     })
 }
 

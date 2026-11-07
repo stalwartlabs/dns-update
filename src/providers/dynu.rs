@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::{
     decode_hex, tlsa_cert_usage_from_u8, tlsa_matching_from_u8, tlsa_selector_from_u8,
 };
@@ -184,6 +186,7 @@ impl DynuProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Dynu", record_type, &records)?;
         let _ = origin;
         let hostname = name.into_name().into_owned();
         let desired = build_payloads(record_type, records)?;
@@ -232,6 +235,7 @@ impl DynuProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Dynu", record_type, &records)?;
         let _ = origin;
         if records.is_empty() {
             return Ok(());
@@ -268,6 +272,7 @@ impl DynuProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Dynu", record_type, &records)?;
         let _ = origin;
         if records.is_empty() {
             return Ok(());
@@ -291,6 +296,7 @@ impl DynuProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Dynu", record_type, &[])?;
         let _ = origin;
         let hostname = name.into_name().into_owned();
         let root = self.get_root_domain(&hostname).await?;
@@ -465,6 +471,7 @@ fn record_type_and_payload(record: DnsRecord) -> crate::Result<(&'static str, Pa
                 certificate: tlsa.cert_data.iter().map(|b| format!("{b:02x}")).collect(),
             },
         )),
+        DnsRecord::PTR(_) => Err(ptr_unsupported("Dynu")),
     }
 }
 
@@ -624,5 +631,6 @@ fn listed_to_dns_record(listed: ListedRecord, expected: DnsRecordType) -> crate:
                 cert_data: decode_hex(&hex)?,
             }))
         }
+        DnsRecordType::PTR => Err(ptr_unsupported("Dynu")),
     }
 }

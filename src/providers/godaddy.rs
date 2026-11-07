@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::{
@@ -88,6 +90,7 @@ impl GodaddyProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("GoDaddy", record_type, &records)?;
         let name = name.into_name();
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, None);
@@ -123,6 +126,7 @@ impl GodaddyProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("GoDaddy", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -170,6 +174,7 @@ impl GodaddyProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("GoDaddy", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -222,6 +227,7 @@ impl GodaddyProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("GoDaddy", record_type, &[])?;
         let name = name.into_name();
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, None);
@@ -374,6 +380,7 @@ fn build_record(record: DnsRecord, ttl: u32) -> crate::Result<GodaddyRecord> {
                 "TLSA records are not supported by GoDaddy".to_string(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("GoDaddy")),
     })
 }
 
@@ -408,6 +415,7 @@ fn parse_record(record_type: DnsRecordType, record: &GodaddyRecord) -> crate::Re
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by GoDaddy".to_string(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("GoDaddy")),
     }
 }
 

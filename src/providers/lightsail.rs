@@ -11,6 +11,8 @@
 
 use crate::crypto::{hmac_sha256, sha256_digest};
 use crate::http::{body_snippet, try_build_client};
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::{strip_origin_from_name, txt_chunks_to_text};
 use crate::utils::{unquote_txt, validate_region};
 use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, Result, SRVRecord};
@@ -400,6 +402,7 @@ impl LightsailProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Lightsail", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let type_str = lightsail_record_type(record_type)?;
 
@@ -448,6 +451,7 @@ impl LightsailProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Lightsail", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -496,6 +500,7 @@ impl LightsailProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Lightsail", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -533,6 +538,7 @@ impl LightsailProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> Result<Vec<DnsRecord>> {
+        reject_ptr("Lightsail", record_type, &[])?;
         let type_str = lightsail_record_type(record_type)?;
 
         let name = name.into_name().to_ascii_lowercase();
@@ -577,6 +583,7 @@ fn lightsail_record_type(record_type: DnsRecordType) -> Result<&'static str> {
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Lightsail".to_string(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("Lightsail")),
     }
 }
 
@@ -635,6 +642,7 @@ impl LightsailRecord {
                     "TLSA records are not supported by Lightsail".to_string(),
                 ));
             }
+            DnsRecord::PTR(_) => return Err(ptr_unsupported("Lightsail")),
         };
         Ok(targets
             .into_iter()
@@ -706,6 +714,7 @@ fn parse_target(record_type: DnsRecordType, target: &str) -> Result<DnsRecord> {
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Lightsail".to_string(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("Lightsail")),
     }
 }
 

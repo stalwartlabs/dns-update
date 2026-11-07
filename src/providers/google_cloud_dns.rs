@@ -11,6 +11,8 @@
 
 use crate::http::{HttpClient, HttpClientBuilder};
 use crate::jwt::{ServiceAccount, create_jwt, exchange_jwt_for_token};
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::txt_chunks_to_text;
 use crate::utils::{
@@ -181,6 +183,7 @@ impl GoogleCloudDnsProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Google Cloud DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let name = name.into_fqdn();
         let fqdn = format!("{}.", name.trim_end_matches('.'));
@@ -239,6 +242,7 @@ impl GoogleCloudDnsProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Google Cloud DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -303,6 +307,7 @@ impl GoogleCloudDnsProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Google Cloud DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -382,6 +387,7 @@ impl GoogleCloudDnsProvider {
         record_type: DnsRecordType,
         _origin: impl IntoFqdn<'_>,
     ) -> Result<Vec<DnsRecord>> {
+        reject_ptr("Google Cloud DNS", record_type, &[])?;
         let name = name.into_fqdn();
         let zone = self.resolve_managed_zone(&name).await?;
         let token = self.ensure_token().await?;
@@ -590,6 +596,7 @@ fn rrdata_for_record(record: &DnsRecord) -> String {
             let (flags, tag, value) = caa.clone().decompose();
             format!("{} {} \"{}\"", flags, tag, value)
         }
+        DnsRecord::PTR(_) => unreachable!(),
     }
 }
 
@@ -691,6 +698,7 @@ fn parse_rrdata(record_type: DnsRecordType, text: &str) -> Result<DnsRecord> {
             })
         }
         DnsRecordType::CAA => parse_caa_rrdata(text)?,
+        DnsRecordType::PTR => return Err(ptr_unsupported("Google Cloud DNS")),
     })
 }
 

@@ -11,6 +11,8 @@
 
 use crate::crypto::{hmac_sha256, sha256_digest};
 use crate::http::{HttpClient, HttpClientBuilder};
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::utils::txt_chunks_to_text;
@@ -106,6 +108,7 @@ impl EdgeDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("EdgeDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let name = name.into_name().to_ascii_lowercase();
         let zone = origin.into_name().to_ascii_lowercase();
@@ -151,6 +154,7 @@ impl EdgeDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("EdgeDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -198,6 +202,7 @@ impl EdgeDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("EdgeDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -248,6 +253,7 @@ impl EdgeDnsProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> Result<Vec<DnsRecord>> {
+        reject_ptr("EdgeDNS", record_type, &[])?;
         let name = name.into_name().to_ascii_lowercase();
         let zone = origin.into_name().to_ascii_lowercase();
         if zone.is_empty() {
@@ -440,6 +446,7 @@ fn edgedns_record_type(record_type: DnsRecordType) -> Result<&'static str> {
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by EdgeDNS".to_string(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("EdgeDNS")),
     }
 }
 
@@ -505,6 +512,7 @@ impl TryFrom<&DnsRecord> for EdgeDnsRecord {
                     "TLSA records are not supported by EdgeDNS".to_string(),
                 ));
             }
+            DnsRecord::PTR(_) => return Err(ptr_unsupported("EdgeDNS")),
         })
     }
 }
@@ -648,6 +656,7 @@ fn rdata_to_record(record_type: DnsRecordType, entry: &str) -> Result<DnsRecord>
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by EdgeDNS".to_string(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("EdgeDNS")),
     }
 }
 

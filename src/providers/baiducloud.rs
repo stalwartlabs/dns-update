@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord,
     crypto::hmac_sha256,
@@ -115,6 +117,7 @@ impl BaiduCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Baidu Cloud DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         reject_unsupported_type(record_type)?;
 
@@ -156,6 +159,7 @@ impl BaiduCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Baidu Cloud DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -185,6 +189,7 @@ impl BaiduCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Baidu Cloud DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -212,6 +217,7 @@ impl BaiduCloudProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Baidu Cloud DNS", record_type, &[])?;
         let name = name.into_name().to_string();
         let zone = origin.into_name().to_string();
         let rr = subdomain_for(&name, &zone);
@@ -537,6 +543,7 @@ fn render_record(record: &DnsRecord) -> crate::Result<Vec<WireRecord>> {
         DnsRecord::TLSA(_) => Err(Error::Unsupported(
             "TLSA records are not supported by baiducloud".to_string(),
         )),
+        DnsRecord::PTR(_) => Err(ptr_unsupported("Baidu Cloud DNS")),
     }
 }
 

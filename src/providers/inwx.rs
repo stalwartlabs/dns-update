@@ -10,6 +10,8 @@
  */
 
 use crate::utils::parse_tlsa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
@@ -133,6 +135,7 @@ impl InwxProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("INWX", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let name = name.into_name().to_string();
         let domain = origin.into_name().to_string();
@@ -179,6 +182,7 @@ impl InwxProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("INWX", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -214,6 +218,7 @@ impl InwxProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("INWX", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -245,6 +250,7 @@ impl InwxProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("INWX", record_type, &[])?;
         let name = name.into_name().to_string();
         let domain = origin.into_name().to_string();
         let rtype = inwx_record_type(record_type);
@@ -496,6 +502,7 @@ fn inwx_record_type(record_type: DnsRecordType) -> &'static str {
         DnsRecordType::SRV => "SRV",
         DnsRecordType::TLSA => "TLSA",
         DnsRecordType::CAA => "CAA",
+        DnsRecordType::PTR => unreachable!(),
     }
 }
 
@@ -523,6 +530,7 @@ fn inwx_record_payload(record: &DnsRecord) -> (&'static str, String, Option<u16>
         ),
         DnsRecord::TLSA(tlsa) => ("TLSA", format!("{tlsa}"), None),
         DnsRecord::CAA(caa) => ("CAA", format!("{caa}"), None),
+        DnsRecord::PTR(_) => unreachable!(),
     }
 }
 
@@ -573,6 +581,7 @@ fn parse_record(
         DnsRecordType::SRV => parse_srv(content, prio.unwrap_or(0)),
         DnsRecordType::TLSA => parse_tlsa(content),
         DnsRecordType::CAA => parse_caa(content),
+        DnsRecordType::PTR => Err(ptr_unsupported("INWX")),
     }
 }
 

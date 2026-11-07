@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     crypto::hmac_sha1,
@@ -135,6 +137,7 @@ impl DnsMadeEasyProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("DNSMadeEasy", record_type, &records)?;
         check_record_types(record_type, &records)?;
         ensure_supported_type(record_type)?;
 
@@ -183,6 +186,7 @@ impl DnsMadeEasyProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("DNSMadeEasy", record_type, &records)?;
         check_record_types(record_type, &records)?;
         ensure_supported_type(record_type)?;
         if records.is_empty() {
@@ -226,6 +230,7 @@ impl DnsMadeEasyProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("DNSMadeEasy", record_type, &records)?;
         check_record_types(record_type, &records)?;
         ensure_supported_type(record_type)?;
         if records.is_empty() {
@@ -264,6 +269,7 @@ impl DnsMadeEasyProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("DNSMadeEasy", record_type, &[])?;
         ensure_supported_type(record_type)?;
         let name = name.into_name();
         let domain = origin.into_name();
@@ -458,6 +464,7 @@ fn listed_to_record(
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by DNSMadeEasy".into(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("DNSMadeEasy")),
     }
 }
 
@@ -521,6 +528,7 @@ fn build_create_request<'a>(
             request.issuer_critical = Some(if flags & 0x80 != 0 { 1 } else { 0 });
             request.caa_type = Some(tag);
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("DNSMadeEasy")),
     }
     Ok(request)
 }
@@ -538,5 +546,6 @@ fn dns_type(record: &DnsRecord) -> crate::Result<&'static str> {
         DnsRecord::TLSA(_) => Err(Error::Unsupported(
             "TLSA records are not supported by DNSMadeEasy".into(),
         )),
+        DnsRecord::PTR(_) => Err(ptr_unsupported("DNSMadeEasy")),
     }
 }

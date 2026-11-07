@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
@@ -130,6 +132,7 @@ impl VercelProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Vercel", record_type, &records)?;
         let domain = origin.into_name().into_owned();
         let name = name.into_name().into_owned();
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
@@ -171,6 +174,7 @@ impl VercelProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Vercel", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -202,6 +206,7 @@ impl VercelProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Vercel", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -232,6 +237,7 @@ impl VercelProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Vercel", record_type, &[])?;
         if record_type == DnsRecordType::TLSA {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Vercel".to_string(),
@@ -387,6 +393,7 @@ fn vercel_content_from_record(record: &DnsRecord) -> crate::Result<VercelContent
             ));
         }
         DnsRecord::CAA(caa) => VercelContent::Value(caa.to_string()),
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Vercel")),
     })
 }
 
@@ -475,6 +482,7 @@ fn listed_to_dns_record(
             "TLSA records are not supported by Vercel".to_string(),
         )),
         DnsRecordType::CAA => parse_caa_value(record.value.as_deref().unwrap_or("")),
+        DnsRecordType::PTR => Err(ptr_unsupported("Vercel")),
     }
 }
 

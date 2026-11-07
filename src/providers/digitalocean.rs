@@ -10,6 +10,7 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
@@ -138,6 +139,7 @@ impl DigitalOceanProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("DigitalOcean", record_type, &records)?;
         reject_unsupported(record_type)?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
@@ -175,6 +177,7 @@ impl DigitalOceanProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("DigitalOcean", record_type, &records)?;
         reject_unsupported(record_type)?;
         if records.is_empty() {
             return Ok(());
@@ -203,6 +206,7 @@ impl DigitalOceanProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("DigitalOcean", record_type, &records)?;
         reject_unsupported(record_type)?;
         if records.is_empty() {
             return Ok(());
@@ -229,6 +233,7 @@ impl DigitalOceanProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("DigitalOcean", record_type, &[])?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
         let subdomain = strip_origin_from_name(&name, &domain, None);
@@ -403,6 +408,7 @@ impl TryFrom<DnsRecord> for RecordData {
                     tag,
                 })
             }
+            DnsRecord::PTR(_) => Err("PTR records are not supported by DigitalOcean"),
         }
     }
 }

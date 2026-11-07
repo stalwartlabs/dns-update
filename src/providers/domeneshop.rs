@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
@@ -118,6 +120,7 @@ impl DomeneshopProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Domeneshop", record_type, &records)?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
         let host = strip_origin_from_name(&name, &domain, Some("@"));
@@ -156,6 +159,7 @@ impl DomeneshopProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Domeneshop", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -182,6 +186,7 @@ impl DomeneshopProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Domeneshop", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -206,6 +211,7 @@ impl DomeneshopProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Domeneshop", record_type, &[])?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
         let host = strip_origin_from_name(&name, &domain, Some("@"));
@@ -406,6 +412,7 @@ impl TryFrom<DnsRecord> for DomeneshopRecordContent {
                     tag: Some(tag),
                 })
             }
+            DnsRecord::PTR(_) => Err(ptr_unsupported("Domeneshop")),
         }
     }
 }

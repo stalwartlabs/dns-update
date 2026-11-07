@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
@@ -88,6 +90,7 @@ impl PleskProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Plesk", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if matches!(record_type, DnsRecordType::TLSA) {
             return Err(Error::Unsupported(
@@ -128,6 +131,7 @@ impl PleskProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Plesk", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -161,6 +165,7 @@ impl PleskProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Plesk", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -191,6 +196,7 @@ impl PleskProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Plesk", record_type, &[])?;
         if matches!(record_type, DnsRecordType::TLSA) {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by Plesk".to_string(),
@@ -377,6 +383,7 @@ fn encode_record(record: &DnsRecord) -> crate::Result<Vec<EncodedPayload>> {
                 "TLSA records are not supported by Plesk".to_string(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Plesk")),
     })
 }
 
@@ -451,5 +458,6 @@ fn decode_record(expected_type: DnsRecordType, record: &PleskRecord) -> crate::R
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Plesk".to_string(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("Plesk")),
     }
 }

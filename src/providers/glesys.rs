@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::utils::{parse_mx, parse_srv};
@@ -184,6 +186,7 @@ impl GlesysProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Glesys", record_type, &records)?;
         let zone = origin.into_name().to_string();
         let host = strip_origin_from_name(name.into_name().as_ref(), &zone, Some("@"));
         let rr_type = record_type.as_str();
@@ -221,6 +224,7 @@ impl GlesysProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Glesys", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -249,6 +253,7 @@ impl GlesysProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Glesys", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -274,6 +279,7 @@ impl GlesysProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Glesys", record_type, &[])?;
         let zone = origin.into_name().to_string();
         let host = strip_origin_from_name(name.into_name().as_ref(), &zone, Some("@"));
         let listed = self.list_at(&zone, &host, record_type).await?;
@@ -311,6 +317,7 @@ fn render_data(record: &DnsRecord) -> crate::Result<String> {
             ));
         }
         DnsRecord::CAA(caa) => caa.to_string(),
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Glesys")),
     })
 }
 
@@ -351,6 +358,7 @@ fn parse_record(record_type: DnsRecordType, content: &str) -> crate::Result<DnsR
             "TLSA records are not supported by Glesys".to_string(),
         )),
         DnsRecordType::CAA => parse_caa(content),
+        DnsRecordType::PTR => Err(ptr_unsupported("Glesys")),
     }
 }
 

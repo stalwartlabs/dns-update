@@ -10,6 +10,8 @@
  */
 
 use crate::utils::parse_srv;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::strip_trailing_dot;
 use crate::utils::{split_caa_value, validate_region};
 use jiff::Timestamp;
@@ -155,6 +157,7 @@ impl TencentCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("TencentCloud DNSPod", record_type, &records)?;
         check_record_types(record_type, &records)?;
         reject_tlsa(record_type)?;
 
@@ -195,6 +198,7 @@ impl TencentCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("TencentCloud DNSPod", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -231,6 +235,7 @@ impl TencentCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("TencentCloud DNSPod", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -265,6 +270,7 @@ impl TencentCloudProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("TencentCloud DNSPod", record_type, &[])?;
         reject_tlsa(record_type)?;
         let name = name.into_name();
         let origin = origin.into_name();
@@ -554,6 +560,7 @@ impl TryFrom<DnsRecord> for TencentRecord {
             DnsRecord::TLSA(_) => Err(Error::Unsupported(
                 "TLSA records are not supported by TencentCloud DNSPod".to_string(),
             )),
+            DnsRecord::PTR(_) => Err(ptr_unsupported("TencentCloud DNSPod")),
         }
     }
 }
@@ -648,6 +655,7 @@ fn parse_record(record_type: DnsRecordType, item: &RecordListItem) -> crate::Res
                 "TLSA records are not supported by TencentCloud DNSPod".to_string(),
             ));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("TencentCloud DNSPod")),
     })
 }
 

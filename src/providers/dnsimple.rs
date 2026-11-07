@@ -10,6 +10,8 @@
  */
 
 use crate::utils::parse_tlsa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
@@ -112,6 +114,7 @@ impl DNSimpleProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("DNSimple", record_type, &records)?;
         let name = name.into_name();
         let zone = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &zone, Some(""));
@@ -147,6 +150,7 @@ impl DNSimpleProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("DNSimple", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -173,6 +177,7 @@ impl DNSimpleProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("DNSimple", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -196,6 +201,7 @@ impl DNSimpleProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("DNSimple", record_type, &[])?;
         let name = name.into_name();
         let zone = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &zone, Some(""));
@@ -309,6 +315,7 @@ fn record_content_and_priority(record: &DnsRecord) -> (String, Option<u16>) {
         ),
         DnsRecord::TLSA(value) => (value.to_string(), None),
         DnsRecord::CAA(caa) => (caa.to_string(), None),
+        DnsRecord::PTR(_) => unreachable!(),
     }
 }
 
@@ -337,6 +344,7 @@ fn record_from_content(
         DnsRecordType::SRV => parse_srv(&content.content, content.priority.unwrap_or(0)),
         DnsRecordType::TLSA => parse_tlsa(&content.content),
         DnsRecordType::CAA => parse_caa(&content.content).map(DnsRecord::CAA),
+        DnsRecordType::PTR => Err(ptr_unsupported("DNSimple")),
     }
 }
 

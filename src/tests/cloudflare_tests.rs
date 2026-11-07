@@ -1184,6 +1184,97 @@ mod tests {
         create.assert();
     }
 
+    fn mock_no_requests(server: &mut ServerGuard) -> Vec<Mock> {
+        ["GET", "POST", "PUT", "PATCH", "DELETE"]
+            .into_iter()
+            .map(|method| server.mock(method, Matcher::Any).expect(0).create())
+            .collect()
+    }
+
+    fn assert_ptr_unsupported<T: std::fmt::Debug>(result: crate::Result<T>) {
+        assert!(
+            matches!(result, Err(Error::Unsupported(ref msg)) if msg.contains("PTR")),
+            "expected Error::Unsupported about PTR, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_rrset_rejects_ptr_type_without_requests() {
+        let mut server = mockito::Server::new_async().await;
+        let mocks = mock_no_requests(&mut server);
+        let provider = setup_provider(server.url());
+
+        let result = provider
+            .set_rrset(
+                "1.2.0.192.in-addr.arpa",
+                DnsRecordType::PTR,
+                3600,
+                vec![DnsRecord::PTR("host.example.com".to_string())],
+                "2.0.192.in-addr.arpa",
+            )
+            .await;
+
+        assert_ptr_unsupported(result);
+        mocks.iter().for_each(Mock::assert);
+    }
+
+    #[tokio::test]
+    async fn add_to_rrset_rejects_ptr_record_under_other_type() {
+        let mut server = mockito::Server::new_async().await;
+        let mocks = mock_no_requests(&mut server);
+        let provider = setup_provider(server.url());
+
+        let result = provider
+            .add_to_rrset(
+                "host.example.com",
+                DnsRecordType::A,
+                3600,
+                vec![DnsRecord::PTR("other.example.com".to_string())],
+                "example.com",
+            )
+            .await;
+
+        assert_ptr_unsupported(result);
+        mocks.iter().for_each(Mock::assert);
+    }
+
+    #[tokio::test]
+    async fn remove_from_rrset_rejects_ptr_type_without_requests() {
+        let mut server = mockito::Server::new_async().await;
+        let mocks = mock_no_requests(&mut server);
+        let provider = setup_provider(server.url());
+
+        let result = provider
+            .remove_from_rrset(
+                "1.2.0.192.in-addr.arpa",
+                DnsRecordType::PTR,
+                vec![DnsRecord::PTR("host.example.com".to_string())],
+                "2.0.192.in-addr.arpa",
+            )
+            .await;
+
+        assert_ptr_unsupported(result);
+        mocks.iter().for_each(Mock::assert);
+    }
+
+    #[tokio::test]
+    async fn list_rrset_rejects_ptr_type_without_requests() {
+        let mut server = mockito::Server::new_async().await;
+        let mocks = mock_no_requests(&mut server);
+        let provider = setup_provider(server.url());
+
+        let result = provider
+            .list_rrset(
+                "1.2.0.192.in-addr.arpa",
+                DnsRecordType::PTR,
+                "2.0.192.in-addr.arpa",
+            )
+            .await;
+
+        assert_ptr_unsupported(result);
+        mocks.iter().for_each(Mock::assert);
+    }
+
     #[tokio::test]
     #[ignore = "Requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ORIGIN"]
     async fn integration_test() {

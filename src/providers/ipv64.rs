@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
@@ -80,6 +82,7 @@ impl Ipv64Provider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("IPv64", record_type, &records)?;
         check_record_types(record_type, &records)?;
         validate_record_type(record_type)?;
         let name = name.into_name();
@@ -122,6 +125,7 @@ impl Ipv64Provider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("IPv64", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -152,6 +156,7 @@ impl Ipv64Provider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("IPv64", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -183,6 +188,7 @@ impl Ipv64Provider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("IPv64", record_type, &[])?;
         validate_record_type(record_type)?;
         let name = name.into_name();
         let domain = origin.into_name();
@@ -267,6 +273,7 @@ fn validate_record_type(record_type: DnsRecordType) -> crate::Result<()> {
             "{} records are not supported by IPv64",
             record_type.as_str()
         ))),
+        DnsRecordType::PTR => Err(ptr_unsupported("IPv64")),
     }
 }
 
@@ -289,6 +296,7 @@ fn encode_record_content(record: &DnsRecord) -> crate::Result<String> {
                 "CAA records are not supported by IPv64".to_string(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("IPv64")),
     })
 }
 
@@ -352,6 +360,7 @@ fn decode_record(record_type: DnsRecordType, content: &str) -> crate::Result<Dns
                 record_type.as_str()
             )));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("IPv64")),
     })
 }
 

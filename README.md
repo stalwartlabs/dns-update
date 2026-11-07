@@ -11,7 +11,7 @@ and over 70 cloud, registrar, and self-hosted DNS provider APIs. It was designed
 
 | Provider | Constructor | Notes |
 |----------|-------------|-------|
-| [RFC 2136](https://datatracker.ietf.org/doc/html/rfc2136) | `new_rfc2136_tsig` | TSIG authentication |
+| [RFC 2136](https://datatracker.ietf.org/doc/html/rfc2136) | `new_rfc2136_tsig` | TSIG authentication; PTR support |
 | [Alibaba Cloud DNS](https://www.alibabacloud.com/product/dns) | `new_alidns` | ACS3-HMAC-SHA256 |
 | [ArvanCloud](https://www.arvancloud.ir/) | `new_arvancloud` | |
 | [AutoDNS](https://www.internetx.com/) | `new_autodns` | InterNetX |

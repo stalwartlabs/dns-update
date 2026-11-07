@@ -35,7 +35,7 @@ use hickory_net::xfer::DnsMultiplexer;
 use hickory_proto::rr::rdata::tsig::TsigAlgorithm as HickoryTsigAlgorithm;
 use hickory_proto::rr::{DNSClass, Name, RData, RecordType, TSigner};
 
-use crate::providers::rfc2136::{DnsAddress, Rfc2136Provider};
+use crate::providers::rfc2136::{DnsAddress, Rfc2136Provider, convert_record, rdata_to_dns_record};
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, KeyValue, MXRecord, SRVRecord, TLSARecord, TlsaCertUsage,
     TlsaMatching, TlsaSelector,
@@ -340,6 +340,130 @@ async fn udp_create_cname_record() {
             .any(|d| matches!(d, RData::CNAME(c) if c.0.to_ascii() == target))
     );
     cleanup_name(&name, DnsRecordType::CNAME).await;
+}
+
+#[test]
+fn convert_record_encodes_ptr() {
+    let (rtype, rdata) =
+        convert_record(DnsRecord::PTR("host.example.com".to_string())).expect("convert PTR");
+    assert_eq!(rtype, RecordType::PTR);
+    assert!(
+        matches!(&rdata, RData::PTR(ptr) if ptr.0 == Name::from_ascii("host.example.com").unwrap()),
+        "unexpected rdata: {rdata:?}"
+    );
+}
+
+#[test]
+fn rdata_to_dns_record_decodes_ptr_without_trailing_dot() {
+    let rdata = RData::PTR(hickory_proto::rr::rdata::PTR(
+        Name::from_ascii("host.example.com.").unwrap(),
+    ));
+    assert_eq!(
+        rdata_to_dns_record(&rdata).expect("decode PTR"),
+        DnsRecord::PTR("host.example.com".to_string())
+    );
+}
+
+#[test]
+fn ptr_record_type_maps_to_hickory_ptr() {
+    assert_eq!(RecordType::from(DnsRecordType::PTR), RecordType::PTR);
+    assert_eq!(
+        DnsRecord::PTR("host.example.com".to_string()).as_type(),
+        DnsRecordType::PTR
+    );
+}
+
+#[tokio::test]
+async fn udp_create_ptr_record() {
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let name = format!("{}.{}", unique_label("ptr"), zone());
+    let target = format!("host.{}.", zone());
+    provider
+        .set_rrset(
+            &name,
+            DnsRecordType::PTR,
+            60,
+            vec![DnsRecord::PTR(target.clone())],
+            zone(),
+        )
+        .await
+        .expect("set PTR");
+
+    let answers = wait_for_record(&name, RecordType::PTR, 20).await;
+    assert!(
+        answers
+            .iter()
+            .any(|d| matches!(d, RData::PTR(p) if p.0.to_ascii() == target))
+    );
+    cleanup_name(&name, DnsRecordType::PTR).await;
+}
+
+#[tokio::test]
+async fn ptr_rrset_set_add_remove_list_lifecycle() {
+    if !enabled() {
+        return;
+    }
+    ensure_crypto_provider();
+    let provider = udp_provider();
+    let name = format!("{}.{}", unique_label("ptr-lifecycle"), zone());
+    let first = format!("host-a.{}", zone());
+    let second = format!("host-b.{}", zone());
+
+    provider
+        .set_rrset(
+            &name,
+            DnsRecordType::PTR,
+            60,
+            vec![DnsRecord::PTR(first.clone())],
+            zone(),
+        )
+        .await
+        .expect("set PTR");
+    let listed = list_rrset_with_retry(&provider, &name, DnsRecordType::PTR, 1, 20).await;
+    assert_eq!(listed, vec![DnsRecord::PTR(first.clone())]);
+
+    provider
+        .add_to_rrset(
+            &name,
+            DnsRecordType::PTR,
+            60,
+            vec![DnsRecord::PTR(second.clone())],
+            zone(),
+        )
+        .await
+        .expect("add PTR");
+    let mut listed = list_rrset_with_retry(&provider, &name, DnsRecordType::PTR, 2, 20).await;
+    listed.sort_by_key(|r| r.to_string());
+    assert_eq!(
+        listed,
+        vec![
+            DnsRecord::PTR(first.clone()),
+            DnsRecord::PTR(second.clone())
+        ]
+    );
+
+    provider
+        .remove_from_rrset(
+            &name,
+            DnsRecordType::PTR,
+            vec![DnsRecord::PTR(first.clone())],
+            zone(),
+        )
+        .await
+        .expect("remove PTR");
+    let listed = list_rrset_with_retry(&provider, &name, DnsRecordType::PTR, 1, 20).await;
+    assert_eq!(listed, vec![DnsRecord::PTR(second.clone())]);
+
+    cleanup_name(&name, DnsRecordType::PTR).await;
+    let listed = list_rrset_with_retry(&provider, &name, DnsRecordType::PTR, 0, 20).await;
+    assert!(
+        listed.is_empty(),
+        "expected empty PTR RRset, got {listed:?}"
+    );
 }
 
 #[tokio::test]

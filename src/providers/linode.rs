@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
@@ -127,6 +129,7 @@ impl LinodeProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Linode", record_type, &records)?;
         reject_unsupported(record_type)?;
         let domain = origin.into_name().into_owned();
         let name = name.into_name().into_owned();
@@ -167,6 +170,7 @@ impl LinodeProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Linode", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -195,6 +199,7 @@ impl LinodeProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Linode", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -220,6 +225,7 @@ impl LinodeProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Linode", record_type, &[])?;
         reject_unsupported(record_type)?;
         let domain = origin.into_name().into_owned();
         let name = name.into_name().into_owned();
@@ -426,6 +432,7 @@ fn record_to_value(record: DnsRecord) -> crate::Result<RecordValue> {
                 tag: Some(tag),
             })
         }
+        DnsRecord::PTR(_) => Err(ptr_unsupported("Linode")),
     }
 }
 
@@ -480,6 +487,7 @@ fn value_to_record(record_type: DnsRecordType, value: RecordValue) -> crate::Res
             let tag = value.tag.unwrap_or_default();
             build_caa(0, &tag, &value.target).map(DnsRecord::CAA)
         }
+        DnsRecordType::PTR => Err(ptr_unsupported("Linode")),
     }
 }
 

@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
@@ -121,6 +123,7 @@ impl EasyDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("EasyDNS", record_type, &records)?;
         reject_unsupported(record_type)?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
@@ -157,6 +160,7 @@ impl EasyDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("EasyDNS", record_type, &records)?;
         reject_unsupported(record_type)?;
         if records.is_empty() {
             return Ok(());
@@ -184,6 +188,7 @@ impl EasyDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("EasyDNS", record_type, &records)?;
         reject_unsupported(record_type)?;
         if records.is_empty() {
             return Ok(());
@@ -208,6 +213,7 @@ impl EasyDnsProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("EasyDNS", record_type, &[])?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
         let subdomain = strip_origin_from_name(&name, &domain, Some("@"));
@@ -361,6 +367,7 @@ fn render_wire(record: DnsRecord) -> crate::Result<RecordWire> {
                 "TLSA records are not supported by EasyDNS".to_string(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("EasyDNS")),
     };
     Ok(RecordWire { rdata, prio })
 }
@@ -415,6 +422,7 @@ fn parse_record(
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by EasyDNS".to_string(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("EasyDNS")),
     }
 }
 

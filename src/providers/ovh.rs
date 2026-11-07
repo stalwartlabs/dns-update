@@ -10,6 +10,8 @@
  */
 
 use crate::http::{HttpClient, HttpClientBuilder};
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::{
     decode_hex, tlsa_cert_usage_from_u8, tlsa_matching_from_u8, tlsa_selector_from_u8,
@@ -148,6 +150,7 @@ impl From<&DnsRecord> for OvhRecordFormat {
                 field_type: "CAA".to_string(),
                 target: caa.to_string(),
             },
+            DnsRecord::PTR(_) => unreachable!(),
         }
     }
 }
@@ -335,6 +338,7 @@ impl OvhProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("OVH", record_type, &records)?;
         let desired = build_wire(record_type, &records)?;
         let zone = self.get_zone_name(origin).await?;
         let subdomain = self.subdomain_for(&zone, name);
@@ -376,6 +380,7 @@ impl OvhProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("OVH", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -407,6 +412,7 @@ impl OvhProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("OVH", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -436,6 +442,7 @@ impl OvhProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("OVH", record_type, &[])?;
         let zone = self.get_zone_name(origin).await?;
         let subdomain = self.subdomain_for(&zone, name);
         let existing = self.list_at(&zone, &subdomain, record_type).await?;
@@ -580,6 +587,7 @@ fn parse_ovh_target(record_type: DnsRecordType, target: &str) -> crate::Result<D
             }))
         }
         DnsRecordType::CAA => parse_caa(target),
+        DnsRecordType::PTR => Err(ptr_unsupported("OVH")),
     }
 }
 

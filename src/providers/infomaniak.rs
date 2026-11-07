@@ -10,6 +10,8 @@
  */
 
 use crate::utils::parse_tlsa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::unquote_txt;
 use crate::{
@@ -112,6 +114,7 @@ impl InfomaniakProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Infomaniak", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let name = name.into_name().into_owned();
         let origin = origin.into_name().into_owned();
@@ -156,6 +159,7 @@ impl InfomaniakProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Infomaniak", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -193,6 +197,7 @@ impl InfomaniakProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Infomaniak", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -219,6 +224,7 @@ impl InfomaniakProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Infomaniak", record_type, &[])?;
         let name = name.into_name().into_owned();
         let origin = origin.into_name().into_owned();
         let (domain, all_records) = self.fetch_zone_records(&origin).await?;
@@ -535,6 +541,7 @@ fn encode_record(record: &DnsRecord) -> crate::Result<(&'static str, String, Opt
             ),
             None,
         ),
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Infomaniak")),
     })
 }
 
@@ -565,6 +572,7 @@ fn decode_existing(
         DnsRecordType::SRV => DnsRecord::SRV(parse_srv(&record.target)?),
         DnsRecordType::CAA => DnsRecord::CAA(parse_caa(&record.target)?),
         DnsRecordType::TLSA => parse_tlsa(&record.target)?,
+        DnsRecordType::PTR => return Err(ptr_unsupported("Infomaniak")),
     })
 }
 

@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::unquote_txt;
 use crate::{
@@ -111,6 +113,7 @@ impl SafeDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("SafeDNS", record_type, &records)?;
         reject_unsupported(record_type)?;
         let fqdn = name.into_name().into_owned();
         let zone = origin.into_name().into_owned();
@@ -148,6 +151,7 @@ impl SafeDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("SafeDNS", record_type, &records)?;
         reject_unsupported(record_type)?;
         if records.is_empty() {
             return Ok(());
@@ -173,6 +177,7 @@ impl SafeDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("SafeDNS", record_type, &records)?;
         reject_unsupported(record_type)?;
         if records.is_empty() {
             return Ok(());
@@ -196,6 +201,7 @@ impl SafeDnsProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("SafeDNS", record_type, &[])?;
         let fqdn = name.into_name().into_owned();
         let zone = origin.into_name().into_owned();
         let listed = self.list_at(&zone, &fqdn, record_type).await?;
@@ -332,6 +338,7 @@ fn safedns_record_to_dns_record(
             "TLSA records are not supported by SafeDNS".to_string(),
         )),
         DnsRecordType::CAA => parse_caa(&record.content),
+        DnsRecordType::PTR => Err(ptr_unsupported("SafeDNS")),
     }
 }
 
@@ -454,6 +461,7 @@ impl TryFrom<DnsRecord> for SafeDnsRecordContent {
                     priority: None,
                 })
             }
+            DnsRecord::PTR(_) => Err(ptr_unsupported("SafeDNS")),
         }
     }
 }

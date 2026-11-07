@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::strip_trailing_dot;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
@@ -207,6 +209,7 @@ impl JokerProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Joker.com", record_type, &records)?;
         check_record_types(record_type, &records)?;
         reject_tlsa(record_type)?;
 
@@ -244,6 +247,7 @@ impl JokerProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Joker.com", record_type, &records)?;
         check_record_types(record_type, &records)?;
         reject_tlsa(record_type)?;
         if records.is_empty() {
@@ -292,6 +296,7 @@ impl JokerProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Joker.com", record_type, &records)?;
         check_record_types(record_type, &records)?;
         reject_tlsa(record_type)?;
         if records.is_empty() {
@@ -331,6 +336,7 @@ impl JokerProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Joker.com", record_type, &[])?;
         reject_tlsa(record_type)?;
 
         let name = name.into_name();
@@ -471,6 +477,7 @@ fn render_zone_entries(host: &str, record: &DnsRecord, ttl: u32) -> crate::Resul
             let (flags, tag, value) = caa.clone().decompose();
             ("CAA", 0, vec![format!("{flags} {tag} \"{value}\"")])
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Joker.com")),
     };
 
     Ok(values
@@ -681,6 +688,7 @@ fn parse_zone_record(
                 "TLSA records are not supported by Joker.com".to_string(),
             ));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("Joker.com")),
     }))
 }
 

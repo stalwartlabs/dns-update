@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
@@ -108,6 +110,7 @@ impl NetlifyProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Netlify", record_type, &records)?;
         check_record_types(record_type, &records)?;
         reject_tlsa(record_type)?;
         let name = name.into_name().into_owned();
@@ -146,6 +149,7 @@ impl NetlifyProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Netlify", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -174,6 +178,7 @@ impl NetlifyProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Netlify", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -199,6 +204,7 @@ impl NetlifyProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Netlify", record_type, &[])?;
         reject_tlsa(record_type)?;
         let name = name.into_name().into_owned();
         let zone_id = zone_id_from_origin(&origin.into_name());
@@ -343,6 +349,7 @@ fn record_to_content(record: &DnsRecord) -> crate::Result<RecordContent> {
                 "TLSA records are not supported by Netlify".to_string(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Netlify")),
     }
     Ok(content)
 }
@@ -393,5 +400,6 @@ fn listed_to_record(record_type: DnsRecordType, r: &ListedRecord) -> crate::Resu
                 "TLSA records are not supported by Netlify".to_string(),
             ));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("Netlify")),
     })
 }

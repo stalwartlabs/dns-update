@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::{build_caa, parse_mx, parse_srv, strip_trailing_dot, unquote_txt};
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn,
@@ -206,6 +208,7 @@ impl SelectelProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Selectel", record_type, &records)?;
         let contents = build_contents(record_type, &records)?;
         let token = self.ensure_token().await?;
         let fqdn = name.into_fqdn().to_ascii_lowercase();
@@ -235,6 +238,7 @@ impl SelectelProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Selectel", record_type, &records)?;
         let contents = build_contents(record_type, &records)?;
         if contents.is_empty() {
             return Ok(());
@@ -278,6 +282,7 @@ impl SelectelProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Selectel", record_type, &records)?;
         build_contents(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -319,6 +324,7 @@ impl SelectelProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Selectel", record_type, &[])?;
         let token = self.ensure_token().await?;
         let fqdn = name.into_fqdn().to_ascii_lowercase();
         let zone = self.resolve_zone(&origin.into_name(), &token).await?;
@@ -605,6 +611,7 @@ fn render_content(record: &DnsRecord) -> String {
         ),
         DnsRecord::TLSA(tlsa) => tlsa.to_string(),
         DnsRecord::CAA(caa) => caa.to_string(),
+        DnsRecord::PTR(_) => unreachable!(),
     }
 }
 
@@ -675,6 +682,7 @@ fn parse_content(record_type: DnsRecordType, content: &str) -> crate::Result<Dns
             "TLSA records are not supported by Selectel".to_string(),
         )),
         DnsRecordType::CAA => parse_caa(content),
+        DnsRecordType::PTR => Err(ptr_unsupported("Selectel")),
     }
 }
 

@@ -10,6 +10,8 @@
  */
 
 use crate::utils::parse_tlsa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::unquote_txt;
 use crate::{
@@ -147,6 +149,7 @@ impl HostingDeProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("hosting.de", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
@@ -192,6 +195,7 @@ impl HostingDeProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("hosting.de", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -232,6 +236,7 @@ impl HostingDeProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("hosting.de", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -272,6 +277,7 @@ impl HostingDeProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("hosting.de", record_type, &[])?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
         let zone_config = self.fetch_zone_config(&domain).await?;
@@ -435,6 +441,7 @@ fn record_to_payload(record: &DnsRecord, name: &str, ttl: u32) -> crate::Result<
             )
         }
         DnsRecord::TLSA(tlsa) => ("TLSA", format!("{}", tlsa), 0),
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("hosting.de")),
     };
 
     Ok(DnsRecordPayload {

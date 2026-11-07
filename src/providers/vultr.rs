@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::unquote_txt;
 use crate::{
@@ -103,6 +105,7 @@ impl VultrProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Vultr", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let domain = origin.into_name().into_owned();
         let name = name.into_name().into_owned();
@@ -142,6 +145,7 @@ impl VultrProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Vultr", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -169,6 +173,7 @@ impl VultrProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Vultr", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -193,6 +198,7 @@ impl VultrProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Vultr", record_type, &[])?;
         let domain = origin.into_name().into_owned();
         let name = name.into_name().into_owned();
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
@@ -356,6 +362,7 @@ fn record_target(record: &DnsRecord) -> Result<String, Error> {
             let (flags, tag, value) = caa.clone().decompose();
             Ok(format!("{flags} {tag} \"{value}\""))
         }
+        DnsRecord::PTR(_) => Err(ptr_unsupported("Vultr")),
     }
 }
 

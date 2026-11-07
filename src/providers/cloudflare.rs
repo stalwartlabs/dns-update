@@ -10,6 +10,7 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::reject_ptr;
 use crate::utils::unquote_txt;
 use crate::utils::{
     decode_hex, tlsa_cert_usage_from_u8, tlsa_matching_from_u8, tlsa_selector_from_u8,
@@ -179,6 +180,7 @@ impl CloudflareProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Cloudflare", record_type, &records)?;
         let zone_id = self.obtain_zone_id(origin).await?;
         let name = name.into_name().into_owned();
         let desired = build_contents(record_type, records)?;
@@ -215,6 +217,7 @@ impl CloudflareProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Cloudflare", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -239,6 +242,7 @@ impl CloudflareProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Cloudflare", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -261,6 +265,7 @@ impl CloudflareProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Cloudflare", record_type, &[])?;
         let zone_id = self.obtain_zone_id(origin).await?;
         let name = name.into_name().into_owned();
         let listed = self.list_at(&zone_id, &name, record_type).await?;
@@ -424,6 +429,7 @@ impl From<DnsRecord> for DnsContent {
                     data: CaaData { flags, tag, value },
                 }
             }
+            DnsRecord::PTR(_) => unreachable!(),
         }
     }
 }

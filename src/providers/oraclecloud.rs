@@ -14,6 +14,8 @@
 use crate::crypto::sha256_digest;
 use crate::http::{body_snippet, try_build_client};
 use crate::jwt::{parse_rsa_pkcs8_pem, rsa_sha256_sign};
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::utils::{parse_mx, parse_srv, parse_tlsa};
@@ -322,6 +324,7 @@ impl OracleCloudProvider {
                 )
             }
             DnsRecord::TLSA(tlsa) => ("TLSA".to_string(), tlsa.to_string()),
+            DnsRecord::PTR(_) => return Err(ptr_unsupported("Oracle Cloud")),
         };
         Ok((rtype, rdata))
     }
@@ -467,6 +470,7 @@ impl OracleCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Oracle Cloud", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let name = name.into_name().to_string();
         let origin = origin.into_name().to_string();
@@ -500,6 +504,7 @@ impl OracleCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Oracle Cloud", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -538,6 +543,7 @@ impl OracleCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Oracle Cloud", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -569,6 +575,7 @@ impl OracleCloudProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> Result<Vec<DnsRecord>> {
+        reject_ptr("Oracle Cloud", record_type, &[])?;
         let name = name.into_name().to_string();
         let origin = origin.into_name().to_string();
         let zone_id = match self.resolve_zone(&origin).await {
@@ -641,6 +648,7 @@ fn parse_rdata(record_type: DnsRecordType, value: &str) -> Result<DnsRecord> {
         DnsRecordType::SRV => parse_srv(value)?,
         DnsRecordType::TLSA => parse_tlsa(value)?,
         DnsRecordType::CAA => parse_caa(value)?,
+        DnsRecordType::PTR => return Err(ptr_unsupported("Oracle Cloud")),
     })
 }
 

@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::strip_trailing_dot;
 use crate::utils::{
     build_caa, decode_hex, tlsa_cert_usage_from_u8, tlsa_matching_from_u8, tlsa_selector_from_u8,
@@ -133,6 +135,7 @@ impl ZoneEuProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Zone.eu", record_type, &records)?;
         let name = name.into_name().into_owned();
         let origin = origin.into_name().into_owned();
         let zone = self.resolve_zone(&origin).await?;
@@ -173,6 +176,7 @@ impl ZoneEuProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Zone.eu", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -203,6 +207,7 @@ impl ZoneEuProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Zone.eu", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -231,6 +236,7 @@ impl ZoneEuProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Zone.eu", record_type, &[])?;
         let name = name.into_name().into_owned();
         let origin = origin.into_name().into_owned();
         let zone = self.resolve_zone(&origin).await?;
@@ -369,6 +375,7 @@ fn path_segment(record_type: DnsRecordType) -> &'static str {
         DnsRecordType::SRV => "srv",
         DnsRecordType::TLSA => "tlsa",
         DnsRecordType::CAA => "caa",
+        DnsRecordType::PTR => unreachable!(),
     }
 }
 
@@ -429,6 +436,7 @@ fn parse_record(record_type: DnsRecordType, record: &ZoneRecord) -> crate::Resul
             &record.destination,
         )
         .map(DnsRecord::CAA),
+        DnsRecordType::PTR => Err(ptr_unsupported("Zone.eu")),
     }
 }
 
@@ -492,6 +500,7 @@ impl From<DnsRecord> for RecordData {
                     ..Default::default()
                 }
             }
+            DnsRecord::PTR(_) => unreachable!(),
         }
     }
 }

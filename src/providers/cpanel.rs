@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::strip_trailing_dot;
 use crate::utils::unquote_txt;
 use crate::{
@@ -107,6 +109,7 @@ impl CpanelProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("cPanel", record_type, &records)?;
         check_record_types(record_type, &records)?;
         reject_tlsa(record_type)?;
 
@@ -195,6 +198,7 @@ impl CpanelProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("cPanel", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -251,6 +255,7 @@ impl CpanelProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("cPanel", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -303,6 +308,7 @@ impl CpanelProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("cPanel", record_type, &[])?;
         if matches!(record_type, DnsRecordType::TLSA) {
             return Err(Error::Unsupported(
                 "TLSA records are not supported by cPanel".to_string(),
@@ -479,6 +485,7 @@ fn encode_record_data(record: &DnsRecord) -> crate::Result<Vec<String>> {
                 "TLSA records are not supported by cPanel".to_string(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("cPanel")),
     })
 }
 
@@ -625,5 +632,6 @@ fn decode_to_dns_record(record_type: DnsRecordType, fields: &[String]) -> crate:
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by cPanel".to_string(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("cPanel")),
     }
 }

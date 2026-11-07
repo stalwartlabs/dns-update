@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::unquote_txt;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord,
@@ -218,6 +220,7 @@ impl NifcloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Nifcloud", record_type, &records)?;
         let type_str = dns_type_str(record_type)?;
         check_record_types(record_type, &records)?;
         let name_str = name.into_name().to_string();
@@ -299,6 +302,7 @@ impl NifcloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Nifcloud", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -390,6 +394,7 @@ impl NifcloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Nifcloud", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -474,6 +479,7 @@ impl NifcloudProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Nifcloud", record_type, &[])?;
         let type_str = dns_type_str(record_type)?;
         let name_str = name.into_name().to_string();
         let domain = origin.into_name().to_string();
@@ -673,6 +679,7 @@ fn dns_type_str(record_type: DnsRecordType) -> crate::Result<&'static str> {
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Nifcloud".into(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("Nifcloud")),
     }
 }
 
@@ -712,6 +719,7 @@ fn build_value(record: &DnsRecord) -> crate::Result<String> {
                 "TLSA records are not supported by Nifcloud".into(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Nifcloud")),
     })
 }
 
@@ -757,5 +765,6 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
                 "TLSA records are not supported by Nifcloud".into(),
             ));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("Nifcloud")),
     })
 }

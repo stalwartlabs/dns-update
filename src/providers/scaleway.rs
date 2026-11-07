@@ -10,6 +10,8 @@
  */
 
 use crate::utils::parse_tlsa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::utils::unquote_txt;
@@ -114,6 +116,7 @@ impl ScalewayProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Scaleway", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let zone = origin.into_name().into_owned();
         let fqdn = name.into_name().into_owned();
@@ -162,6 +165,7 @@ impl ScalewayProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Scaleway", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -193,6 +197,7 @@ impl ScalewayProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Scaleway", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -233,6 +238,7 @@ impl ScalewayProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Scaleway", record_type, &[])?;
         let zone = origin.into_name().into_owned();
         let fqdn = name.into_name().into_owned();
         let short = strip_origin_from_name(&fqdn, &zone, Some("@"));
@@ -293,6 +299,7 @@ fn build_entry(name: String, record: DnsRecord, ttl: u32) -> crate::Result<Recor
         DnsRecord::SRV(srv) => format!("{} {} {}", srv.weight, srv.port, srv.target.into_fqdn()),
         DnsRecord::TLSA(tlsa) => tlsa.to_string(),
         DnsRecord::CAA(caa) => caa.to_string(),
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Scaleway")),
     };
     Ok(RecordEntry {
         name,
@@ -324,6 +331,7 @@ fn parse_listed_record(expected: DnsRecordType, record: &ListedRecord) -> crate:
         DnsRecordType::SRV => DnsRecord::SRV(parse_srv(&record.data, record.priority)?),
         DnsRecordType::TLSA => parse_tlsa(&record.data)?,
         DnsRecordType::CAA => DnsRecord::CAA(parse_caa(&record.data)?),
+        DnsRecordType::PTR => return Err(ptr_unsupported("Scaleway")),
     })
 }
 

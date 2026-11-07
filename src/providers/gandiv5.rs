@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::utils::unquote_txt;
@@ -82,6 +84,7 @@ impl GandiV5Provider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Gandi", record_type, &records)?;
         let name = name.into_name();
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, None);
@@ -105,6 +108,7 @@ impl GandiV5Provider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Gandi", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -139,6 +143,7 @@ impl GandiV5Provider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Gandi", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -174,6 +179,7 @@ impl GandiV5Provider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Gandi", record_type, &[])?;
         let name = name.into_name();
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, None);
@@ -295,6 +301,7 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
         ),
         DnsRecord::TLSA(tlsa) => tlsa.to_string(),
         DnsRecord::CAA(caa) => caa.to_string(),
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Gandi")),
     })
 }
 
@@ -315,6 +322,7 @@ fn parse_value(record_type: DnsRecordType, content: &str) -> crate::Result<DnsRe
         DnsRecordType::SRV => parse_srv(content),
         DnsRecordType::TLSA => parse_tlsa(content),
         DnsRecordType::CAA => parse_caa(content),
+        DnsRecordType::PTR => Err(ptr_unsupported("Gandi")),
     }
 }
 

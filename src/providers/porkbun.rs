@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::strip_trailing_dot;
 use crate::utils::{
     decode_hex, tlsa_cert_usage_from_u8, tlsa_matching_from_u8, tlsa_selector_from_u8,
@@ -130,6 +132,7 @@ impl PorkBunProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Porkbun", record_type, &records)?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
@@ -174,6 +177,7 @@ impl PorkBunProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Porkbun", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -201,6 +205,7 @@ impl PorkBunProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Porkbun", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -226,6 +231,7 @@ impl PorkBunProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Porkbun", record_type, &[])?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
@@ -410,6 +416,7 @@ fn listed_to_dns_record(
         DnsRecordType::SRV => DnsRecord::SRV(parse_srv_content(&content, prio.unwrap_or(0))?),
         DnsRecordType::TLSA => DnsRecord::TLSA(parse_tlsa_content(&content)?),
         DnsRecordType::CAA => DnsRecord::CAA(parse_caa_content(&content)?),
+        DnsRecordType::PTR => return Err(ptr_unsupported("Porkbun")),
     })
 }
 
@@ -583,6 +590,7 @@ impl From<DnsRecord> for RecordData {
             DnsRecord::CAA(caa) => RecordData::CAA {
                 content: caa.to_string(),
             },
+            DnsRecord::PTR(_) => unreachable!(),
         }
     }
 }

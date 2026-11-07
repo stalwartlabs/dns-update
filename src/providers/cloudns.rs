@@ -9,6 +9,7 @@
  * except according to those terms.
  */
 
+use crate::utils::reject_ptr;
 use crate::utils::{
     build_caa, decode_hex, tlsa_cert_usage_from_u8, tlsa_matching_from_u8, tlsa_selector_from_u8,
 };
@@ -297,6 +298,7 @@ impl ClouDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("ClouDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let name = name.into_name().into_owned();
         let zone = origin.into_name().to_string();
@@ -345,6 +347,7 @@ impl ClouDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("ClouDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -373,6 +376,7 @@ impl ClouDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("ClouDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -400,6 +404,7 @@ impl ClouDnsProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("ClouDNS", record_type, &[])?;
         let name = name.into_name().into_owned();
         let zone = origin.into_name().to_string();
         let host = strip_origin_from_name(&name, &zone, Some(""));
@@ -461,6 +466,7 @@ fn build_record_params(record: &DnsRecord) -> Vec<(&'static str, String)> {
             params.push(("caa_type", tag));
             params.push(("caa_value", value));
         }
+        DnsRecord::PTR(_) => unreachable!(),
     }
     params
 }
@@ -510,6 +516,7 @@ fn record_matches(existing: &ClouDnsRecord, desired: &DnsRecord) -> bool {
                 && existing.caa_value.as_deref() == Some(value.as_str())
         }
         DnsRecord::TLSA(tlsa) => tlsa_from_record(existing).is_ok_and(|parsed| parsed == *tlsa),
+        DnsRecord::PTR(_) => false,
     }
 }
 

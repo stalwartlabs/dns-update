@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::utils::{parse_mx, parse_srv, parse_tlsa};
@@ -126,6 +128,7 @@ impl UltraDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("UltraDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let owner = name.into_fqdn().into_owned();
         let zone = origin.into_fqdn().into_owned();
@@ -146,6 +149,7 @@ impl UltraDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("UltraDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -179,6 +183,7 @@ impl UltraDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("UltraDNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -211,6 +216,7 @@ impl UltraDnsProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> Result<Vec<DnsRecord>> {
+        reject_ptr("UltraDNS", record_type, &[])?;
         let owner = name.into_fqdn().into_owned();
         let zone = origin.into_fqdn().into_owned();
         let rdata = match self.fetch_rrset(&zone, record_type, &owner).await? {
@@ -503,6 +509,7 @@ fn render_rdata(record: DnsRecord) -> Result<String> {
         ),
         DnsRecord::TLSA(tlsa) => tlsa.to_string(),
         DnsRecord::CAA(caa) => caa.to_string(),
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("UltraDNS")),
     })
 }
 
@@ -525,6 +532,7 @@ fn parse_rdata(record_type: DnsRecordType, value: &str) -> Result<DnsRecord> {
         DnsRecordType::SRV => parse_srv(value)?,
         DnsRecordType::TLSA => parse_tlsa(value)?,
         DnsRecordType::CAA => parse_caa(value)?,
+        DnsRecordType::PTR => return Err(ptr_unsupported("UltraDNS")),
     })
 }
 

@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
@@ -283,6 +285,7 @@ impl BluecatV2Provider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Bluecat", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let _ = bluecat_record_type(record_type)?;
         let token = self.ensure_token().await?;
@@ -341,6 +344,7 @@ impl BluecatV2Provider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Bluecat", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -383,6 +387,7 @@ impl BluecatV2Provider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Bluecat", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -420,6 +425,7 @@ impl BluecatV2Provider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Bluecat", record_type, &[])?;
         let _ = bluecat_record_type(record_type)?;
         let token = self.ensure_token().await?;
         let origin = origin.into_name().to_string();
@@ -514,6 +520,7 @@ fn bluecat_record_type(record_type: DnsRecordType) -> crate::Result<&'static str
                 "TLSA records are not supported by Bluecat".into(),
             ));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("Bluecat")),
     })
 }
 
@@ -602,6 +609,7 @@ fn record_to_normalized(record: DnsRecord) -> crate::Result<NormalizedContent> {
                 "TLSA records are not supported by Bluecat".into(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Bluecat")),
     })
 }
 
@@ -650,6 +658,7 @@ fn normalize_listed(
             value: listed.value.clone()?,
         }),
         DnsRecordType::TLSA => None,
+        DnsRecordType::PTR => None,
     }
 }
 

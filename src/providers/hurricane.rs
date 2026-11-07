@@ -9,6 +9,7 @@
  * except according to those terms.
  */
 
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn,
     http::{HttpClient, HttpClientBuilder},
@@ -61,6 +62,7 @@ impl HurricaneProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Hurricane Electric", record_type, &records)?;
         if record_type != DnsRecordType::TXT {
             return Err(Error::Api(
                 "Only TXT records are supported by Hurricane Electric".to_string(),

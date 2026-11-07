@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
 use crate::utils::unquote_txt;
@@ -148,6 +150,7 @@ impl DesecProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("deSEC", record_type, &records)?;
         let name = name.into_name().to_ascii_lowercase();
         let origin = origin.into_name().to_ascii_lowercase();
         let domain = self.resolve_domain(&origin).await?;
@@ -205,6 +208,7 @@ impl DesecProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("deSEC", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -277,6 +281,7 @@ impl DesecProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("deSEC", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -351,6 +356,7 @@ impl DesecProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("deSEC", record_type, &[])?;
         let name = name.into_name().to_ascii_lowercase();
         let origin = origin.into_name().to_ascii_lowercase();
         let domain = self.resolve_domain(&origin).await?;
@@ -419,6 +425,7 @@ fn parse_record(record_type: DnsRecordType, content: &str) -> crate::Result<DnsR
         DnsRecordType::SRV => parse_srv(content),
         DnsRecordType::TLSA => parse_tlsa(content),
         DnsRecordType::CAA => parse_caa(content),
+        DnsRecordType::PTR => Err(ptr_unsupported("deSEC")),
     }
 }
 
@@ -513,6 +520,7 @@ impl From<DnsRecord> for DesecDnsRecordRepresentation {
                 record_type: "CAA".to_string(),
                 content: caa.to_string(),
             },
+            DnsRecord::PTR(_) => unreachable!(),
         }
     }
 }

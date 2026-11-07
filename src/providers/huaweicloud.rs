@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::strip_trailing_dot;
 use crate::utils::{parse_mx, parse_srv};
 use crate::utils::{split_caa_value, validate_region};
@@ -142,6 +144,7 @@ impl HuaweiCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Huawei Cloud DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         reject_tlsa(record_type)?;
         let name_fqdn = name.into_fqdn().into_owned();
@@ -183,6 +186,7 @@ impl HuaweiCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Huawei Cloud DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         reject_tlsa(record_type)?;
         if records.is_empty() {
@@ -220,6 +224,7 @@ impl HuaweiCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Huawei Cloud DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         reject_tlsa(record_type)?;
         if records.is_empty() {
@@ -265,6 +270,7 @@ impl HuaweiCloudProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Huawei Cloud DNS", record_type, &[])?;
         reject_tlsa(record_type)?;
         let name_fqdn = name.into_fqdn().into_owned();
         let zone_id = match self.resolve_zone_id(origin).await {
@@ -635,6 +641,7 @@ fn render_record(record: &DnsRecord) -> crate::Result<String> {
         DnsRecord::TLSA(_) => Err(Error::Unsupported(
             "TLSA records are not supported by huaweicloud".to_string(),
         )),
+        DnsRecord::PTR(_) => Err(ptr_unsupported("Huawei Cloud DNS")),
     }
 }
 
@@ -657,6 +664,7 @@ fn parse_value(record_type: DnsRecordType, value: &str) -> crate::Result<DnsReco
                 "TLSA records are not supported by huaweicloud".to_string(),
             ));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("Huawei Cloud DNS")),
     })
 }
 

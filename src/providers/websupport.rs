@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
@@ -168,6 +170,7 @@ impl WebSupportProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("WebSupport", record_type, &records)?;
         check_record_types(record_type, &records)?;
         reject_unsupported_type(record_type)?;
         let name = name.into_name();
@@ -206,6 +209,7 @@ impl WebSupportProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("WebSupport", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -235,6 +239,7 @@ impl WebSupportProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("WebSupport", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -261,6 +266,7 @@ impl WebSupportProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("WebSupport", record_type, &[])?;
         reject_unsupported_type(record_type)?;
         let name = name.into_name();
         let domain = origin.into_name();
@@ -459,6 +465,7 @@ fn record_to_content(record: DnsRecord) -> crate::Result<RecordContent> {
                 "TLSA records are not supported by WebSupport".into(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("WebSupport")),
     })
 }
 
@@ -511,6 +518,7 @@ fn record_from_listed(
                 "TLSA records are not supported by WebSupport".into(),
             ));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("WebSupport")),
     })
 }
 

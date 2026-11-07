@@ -10,6 +10,8 @@
  */
 
 use crate::http::{HttpClient, HttpClientBuilder};
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::{strip_origin_from_name, txt_chunks};
 use crate::{
     CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, KeyValue, MXRecord, Result, SRVRecord,
@@ -179,6 +181,7 @@ impl AzureDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Azure DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         check_cname_singleton(record_type, &records)?;
         let zone = origin.into_name().to_ascii_lowercase();
@@ -204,6 +207,7 @@ impl AzureDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Azure DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -242,6 +246,7 @@ impl AzureDnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("Azure DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -288,6 +293,7 @@ impl AzureDnsProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> Result<Vec<DnsRecord>> {
+        reject_ptr("Azure DNS", record_type, &[])?;
         let zone = origin.into_name().to_ascii_lowercase();
         let fqdn = name.into_name().to_ascii_lowercase();
         let relative = relative_record_name(&fqdn, &zone);
@@ -425,6 +431,7 @@ fn azure_record_type(rt: &DnsRecordType) -> Result<&'static str> {
                 "TLSA records are not supported by Azure DNS".to_string(),
             ));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("Azure DNS")),
     })
 }
 
@@ -560,6 +567,7 @@ fn insert_rrset_payload(
                 "TLSA records are not supported by Azure DNS".to_string(),
             ));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("Azure DNS")),
     }
     Ok(())
 }

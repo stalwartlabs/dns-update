@@ -10,6 +10,8 @@
  */
 
 use crate::http::{HttpClient, HttpClientBuilder};
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::strip_origin_from_name;
 use crate::{DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, Result, SRVRecord};
 use encodify::base64::STANDARD as BASE64;
@@ -58,6 +60,7 @@ impl IbmCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("IBM Cloud", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let host_fqdn = name.into_name().to_ascii_lowercase();
         let zone = origin.into_name().to_ascii_lowercase();
@@ -105,6 +108,7 @@ impl IbmCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("IBM Cloud", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -133,6 +137,7 @@ impl IbmCloudProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> Result<()> {
+        reject_ptr("IBM Cloud", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -161,6 +166,7 @@ impl IbmCloudProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> Result<Vec<DnsRecord>> {
+        reject_ptr("IBM Cloud", record_type, &[])?;
         let host_fqdn = name.into_name().to_ascii_lowercase();
         let zone = origin.into_name().to_ascii_lowercase();
         let (domain_id, resolved_zone) = self.resolve_domain(&zone).await?;
@@ -388,6 +394,7 @@ fn build_record_payload(
                 "TLSA records are not supported by ibmcloud".to_string(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("IBM Cloud")),
     }
 
     Ok(payload)
@@ -461,6 +468,7 @@ fn softlayer_record_type(rt: &DnsRecordType) -> Result<&'static str> {
                 "TLSA records are not supported by ibmcloud".to_string(),
             ));
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("IBM Cloud")),
     })
 }
 

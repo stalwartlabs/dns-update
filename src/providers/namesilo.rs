@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
@@ -90,6 +92,7 @@ impl NameSiloProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("NameSilo", record_type, &records)?;
         ensure_supported_type(record_type)?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
@@ -136,6 +139,7 @@ impl NameSiloProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("NameSilo", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -175,6 +179,7 @@ impl NameSiloProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("NameSilo", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -198,6 +203,7 @@ impl NameSiloProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("NameSilo", record_type, &[])?;
         ensure_supported_type(record_type)?;
         let name = name.into_name().into_owned();
         let domain = origin.into_name().into_owned();
@@ -376,6 +382,7 @@ fn render_value(record: DnsRecord) -> crate::Result<String> {
                 "TLSA records are not supported by NameSilo".to_string(),
             ));
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("NameSilo")),
     })
 }
 
@@ -408,6 +415,7 @@ fn parse_record(record_type: DnsRecordType, raw: &ResourceRecord) -> crate::Resu
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by NameSilo".to_string(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("NameSilo")),
     }
 }
 

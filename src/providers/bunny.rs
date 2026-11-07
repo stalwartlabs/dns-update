@@ -11,6 +11,8 @@
 
 use crate::utils::build_caa;
 use crate::utils::parse_tlsa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
@@ -64,6 +66,7 @@ impl BunnyProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Bunny", record_type, &records)?;
         let zone_data = self.get_zone_data(origin).await?;
         let name = strip_origin_from_name(name.into_name().as_ref(), &zone_data.domain, Some(""));
         let desired = build_contents(record_type, records)?;
@@ -102,6 +105,7 @@ impl BunnyProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Bunny", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -130,6 +134,7 @@ impl BunnyProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Bunny", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -156,6 +161,7 @@ impl BunnyProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Bunny", record_type, &[])?;
         let zone_data = self.get_zone_data(origin).await?;
         let name = strip_origin_from_name(name.into_name().as_ref(), &zone_data.domain, Some(""));
         zone_data
@@ -294,6 +300,7 @@ fn bunny_type_for(record_type: DnsRecordType) -> Option<u8> {
         DnsRecordType::CAA => BUNNY_TYPE_CAA,
         DnsRecordType::NS => BUNNY_TYPE_NS,
         DnsRecordType::TLSA => BUNNY_TYPE_TLSA,
+        DnsRecordType::PTR => return None,
     })
 }
 
@@ -356,6 +363,7 @@ impl TryFrom<&DnsRecord> for BunnyRecordContent {
                     ..Default::default()
                 }
             }
+            DnsRecord::PTR(_) => return Err(ptr_unsupported("Bunny")),
         })
     }
 }

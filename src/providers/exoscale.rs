@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::split_caa_value;
 use crate::utils::unquote_txt;
 use crate::{
@@ -147,6 +149,7 @@ impl ExoscaleProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Exoscale", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let name = name.into_name();
         let domain = origin.into_name();
@@ -188,6 +191,7 @@ impl ExoscaleProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Exoscale", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -214,6 +218,7 @@ impl ExoscaleProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Exoscale", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -243,6 +248,7 @@ impl ExoscaleProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Exoscale", record_type, &[])?;
         let name = name.into_name();
         let domain = origin.into_name();
         let subdomain = strip_origin_from_name(&name, &domain, Some(""));
@@ -383,6 +389,7 @@ fn build_create_record<'a>(
             let (flags, tag, value) = caa.clone().decompose();
             req.content = format!("{} {} \"{}\"", flags, tag, value);
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Exoscale")),
     }
     Ok(req)
 }
@@ -400,6 +407,7 @@ fn dns_type(record: &DnsRecord) -> crate::Result<&'static str> {
         DnsRecord::TLSA(_) => Err(Error::Unsupported(
             "TLSA records are not supported by Exoscale".into(),
         )),
+        DnsRecord::PTR(_) => Err(ptr_unsupported("Exoscale")),
     }
 }
 

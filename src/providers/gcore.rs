@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::strip_trailing_dot;
 use crate::utils::{
     decode_hex, tlsa_cert_usage_from_u8, tlsa_matching_from_u8, tlsa_selector_from_u8,
@@ -87,6 +89,7 @@ impl GcoreProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Gcore", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let zone = self.obtain_zone(&origin.into_name()).await?;
         let fqdn = name.into_name();
@@ -117,6 +120,7 @@ impl GcoreProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Gcore", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -168,6 +172,7 @@ impl GcoreProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Gcore", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -228,6 +233,7 @@ impl GcoreProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Gcore", record_type, &[])?;
         let zone = self.obtain_zone(&origin.into_name()).await?;
         let fqdn = name.into_name();
         let url = self.rrset_url(&zone, &fqdn, record_type);
@@ -361,6 +367,7 @@ fn record_to_content(record: DnsRecord) -> Vec<Value> {
                 Value::String(value),
             ]
         }
+        DnsRecord::PTR(_) => unreachable!(),
     }
 }
 
@@ -464,6 +471,7 @@ fn parse_content(record_type: DnsRecordType, content: &[Value]) -> crate::Result
             let value = expect_string(content, 2, "CAA")?.to_string();
             build_caa(flags, &tag, &value).map(DnsRecord::CAA)
         }
+        DnsRecordType::PTR => Err(ptr_unsupported("Gcore")),
     }
 }
 

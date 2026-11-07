@@ -9,6 +9,8 @@
  * except according to those terms.
  */
 
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::{split_caa_value, validate_region};
 use std::time::Duration;
 
@@ -150,6 +152,7 @@ impl AlidnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Alibaba Cloud DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let name = name.into_name();
         let origin = origin.into_name();
@@ -193,6 +196,7 @@ impl AlidnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Alibaba Cloud DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -225,6 +229,7 @@ impl AlidnsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Alibaba Cloud DNS", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -255,6 +260,7 @@ impl AlidnsProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Alibaba Cloud DNS", record_type, &[])?;
         let name = name.into_name();
         let origin = origin.into_name();
         let zone = self.find_zone(&origin).await?;
@@ -556,6 +562,7 @@ fn record_from_listed(
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Alibaba Cloud DNS".to_string(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("Alibaba Cloud DNS")),
     }
 }
 
@@ -685,6 +692,7 @@ impl TryFrom<DnsRecord> for AlidnsRecord {
             DnsRecord::TLSA(_) => Err(Error::Unsupported(
                 "TLSA records are not supported by Alibaba Cloud DNS".to_string(),
             )),
+            DnsRecord::PTR(_) => Err(ptr_unsupported("Alibaba Cloud DNS")),
         }
     }
 }

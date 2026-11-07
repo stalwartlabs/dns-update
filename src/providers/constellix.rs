@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::unquote_txt;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
@@ -132,6 +134,7 @@ impl ConstellixProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Constellix", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let type_segment = record_type_segment(record_type)?;
         let name = name.into_name();
@@ -183,6 +186,7 @@ impl ConstellixProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Constellix", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -257,6 +261,7 @@ impl ConstellixProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Constellix", record_type, &records)?;
         if records.is_empty() {
             return Ok(());
         }
@@ -326,6 +331,7 @@ impl ConstellixProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Constellix", record_type, &[])?;
         let type_segment = record_type_segment(record_type)?;
         let name = name.into_name();
         let domain = origin.into_name();
@@ -420,6 +426,7 @@ fn record_type_segment(record_type: DnsRecordType) -> crate::Result<&'static str
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Constellix".into(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("Constellix")),
     }
 }
 
@@ -460,6 +467,7 @@ fn record_to_round_robin_entries(record: &DnsRecord) -> crate::Result<Vec<RoundR
             entry.flags = Some(flags);
             entry.tag = Some(tag);
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Constellix")),
     }
     Ok(vec![entry])
 }
@@ -551,5 +559,6 @@ fn round_robin_to_record(
         DnsRecordType::TLSA => Err(Error::Unsupported(
             "TLSA records are not supported by Constellix".into(),
         )),
+        DnsRecordType::PTR => Err(ptr_unsupported("Constellix")),
     }
 }

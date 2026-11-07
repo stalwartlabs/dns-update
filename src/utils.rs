@@ -36,6 +36,25 @@ pub(crate) fn validate_region(region: &str) -> crate::Result<()> {
     }
 }
 
+pub(crate) fn reject_ptr(
+    provider: &str,
+    record_type: DnsRecordType,
+    records: &[DnsRecord],
+) -> crate::Result<()> {
+    if record_type == DnsRecordType::PTR
+        || records
+            .iter()
+            .any(|record| matches!(record, DnsRecord::PTR(_)))
+    {
+        return Err(ptr_unsupported(provider));
+    }
+    Ok(())
+}
+
+pub(crate) fn ptr_unsupported(provider: &str) -> Error {
+    Error::Unsupported(format!("PTR records are not supported by {provider}"))
+}
+
 pub(crate) fn txt_chunks_to_text(output: &mut String, text: &str, separator: &str) {
     output.push('"');
     let mut current_bytes: usize = 0;
@@ -260,6 +279,7 @@ impl DnsRecord {
             DnsRecord::SRV { .. } => DnsRecordType::SRV,
             DnsRecord::TLSA { .. } => DnsRecordType::TLSA,
             DnsRecord::CAA { .. } => DnsRecordType::CAA,
+            DnsRecord::PTR { .. } => DnsRecordType::PTR,
         }
     }
 }
@@ -276,6 +296,7 @@ impl Display for DnsRecord {
             DnsRecord::SRV(record) => Display::fmt(record, f),
             DnsRecord::TLSA(record) => Display::fmt(record, f),
             DnsRecord::CAA(record) => Display::fmt(record, f),
+            DnsRecord::PTR(name) => f.write_str(name),
         }
     }
 }
@@ -292,6 +313,7 @@ impl DnsRecordType {
             DnsRecordType::SRV => "SRV",
             DnsRecordType::TLSA => "TLSA",
             DnsRecordType::CAA => "CAA",
+            DnsRecordType::PTR => "PTR",
         }
     }
 }

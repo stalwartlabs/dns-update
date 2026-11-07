@@ -9,6 +9,7 @@
  * except according to those terms.
  */
 
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn,
     http::{HttpClient, HttpClientBuilder},
@@ -72,6 +73,7 @@ impl PebbleProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Pebble", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let host = name.into_fqdn().into_owned();
         self.clear_record(&host, record_type).await?;
@@ -131,6 +133,7 @@ impl PebbleProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Pebble", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -188,6 +191,7 @@ impl PebbleProvider {
         records: Vec<DnsRecord>,
         _origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Pebble", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());

@@ -11,6 +11,8 @@
 
 use crate::utils::build_caa;
 use crate::utils::decode_hex;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord, TLSARecord, TlsaCertUsage,
     TlsaMatching, TlsaSelector,
@@ -83,6 +85,7 @@ impl Ns1Provider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("NS1", record_type, &records)?;
         check_record_types(record_type, &records)?;
         let zone = origin.into_name().to_string();
         let domain = name.into_name().to_string();
@@ -106,6 +109,7 @@ impl Ns1Provider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("NS1", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -147,6 +151,7 @@ impl Ns1Provider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("NS1", record_type, &records)?;
         check_record_types(record_type, &records)?;
         if records.is_empty() {
             return Ok(());
@@ -181,6 +186,7 @@ impl Ns1Provider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("NS1", record_type, &[])?;
         let zone = origin.into_name().to_string();
         let domain = name.into_name().to_string();
         let rr_type = record_type.as_str();
@@ -310,6 +316,7 @@ fn record_to_answers(record: DnsRecord) -> crate::Result<Vec<Answer>> {
             let (flags, tag, value) = caa.decompose();
             vec![flags.to_string(), tag, value]
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("NS1")),
     };
 
     if parts.is_empty() {
@@ -376,6 +383,7 @@ fn answer_to_record(record_type: DnsRecordType, answer: &Answer) -> crate::Resul
             let value = need(2)?.clone();
             DnsRecord::CAA(build_caa(flags, &tag, &value)?)
         }
+        DnsRecordType::PTR => return Err(ptr_unsupported("NS1")),
     })
 }
 

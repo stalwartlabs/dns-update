@@ -10,6 +10,8 @@
  */
 
 use crate::utils::build_caa;
+use crate::utils::ptr_unsupported;
+use crate::utils::reject_ptr;
 use crate::utils::strip_trailing_dot;
 use crate::utils::{
     decode_hex, tlsa_cert_usage_from_u8, tlsa_matching_from_u8, tlsa_selector_from_u8,
@@ -242,6 +244,7 @@ impl MythicBeastsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Mythic Beasts", record_type, &records)?;
         let name = name.into_name();
         let domain = origin.into_name();
         ensure_uniform_type(record_type, &records)?;
@@ -284,6 +287,7 @@ impl MythicBeastsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Mythic Beasts", record_type, &records)?;
         let name = name.into_name();
         let domain = origin.into_name();
         ensure_uniform_type(record_type, &records)?;
@@ -337,6 +341,7 @@ impl MythicBeastsProvider {
         records: Vec<DnsRecord>,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
+        reject_ptr("Mythic Beasts", record_type, &records)?;
         let name = name.into_name();
         let domain = origin.into_name();
         ensure_uniform_type(record_type, &records)?;
@@ -404,6 +409,7 @@ impl MythicBeastsProvider {
         record_type: DnsRecordType,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
+        reject_ptr("Mythic Beasts", record_type, &[])?;
         let name = name.into_name();
         let domain = origin.into_name();
         let token = self.ensure_token().await?;
@@ -547,6 +553,7 @@ fn build_payload(host: &str, record: DnsRecord, ttl: u32) -> crate::Result<Recor
             payload.caa_tag = Some(tag);
             payload.data = value;
         }
+        DnsRecord::PTR(_) => return Err(ptr_unsupported("Mythic Beasts")),
     }
 
     Ok(payload)
