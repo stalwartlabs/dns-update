@@ -286,6 +286,8 @@ mod tests {
                 record(3, "example.com.", "MX", 300, "mx3.example.com"),
                 record(4, "@", "MX", 300, "mx4.example.com"),
                 record(5, "mail", "MX", 300, "mx5.example.com"),
+                record(6, "Example.COM.", "MX", 300, "mx6.example.com"),
+                record(7, "mail.example.com", "MX", 300, "mx7.example.com"),
             ]),
         );
 
@@ -306,7 +308,8 @@ mod tests {
                 "mx1.example.com",
                 "mx2.example.com",
                 "mx3.example.com",
-                "mx4.example.com"
+                "mx4.example.com",
+                "mx6.example.com"
             ]
         );
     }

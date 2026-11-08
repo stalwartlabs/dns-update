@@ -14,14 +14,11 @@ use crate::{
     DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord,
     http::{HttpClient, HttpClientBuilder},
 };
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
-    hash::{BuildHasher, Hasher, RandomState},
+    hash::{BuildHasher, RandomState},
     net::{Ipv4Addr, Ipv6Addr},
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, Mutex, MutexGuard},
     time::{Duration, Instant},
 };
 
@@ -30,6 +27,11 @@ const DEFAULT_AUTH_ENDPOINT: &str =
     "https://auth.contabo.com/auth/realms/contabo/protocol/openid-connect/token";
 const PAGE_SIZE: u32 = 1000;
 const RETRIES: u32 = 3;
+const DEFAULT_TOKEN_LIFETIME_SECS: u64 = 300;
+const TOKEN_EXPIRY_MARGIN_SECS: u64 = 60;
+const MIN_TOKEN_LIFETIME_SECS: u64 = 30;
+const UUID_V4_MASK: u128 = (0xf << 76) | (0x3 << 62);
+const UUID_V4_BITS: u128 = (0x4 << 76) | (0x2 << 62);
 
 #[derive(Clone)]
 pub struct ContaboProvider {
@@ -90,8 +92,8 @@ struct Record {
 
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 struct RecordData {
-    #[serde(rename = "type")]
-    record_type: &'static str,
+    #[serde(rename = "type", serialize_with = "serialize_record_type")]
+    record_type: DnsRecordType,
     prio: u16,
     data: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -199,7 +201,7 @@ impl ContaboProvider {
         for data in desired {
             if let Some(idx) = existing.iter().position(|r| r.data == data) {
                 let record = existing.swap_remove(idx);
-                if record.ttl != ttl as u64 {
+                if record.ttl != u64::from(ttl) {
                     to_update.push((record.id, data));
                 }
             } else {
@@ -308,7 +310,7 @@ impl ContaboProvider {
                         .into_iter()
                         .filter(|r| {
                             r.record_type.eq_ignore_ascii_case(record_type.as_str())
-                                && record_fqdn(&r.name, &zone) == name
+                                && is_record_name(&r.name, &zone, name)
                         })
                         .map(|r| {
                             Ok(Existing {
@@ -441,9 +443,9 @@ impl ContaboProvider {
 
         let lifetime = response
             .expires_in
-            .unwrap_or(300)
-            .saturating_sub(60)
-            .max(30);
+            .unwrap_or(DEFAULT_TOKEN_LIFETIME_SECS)
+            .saturating_sub(TOKEN_EXPIRY_MARGIN_SECS)
+            .max(MIN_TOKEN_LIFETIME_SECS);
         *self.token_lock()? = Some((
             response.access_token.clone(),
             Instant::now() + Duration::from_secs(lifetime),
@@ -451,7 +453,7 @@ impl ContaboProvider {
         Ok(response.access_token)
     }
 
-    fn token_lock(&self) -> crate::Result<std::sync::MutexGuard<'_, Option<(String, Instant)>>> {
+    fn token_lock(&self) -> crate::Result<MutexGuard<'_, Option<(String, Instant)>>> {
         self.token
             .lock()
             .map_err(|_| Error::Client("Contabo token cache lock poisoned".to_string()))
@@ -460,12 +462,23 @@ impl ContaboProvider {
 
 fn check_supported(record_type: DnsRecordType) -> crate::Result<()> {
     match record_type {
-        DnsRecordType::TLSA | DnsRecordType::NS => Err(Error::Unsupported(format!(
-            "{} records are not supported by Contabo",
-            record_type.as_str()
-        ))),
+        DnsRecordType::TLSA | DnsRecordType::NS => Err(unsupported(record_type)),
         _ => Ok(()),
     }
+}
+
+fn unsupported(record_type: DnsRecordType) -> Error {
+    Error::Unsupported(format!(
+        "{} records are not supported by Contabo",
+        record_type.as_str()
+    ))
+}
+
+fn serialize_record_type<S: Serializer>(
+    record_type: &DnsRecordType,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(record_type.as_str())
 }
 
 fn build_record_data(
@@ -498,15 +511,27 @@ fn normalize(name: &str) -> String {
     name.trim().trim_end_matches('.').to_ascii_lowercase()
 }
 
-fn record_fqdn(name: &str, zone: &str) -> String {
-    let name = normalize(name);
-    if name.is_empty() || name == "@" {
-        zone.to_string()
-    } else if name == zone || name.ends_with(&format!(".{zone}")) {
-        name
-    } else {
-        format!("{name}.{zone}")
+fn is_record_name(record_name: &str, zone: &str, name: &str) -> bool {
+    let record_name = record_name.trim().trim_end_matches('.');
+    if record_name.is_empty() || record_name == "@" {
+        return name == zone;
     }
+    let is_fqdn = record_name.eq_ignore_ascii_case(zone)
+        || strip_suffix_ignore_case(record_name, zone)
+            .and_then(|prefix| prefix.strip_suffix('.'))
+            .is_some_and(|prefix| !prefix.is_empty());
+    if is_fqdn {
+        record_name.eq_ignore_ascii_case(name)
+    } else {
+        name.strip_suffix(zone)
+            .and_then(|prefix| prefix.strip_suffix('.'))
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(record_name))
+    }
+}
+
+fn strip_suffix_ignore_case<'a>(value: &'a str, suffix: &str) -> Option<&'a str> {
+    let (prefix, tail) = value.split_at_checked(value.len().checked_sub(suffix.len())?)?;
+    tail.eq_ignore_ascii_case(suffix).then_some(prefix)
 }
 
 fn record_name(name: &str, zone: &str) -> String {
@@ -514,25 +539,16 @@ fn record_name(name: &str, zone: &str) -> String {
 }
 
 fn request_id() -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let state = RandomState::new();
-    let mut bytes = [0u8; 16];
-    for (idx, chunk) in bytes.chunks_mut(8).enumerate() {
-        let mut hasher = state.build_hasher();
-        hasher.write_u64(COUNTER.fetch_add(1, Ordering::Relaxed));
-        hasher.write_usize(idx);
-        chunk.copy_from_slice(&hasher.finish().to_le_bytes());
-    }
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let hex = hex::encode(bytes);
+    let random = (u128::from(state.hash_one(0u8)) << 64) | u128::from(state.hash_one(1u8));
+    let uuid = (random & !UUID_V4_MASK) | UUID_V4_BITS;
     format!(
-        "{}-{}-{}-{}-{}",
-        &hex[0..8],
-        &hex[8..12],
-        &hex[12..16],
-        &hex[16..20],
-        &hex[20..32]
+        "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+        uuid >> 96,
+        (uuid >> 80) & 0xffff,
+        (uuid >> 64) & 0xffff,
+        (uuid >> 48) & 0xffff,
+        uuid & 0xffff_ffff_ffff
     )
 }
 
@@ -553,7 +569,7 @@ fn to_u16(value: u64, field: &str) -> crate::Result<u16> {
 }
 
 impl RecordData {
-    fn new(record_type: &'static str, prio: u16, data: String) -> Self {
+    fn new(record_type: DnsRecordType, prio: u16, data: String) -> Self {
         Self {
             record_type,
             prio,
@@ -566,17 +582,18 @@ impl RecordData {
     }
 
     fn from_record(record_type: DnsRecordType, record: Record) -> crate::Result<Self> {
-        let record_type = record_type.as_str();
         Ok(match record_type {
-            "A" | "AAAA" => Self::new(record_type, 0, record.data.trim().to_string()),
-            "CNAME" => Self::new(record_type, 0, strip_dot(&record.data)),
-            "MX" => Self::new(
+            DnsRecordType::A | DnsRecordType::AAAA => {
+                Self::new(record_type, 0, record.data.trim().to_string())
+            }
+            DnsRecordType::CNAME => Self::new(record_type, 0, strip_dot(&record.data)),
+            DnsRecordType::MX => Self::new(
                 record_type,
                 to_u16(record.prio, "MX priority")?,
                 strip_dot(&record.data),
             ),
-            "TXT" => Self::new(record_type, 0, unquote(&record.data)),
-            "SRV" => Self {
+            DnsRecordType::TXT => Self::new(record_type, 0, unquote(&record.data)),
+            DnsRecordType::SRV => Self {
                 port: Some(to_u16(record.port, "SRV port")?),
                 weight: Some(to_u16(record.weight, "SRV weight")?),
                 ..Self::new(
@@ -585,18 +602,14 @@ impl RecordData {
                     strip_dot(&record.data),
                 )
             },
-            "CAA" => Self {
+            DnsRecordType::CAA => Self {
                 flag: Some(u8::try_from(record.flag).map_err(|_| {
                     Error::Parse(format!("Contabo CAA flag out of range: {}", record.flag))
                 })?),
                 tag: Some(record.tag.to_ascii_lowercase()),
                 ..Self::new(record_type, 0, unquote(&record.data))
             },
-            other => {
-                return Err(Error::Unsupported(format!(
-                    "{other} records are not supported by Contabo"
-                )));
-            }
+            DnsRecordType::NS | DnsRecordType::TLSA => return Err(unsupported(record_type)),
         })
     }
 }
@@ -606,30 +619,25 @@ impl TryFrom<DnsRecord> for RecordData {
 
     fn try_from(record: DnsRecord) -> crate::Result<Self> {
         Ok(match record {
-            DnsRecord::A(addr) => Self::new("A", 0, addr.to_string()),
-            DnsRecord::AAAA(addr) => Self::new("AAAA", 0, addr.to_string()),
-            DnsRecord::CNAME(target) => Self::new("CNAME", 0, strip_dot(&target)),
-            DnsRecord::MX(mx) => Self::new("MX", mx.priority, strip_dot(&mx.exchange)),
-            DnsRecord::TXT(text) => Self::new("TXT", 0, text),
+            DnsRecord::A(addr) => Self::new(DnsRecordType::A, 0, addr.to_string()),
+            DnsRecord::AAAA(addr) => Self::new(DnsRecordType::AAAA, 0, addr.to_string()),
+            DnsRecord::CNAME(target) => Self::new(DnsRecordType::CNAME, 0, strip_dot(&target)),
+            DnsRecord::MX(mx) => Self::new(DnsRecordType::MX, mx.priority, strip_dot(&mx.exchange)),
+            DnsRecord::TXT(text) => Self::new(DnsRecordType::TXT, 0, text),
             DnsRecord::SRV(srv) => Self {
                 port: Some(srv.port),
                 weight: Some(srv.weight),
-                ..Self::new("SRV", srv.priority, strip_dot(&srv.target))
+                ..Self::new(DnsRecordType::SRV, srv.priority, strip_dot(&srv.target))
             },
             DnsRecord::CAA(caa) => {
                 let (flag, tag, value) = caa.decompose();
                 Self {
                     flag: Some(flag),
                     tag: Some(tag.to_ascii_lowercase()),
-                    ..Self::new("CAA", 0, value)
+                    ..Self::new(DnsRecordType::CAA, 0, value)
                 }
             }
-            DnsRecord::NS(_) | DnsRecord::TLSA(_) => {
-                return Err(Error::Unsupported(format!(
-                    "{} records are not supported by Contabo",
-                    record.as_type().as_str()
-                )));
-            }
+            DnsRecord::NS(_) | DnsRecord::TLSA(_) => return Err(unsupported(record.as_type())),
         })
     }
 }
@@ -639,35 +647,35 @@ impl TryFrom<RecordData> for DnsRecord {
 
     fn try_from(data: RecordData) -> crate::Result<Self> {
         Ok(match data.record_type {
-            "A" => {
+            DnsRecordType::A => {
                 DnsRecord::A(data.data.parse::<Ipv4Addr>().map_err(|err| {
                     Error::Parse(format!("Invalid A record {}: {err}", data.data))
                 })?)
             }
-            "AAAA" => DnsRecord::AAAA(data.data.parse::<Ipv6Addr>().map_err(|err| {
-                Error::Parse(format!("Invalid AAAA record {}: {err}", data.data))
-            })?),
-            "CNAME" => DnsRecord::CNAME(data.data),
-            "MX" => DnsRecord::MX(MXRecord {
+            DnsRecordType::AAAA => {
+                DnsRecord::AAAA(data.data.parse::<Ipv6Addr>().map_err(|err| {
+                    Error::Parse(format!("Invalid AAAA record {}: {err}", data.data))
+                })?)
+            }
+            DnsRecordType::CNAME => DnsRecord::CNAME(data.data),
+            DnsRecordType::MX => DnsRecord::MX(MXRecord {
                 exchange: data.data,
                 priority: data.prio,
             }),
-            "TXT" => DnsRecord::TXT(data.data),
-            "SRV" => DnsRecord::SRV(SRVRecord {
+            DnsRecordType::TXT => DnsRecord::TXT(data.data),
+            DnsRecordType::SRV => DnsRecord::SRV(SRVRecord {
                 target: data.data,
                 priority: data.prio,
                 weight: data.weight.unwrap_or_default(),
                 port: data.port.unwrap_or_default(),
             }),
-            "CAA" => DnsRecord::CAA(build_caa(
+            DnsRecordType::CAA => DnsRecord::CAA(build_caa(
                 data.flag.unwrap_or_default(),
                 data.tag.as_deref().unwrap_or_default(),
                 &data.data,
             )?),
-            other => {
-                return Err(Error::Unsupported(format!(
-                    "{other} records are not supported by Contabo"
-                )));
+            DnsRecordType::NS | DnsRecordType::TLSA => {
+                return Err(unsupported(data.record_type));
             }
         })
     }
