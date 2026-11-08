@@ -39,10 +39,11 @@ use providers::{
     ipv64::Ipv64Provider, joker::JokerProvider, linode::LinodeProvider, luadns::LuaDnsProvider,
     mythicbeasts::MythicBeastsProvider, namecheap::NamecheapProvider,
     namedotcom::NameDotComProvider, namesilo::NameSiloProvider, netcup::NetcupProvider,
-    netlify::NetlifyProvider, nifcloud::NifcloudProvider, ns1::Ns1Provider, pdns::PdnsProvider,
-    porkbun::PorkBunProvider, rfc2136::Rfc2136Provider, route53::Route53Provider,
-    scaleway::ScalewayProvider, spaceship::SpaceshipProvider, tencentcloud::TencentCloudProvider,
-    vercel::VercelProvider, vultr::VultrProvider, websupport::WebSupportProvider,
+    netcup_rest::NetcupRestProvider, netlify::NetlifyProvider, nifcloud::NifcloudProvider,
+    ns1::Ns1Provider, pdns::PdnsProvider, porkbun::PorkBunProvider, rfc2136::Rfc2136Provider,
+    route53::Route53Provider, scaleway::ScalewayProvider, spaceship::SpaceshipProvider,
+    tencentcloud::TencentCloudProvider, vercel::VercelProvider, vultr::VultrProvider,
+    websupport::WebSupportProvider,
 };
 
 use providers::{
@@ -258,6 +259,7 @@ pub enum DnsUpdater {
     HostingDe(HostingDeProvider),
     Infomaniak(InfomaniakProvider),
     Netcup(NetcupProvider),
+    NetcupRest(NetcupRestProvider),
     Netlify(NetlifyProvider),
     HuaweiCloud(HuaweiCloudProvider),
     BaiduCloud(BaiduCloudProvider),

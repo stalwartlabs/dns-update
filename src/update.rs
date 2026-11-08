@@ -78,6 +78,7 @@ use crate::{
         namedotcom::NameDotComProvider,
         namesilo::NameSiloProvider,
         netcup::NetcupProvider,
+        netcup_rest::NetcupRestProvider,
         netlify::NetlifyProvider,
         nifcloud::NifcloudProvider,
         ns1::Ns1Provider,
@@ -532,6 +533,16 @@ impl DnsUpdater {
             api_key,
             api_password,
             timeout,
+        )))
+    }
+
+    /// Create a new DNS updater using the netcup REST API, authenticated by API key alone.
+    pub fn new_netcup_rest(
+        api_key: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::NetcupRest(NetcupRestProvider::new(
+            api_key, timeout,
         )))
     }
 
@@ -1108,6 +1119,11 @@ impl DnsUpdater {
                     .set_rrset(name, record_type, ttl, records, origin)
                     .await
             }
+            DnsUpdater::NetcupRest(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
             DnsUpdater::Netlify(provider) => {
                 provider
                     .set_rrset(name, record_type, ttl, records, origin)
@@ -1504,6 +1520,11 @@ impl DnsUpdater {
                     .await
             }
             DnsUpdater::Netcup(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::NetcupRest(provider) => {
                 provider
                     .add_to_rrset(name, record_type, ttl, records, origin)
                     .await
@@ -1907,6 +1928,11 @@ impl DnsUpdater {
                     .remove_from_rrset(name, record_type, records, origin)
                     .await
             }
+            DnsUpdater::NetcupRest(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
             DnsUpdater::Netlify(provider) => {
                 provider
                     .remove_from_rrset(name, record_type, records, origin)
@@ -2151,6 +2177,9 @@ impl DnsUpdater {
             DnsUpdater::Ns1(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::LuaDns(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Netcup(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::NetcupRest(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
             DnsUpdater::Netlify(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Inwx(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Alidns(provider) => provider.list_rrset(name, record_type, origin).await,

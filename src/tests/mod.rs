@@ -62,6 +62,7 @@ pub mod mythicbeasts_tests;
 pub mod namecheap_tests;
 pub mod namedotcom_tests;
 pub mod namesilo_tests;
+pub mod netcup_rest_tests;
 pub mod netcup_tests;
 pub mod netlify_tests;
 pub mod nifcloud_tests;

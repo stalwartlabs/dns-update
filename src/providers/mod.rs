@@ -63,6 +63,7 @@ pub mod namecheap;
 pub mod namedotcom;
 pub mod namesilo;
 pub mod netcup;
+pub mod netcup_rest;
 pub mod netlify;
 pub mod nifcloud;
 pub mod ns1;

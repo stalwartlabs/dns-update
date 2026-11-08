@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Added
 - Contabo DNS support.
+- netcup REST API (API key only, CloudDNS domains) support via `new_netcup_rest`.
 
 ## [0.6.1] - 2026-11-01
 

@@ -61,7 +61,8 @@ and over 70 cloud, registrar, and self-hosted DNS provider APIs. It was designed
 | [Namecheap](https://www.namecheap.com/) | `new_namecheap` | XML API |
 | [Name.com](https://www.name.com/) | `new_namedotcom` | |
 | [NameSilo](https://www.namesilo.com/) | `new_namesilo` | XML API |
-| [netcup](https://www.netcup.com/) | `new_netcup` | JSON-RPC, session cache |
+| [netcup](https://www.netcup.com/) (CCP API) | `new_netcup` | JSON-RPC, session cache; domains not yet on CloudDNS |
+| [netcup](https://www.netcup.com/) (REST API) | `new_netcup_rest` | Bearer API key; CloudDNS domains, revision changesets |
 | [Netlify](https://www.netlify.com/) | `new_netlify` | |
 | [Nifcloud](https://pfs.nifcloud.com/) | `new_nifcloud` | NIFTY3-HTTPS |
 | [NS1](https://ns1.com/) | `new_ns1` | |
