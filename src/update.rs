@@ -39,6 +39,7 @@ use crate::{
         cloudflare::CloudflareProvider,
         cloudns::ClouDnsProvider,
         constellix::ConstellixProvider,
+        contabo::ContaboProvider,
         cpanel::CpanelProvider,
         ddnss::DdnssProvider,
         desec::DesecProvider,
@@ -154,6 +155,24 @@ impl DnsUpdater {
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::Constellix(ConstellixProvider::new(
             api_key, secret_key, timeout,
+        )?))
+    }
+
+    /// Create a new DNS updater using the Contabo DNS API, authenticating with the
+    /// OAuth2 client and the API user of the Contabo account.
+    pub fn new_contabo(
+        client_id: impl AsRef<str>,
+        client_secret: impl AsRef<str>,
+        api_user: impl AsRef<str>,
+        api_password: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::Contabo(ContaboProvider::new(
+            client_id,
+            client_secret,
+            api_user,
+            api_password,
+            timeout,
         )?))
     }
 
@@ -892,6 +911,11 @@ impl DnsUpdater {
                     .set_rrset(name, record_type, ttl, records, origin)
                     .await
             }
+            DnsUpdater::Contabo(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
             DnsUpdater::DnsMadeEasy(provider) => {
                 provider
                     .set_rrset(name, record_type, ttl, records, origin)
@@ -1283,6 +1307,11 @@ impl DnsUpdater {
                     .await
             }
             DnsUpdater::Constellix(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Contabo(provider) => {
                 provider
                     .add_to_rrset(name, record_type, ttl, records, origin)
                     .await
@@ -1681,6 +1710,11 @@ impl DnsUpdater {
                     .remove_from_rrset(name, record_type, records, origin)
                     .await
             }
+            DnsUpdater::Contabo(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
             DnsUpdater::DnsMadeEasy(provider) => {
                 provider
                     .remove_from_rrset(name, record_type, records, origin)
@@ -2060,6 +2094,7 @@ impl DnsUpdater {
             DnsUpdater::Constellix(provider) => {
                 provider.list_rrset(name, record_type, origin).await
             }
+            DnsUpdater::Contabo(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::DnsMadeEasy(provider) => {
                 provider.list_rrset(name, record_type, origin).await
             }

@@ -21,6 +21,7 @@ pub mod bunny;
 pub mod cloudflare;
 pub mod cloudns;
 pub mod constellix;
+pub mod contabo;
 pub mod cpanel;
 pub mod ddnss;
 pub mod desec;

@@ -22,6 +22,7 @@ and over 70 cloud, registrar, and self-hosted DNS provider APIs. It was designed
 | [Cloudflare](https://www.cloudflare.com/) | `new_cloudflare` | API token or X-Auth-* |
 | [ClouDNS](https://www.cloudns.net/) | `new_cloudns` | |
 | [Constellix](https://constellix.com/) | `new_constellix` | HMAC-SHA1 |
+| [Contabo](https://contabo.com/) | `new_contabo` | OAuth2 password grant; no TLSA or NS |
 | [cPanel](https://cpanel.net/) | `new_cpanel` | UAPI, API token |
 | [DDNSS.de](https://ddnss.de/) | `new_ddnss` | TXT only |
 | [deSEC](https://desec.io/) | `new_desec` | |

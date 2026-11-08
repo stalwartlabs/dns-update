@@ -19,6 +19,7 @@ pub mod bunny_test;
 pub mod cloudflare_tests;
 pub mod cloudns_tests;
 pub mod constellix_tests;
+pub mod contabo_tests;
 pub mod cpanel_tests;
 pub mod ddnss_tests;
 pub mod desec_tests;
