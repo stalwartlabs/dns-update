@@ -79,6 +79,25 @@ pub fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
     unimplemented!();
 }
 
+pub fn fill_random(buf: &mut [u8]) -> crate::Result<()> {
+    #[cfg(feature = "aws-lc-rs")]
+    {
+        aws_lc_rs::rand::fill(buf)
+            .map_err(|_| crate::Error::Client("failed to generate random bytes".to_string()))
+    }
+
+    #[cfg(all(feature = "ring", not(feature = "aws-lc-rs")))]
+    {
+        use ring::rand::SecureRandom;
+        ring::rand::SystemRandom::new()
+            .fill(buf)
+            .map_err(|_| crate::Error::Client("failed to generate random bytes".to_string()))
+    }
+
+    #[cfg(not(any(feature = "aws-lc-rs", feature = "ring")))]
+    unimplemented!();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

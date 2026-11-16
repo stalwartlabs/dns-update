@@ -628,4 +628,104 @@ mod tests {
         mock.assert_async().await;
         no_other_calls.assert_async().await;
     }
+
+    // EdgeGrid signatures match the Akamai reference test vectors (PUT bodies are not hashed)
+    #[test]
+    fn authorization_matches_edgegrid_test_vectors() {
+        let provider = EdgeDnsProvider::new(EdgeDnsConfig {
+            host: "https://akaa-baseurl-xxxxxxxxxxx-xxxxxxxxxxxxx.luna.akamaiapis.net/".to_string(),
+            client_token: "akab-client-token-xxx-xxxxxxxxxxxxxxxx".to_string(),
+            client_secret: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx=".to_string(),
+            access_token: "akab-access-token-xxx-xxxxxxxxxxxxxxxx".to_string(),
+            account_switch_key: None,
+            request_timeout: None,
+        })
+        .unwrap();
+        let prefix = "EG1-HMAC-SHA256 client_token=akab-client-token-xxx-xxxxxxxxxxxxxxxx;access_token=akab-access-token-xxx-xxxxxxxxxxxxxxxx;timestamp=20140321T19:34:21+0000;nonce=nonce-xx-xxxx-xxxx-xxxx-xxxxxxxxxxxx;signature=";
+        for (method, path, body, signature) in [
+            (
+                "GET",
+                "/",
+                None,
+                "tL+y4hxyHxgWVD30X3pWnGKHcPzmrIF+LThiAOhMxYU=",
+            ),
+            (
+                "GET",
+                "/testapi/v1/t1?p1=1&p2=2",
+                None,
+                "hKDH1UlnQySSHjvIcZpDMbQHihTQ0XyVAKZaApabdeA=",
+            ),
+            (
+                "POST",
+                "/testapi/v1/t3",
+                Some("datadatadatadatadatadatadatadata"),
+                "hXm4iCxtpN22m4cbZb4lVLW5rhX8Ca82vCFqXzSTPe4=",
+            ),
+            (
+                "POST",
+                "/testapi/v1/t6",
+                Some(""),
+                "1gEDxeQGD5GovIkJJGcBaKnZ+VaPtrc4qBUHixjsPCQ=",
+            ),
+            (
+                "PUT",
+                "/testapi/v1/t6",
+                Some("PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP"),
+                "GNBWEYSEWOLtu+7dD52da2C39aX/Jchpon3K/AmBqBU=",
+            ),
+        ] {
+            let url =
+                format!("https://akaa-baseurl-xxxxxxxxxxx-xxxxxxxxxxxxx.luna.akamaiapis.net{path}")
+                    .parse()
+                    .unwrap();
+            assert_eq!(
+                provider.authorization(
+                    method,
+                    &url,
+                    body,
+                    "20140321T19:34:21+0000",
+                    "nonce-xx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                ),
+                format!("{prefix}{signature}"),
+                "{method} {path}"
+            );
+        }
+    }
+
+    // The account switch key is sent as a query parameter, not as a header
+    #[tokio::test]
+    async fn account_switch_key_is_sent_as_query_parameter() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock(
+                "GET",
+                "/config-dns/v2/zones/example.com/names/www.example.com/types/A",
+            )
+            .match_query(Matcher::UrlEncoded(
+                "accountSwitchKey".to_string(),
+                "1-ABCD:1-2345".to_string(),
+            ))
+            .match_header("x-accountswitchkey", Matcher::Missing)
+            .with_status(200)
+            .with_body(r#"{"name":"www.example.com","type":"A","ttl":300,"rdata":["1.2.3.4"]}"#)
+            .create_async()
+            .await;
+
+        let provider = EdgeDnsProvider::new(EdgeDnsConfig {
+            host: "edgedns.akamaiapis.net".to_string(),
+            client_token: "ct".to_string(),
+            client_secret: "cs".to_string(),
+            access_token: "at".to_string(),
+            account_switch_key: Some("1-ABCD:1-2345".to_string()),
+            request_timeout: Some(Duration::from_secs(5)),
+        })
+        .unwrap()
+        .with_endpoint(server.url());
+        let records = provider
+            .list_rrset("www.example.com", DnsRecordType::A, "example.com")
+            .await
+            .unwrap();
+        assert_eq!(records, vec![DnsRecord::A("1.2.3.4".parse().unwrap())]);
+        mock.assert_async().await;
+    }
 }

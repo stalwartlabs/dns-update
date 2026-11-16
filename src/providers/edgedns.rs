@@ -9,7 +9,7 @@
  * except according to those terms.
  */
 
-use crate::crypto::{hmac_sha256, sha256_digest};
+use crate::crypto::{fill_random, hmac_sha256, sha256_digest};
 use crate::http::{HttpClient, HttpClientBuilder};
 use crate::utils::split_caa_value;
 use crate::utils::strip_trailing_dot;
@@ -296,66 +296,17 @@ impl EdgeDnsProvider {
     }
 
     async fn send(&self, method: &str, url: &str, body: Option<&str>) -> Result<String> {
-        let parsed = url
+        let mut url = url
             .parse::<reqwest::Url>()
             .map_err(|e| Error::Client(format!("edgedns url parse: {e}")))?;
-        let path_query = match parsed.query() {
-            Some(q) => format!("{}?{}", parsed.path(), q),
-            None => parsed.path().to_string(),
-        };
-        let host = match parsed.port() {
-            Some(p) => format!("{}:{}", parsed.host_str().unwrap_or(""), p),
-            None => parsed.host_str().unwrap_or("").to_string(),
-        };
-        let scheme = parsed.scheme().to_string();
+        if let Some(asw) = &self.account_switch_key {
+            url.query_pairs_mut().append_pair("accountSwitchKey", asw);
+        }
         let timestamp = Timestamp::now()
             .strftime("%Y%m%dT%H:%M:%S+0000")
             .to_string();
-        let nonce = generate_nonce();
-
-        let body_for_hash = if matches!(method, "POST" | "PUT") {
-            body.unwrap_or("").as_bytes()
-        } else {
-            &[][..]
-        };
-        let content_hash = if body_for_hash.is_empty() {
-            String::new()
-        } else {
-            let truncated = if body_for_hash.len() > self.max_body {
-                &body_for_hash[..self.max_body]
-            } else {
-                body_for_hash
-            };
-            BASE64_STANDARD.encode(sha256_digest(truncated))
-        };
-
-        let auth_without_signature = format!(
-            "EG1-HMAC-SHA256 client_token={};access_token={};timestamp={};nonce={};",
-            self.client_token, self.access_token, timestamp, nonce
-        );
-
-        let canonical_headers = String::new();
-        let data_to_sign = format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            method.to_ascii_uppercase(),
-            scheme,
-            host,
-            path_query,
-            canonical_headers,
-            content_hash,
-            auth_without_signature
-        );
-
-        let signing_key = BASE64_STANDARD.encode(hmac_sha256(
-            self.client_secret.as_bytes(),
-            timestamp.as_bytes(),
-        ));
-        let mut authorization = auth_without_signature;
-        authorization.push_str("signature=");
-        BASE64_STANDARD.encode_append(
-            hmac_sha256(signing_key.as_bytes(), data_to_sign.as_bytes()),
-            &mut authorization,
-        );
+        let nonce = generate_nonce()?;
+        let authorization = self.authorization(method, &url, body, &timestamp, &nonce);
 
         let mut request = match method {
             "GET" => self.client.get(url),
@@ -371,9 +322,6 @@ impl EdgeDnsProvider {
         request = request
             .with_header("Authorization", authorization)
             .with_header("Accept", "application/json");
-        if let Some(asw) = &self.account_switch_key {
-            request = request.with_header("X-AccountSwitchKey", asw);
-        }
         if let Some(body) = body {
             request = request
                 .set_header("Content-Type", "application/json")
@@ -381,6 +329,57 @@ impl EdgeDnsProvider {
         }
 
         request.send_raw().await
+    }
+
+    pub(crate) fn authorization(
+        &self,
+        method: &str,
+        url: &reqwest::Url,
+        body: Option<&str>,
+        timestamp: &str,
+        nonce: &str,
+    ) -> String {
+        let path_query = match url.query() {
+            Some(q) => format!("{}?{}", url.path(), q),
+            None => url.path().to_string(),
+        };
+        let host = match url.port() {
+            Some(p) => format!("{}:{}", url.host_str().unwrap_or(""), p),
+            None => url.host_str().unwrap_or("").to_string(),
+        };
+        let content_hash = match body {
+            Some(body) if method == "POST" && !body.is_empty() => {
+                let body = body.as_bytes();
+                BASE64_STANDARD.encode(sha256_digest(body.get(..self.max_body).unwrap_or(body)))
+            }
+            _ => String::new(),
+        };
+
+        let auth_without_signature = format!(
+            "EG1-HMAC-SHA256 client_token={};access_token={};timestamp={};nonce={};",
+            self.client_token, self.access_token, timestamp, nonce
+        );
+        let data_to_sign = format!(
+            "{}\t{}\t{}\t{}\t\t{}\t{}",
+            method.to_ascii_uppercase(),
+            url.scheme(),
+            host,
+            path_query,
+            content_hash,
+            auth_without_signature
+        );
+
+        let signing_key = BASE64_STANDARD.encode(hmac_sha256(
+            self.client_secret.as_bytes(),
+            timestamp.as_bytes(),
+        ));
+        let mut authorization = auth_without_signature;
+        authorization.push_str("signature=");
+        BASE64_STANDARD.encode_append(
+            hmac_sha256(signing_key.as_bytes(), data_to_sign.as_bytes()),
+            &mut authorization,
+        );
+        authorization
     }
 }
 
@@ -408,23 +407,10 @@ fn url_encode(value: &str) -> String {
     out
 }
 
-fn generate_nonce() -> String {
-    let nanos = Timestamp::now().as_nanosecond();
-    let mut buf = [0u8; 16];
-    let bytes = (nanos as u128).to_le_bytes();
-    buf.copy_from_slice(&bytes);
-    format!(
-        "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
-        u32::from_le_bytes(buf[0..4].try_into().unwrap()),
-        u16::from_le_bytes(buf[4..6].try_into().unwrap()),
-        u16::from_le_bytes(buf[6..8].try_into().unwrap()),
-        u16::from_le_bytes(buf[8..10].try_into().unwrap()),
-        {
-            let mut full = [0u8; 8];
-            full[2..8].copy_from_slice(&buf[10..16]);
-            u64::from_be_bytes(full)
-        }
-    )
+fn generate_nonce() -> Result<String> {
+    let mut nonce = [0u8; 16];
+    fill_random(&mut nonce)?;
+    Ok(hex::encode(nonce))
 }
 
 fn edgedns_record_type(record_type: DnsRecordType) -> Result<&'static str> {
