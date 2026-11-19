@@ -93,6 +93,7 @@ pub mod vercel_tests;
 pub mod volcengine_tests;
 pub mod vultr_tests;
 pub mod websupport_tests;
+pub mod world4you_tests;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod yandexcloud_tests;
 pub mod zoneeu_tests;

@@ -84,6 +84,7 @@ and over 70 cloud, registrar, and self-hosted DNS provider APIs. It was designed
 | [Volcano Engine](https://www.volcengine.com/) | `new_volcengine` | HMAC-SHA256 |
 | [Vultr](https://www.vultr.com/) | `new_vultr` | |
 | [Websupport](https://www.websupport.sk/) | `new_websupport` | HMAC-SHA1 |
+| [World4You](https://www.world4you.com/) | `new_world4you` | TTL fixed at 3600s; NS writes unsupported; TXT sent raw |
 | [Yandex Cloud DNS](https://cloud.yandex.com/services/dns) | `new_yandexcloud` | PS256 JWT |
 | [Zone.eu](https://www.zone.eu/) | `new_zoneeu` | ZoneID API |
 

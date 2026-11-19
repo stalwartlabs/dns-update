@@ -172,6 +172,21 @@ impl HttpRequest {
     }
 
     pub async fn send_raw_with_headers(self) -> crate::Result<(String, HeaderMap<HeaderValue>)> {
+        self.send_raw_inner(false)
+            .await
+            .map(|(_, body, headers)| (body, headers))
+    }
+
+    pub async fn send_raw_with_status(
+        self,
+    ) -> crate::Result<(u16, String, HeaderMap<HeaderValue>)> {
+        self.send_raw_inner(true).await
+    }
+
+    async fn send_raw_inner(
+        self,
+        allow_redirect: bool,
+    ) -> crate::Result<(u16, String, HeaderMap<HeaderValue>)> {
         let mut request = self
             .client
             .request(self.method, &self.url)
@@ -189,11 +204,18 @@ impl HttpRequest {
         let code = response.status().as_u16();
         let headers = response.headers().clone();
         match code {
-            204 => Ok((String::new(), headers)),
+            204 => Ok((code, String::new(), headers)),
             200..=299 => response
                 .text()
                 .await
-                .map(|body| (body, headers))
+                .map(|body| (code, body, headers))
+                .map_err(|err| {
+                    Error::Api(format!("Failed to read response from {}: {err}", self.url))
+                }),
+            300..=399 if allow_redirect => response
+                .text()
+                .await
+                .map(|body| (code, body, headers))
                 .map_err(|err| {
                     Error::Api(format!("Failed to read response from {}: {err}", self.url))
                 }),

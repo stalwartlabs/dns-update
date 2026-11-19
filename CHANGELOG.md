@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. This projec
 
 ## [0.6.3] - Unreleased
 
+### Added
+- World4You support via `new_world4you`.
+- `HttpRequest::send_raw_with_status`, which exposes redirect responses instead of failing on them.
+
 ### Fixed
 - Akamai EdgeDNS: sign PUT requests without a content hash, as EdgeGrid only hashes POST bodies; record updates were rejected with HTTP 401. The account switch key is now sent as the `accountSwitchKey` query parameter, and the nonce is random.
 

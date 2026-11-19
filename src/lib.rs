@@ -43,7 +43,7 @@ use providers::{
     ns1::Ns1Provider, pdns::PdnsProvider, porkbun::PorkBunProvider, rfc2136::Rfc2136Provider,
     route53::Route53Provider, scaleway::ScalewayProvider, spaceship::SpaceshipProvider,
     tencentcloud::TencentCloudProvider, vercel::VercelProvider, vultr::VultrProvider,
-    websupport::WebSupportProvider,
+    websupport::WebSupportProvider, world4you::World4YouProvider,
 };
 
 use providers::{
@@ -306,6 +306,7 @@ pub enum DnsUpdater {
     UltraDns(UltraDnsProvider),
     Infoblox(InfobloxProvider),
     ZoneEu(ZoneEuProvider),
+    World4You(World4YouProvider),
 }
 
 pub trait IntoFqdn<'x> {

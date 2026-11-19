@@ -91,6 +91,7 @@ pub mod vercel;
 pub mod volcengine;
 pub mod vultr;
 pub mod websupport;
+pub mod world4you;
 #[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
 pub mod yandexcloud;
 pub mod zoneeu;
