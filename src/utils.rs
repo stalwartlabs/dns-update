@@ -508,6 +508,33 @@ pub(crate) fn tlsa_matching_from_u8(value: u8) -> crate::Result<TlsaMatching> {
     })
 }
 
+pub(crate) fn tlsa_cert_usage_to_u8(value: TlsaCertUsage) -> u8 {
+    match value {
+        TlsaCertUsage::PkixTa => 0,
+        TlsaCertUsage::PkixEe => 1,
+        TlsaCertUsage::DaneTa => 2,
+        TlsaCertUsage::DaneEe => 3,
+        TlsaCertUsage::Private => 255,
+    }
+}
+
+pub(crate) fn tlsa_selector_to_u8(value: TlsaSelector) -> u8 {
+    match value {
+        TlsaSelector::Full => 0,
+        TlsaSelector::Spki => 1,
+        TlsaSelector::Private => 255,
+    }
+}
+
+pub(crate) fn tlsa_matching_to_u8(value: TlsaMatching) -> u8 {
+    match value {
+        TlsaMatching::Raw => 0,
+        TlsaMatching::Sha256 => 1,
+        TlsaMatching::Sha512 => 2,
+        TlsaMatching::Private => 255,
+    }
+}
+
 pub(crate) fn decode_hex(hex: &str) -> crate::Result<Vec<u8>> {
     hex::decode(hex).map_err(|e| Error::Parse(format!("invalid hex string: {e}")))
 }

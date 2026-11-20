@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file. This projec
 
 ## [0.6.3] - Unreleased
 
+### Added
+- Regfish DNS support via `new_regfish` (A, AAAA, CNAME, MX, TXT, CAA, SRV and TLSA records; no NS).
+
 ### Fixed
 - Akamai EdgeDNS: sign PUT requests without a content hash, as EdgeGrid only hashes POST bodies; record updates were rejected with HTTP 401. The account switch key is now sent as the `accountSwitchKey` query parameter, and the nonce is random.
 

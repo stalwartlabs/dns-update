@@ -85,6 +85,7 @@ use crate::{
         pdns::PdnsProvider,
         plesk::PleskProvider,
         porkbun::PorkBunProvider,
+        regfish::RegfishProvider,
         rfc2136::{DnsAddress, Rfc2136Provider},
         route53::Route53Provider,
         safedns::SafeDnsProvider,
@@ -118,6 +119,11 @@ impl DnsUpdater {
             key,
             algorithm.into(),
         )?))
+    }
+
+    /// Create a new DNS updater using the Regfish DNS API.
+    pub fn new_regfish(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
+        Ok(DnsUpdater::Regfish(RegfishProvider::new(api_key, timeout)?))
     }
 
     /// Create a new DNS updater using the Cloudflare API.
@@ -897,6 +903,11 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         match self {
+            DnsUpdater::Regfish(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
             DnsUpdater::Rfc2136(provider) => {
                 provider
                     .set_rrset(name, record_type, ttl, records, origin)
@@ -1302,6 +1313,11 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         match self {
+            DnsUpdater::Regfish(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
             DnsUpdater::Rfc2136(provider) => {
                 provider
                     .add_to_rrset(name, record_type, ttl, records, origin)
@@ -1706,6 +1722,11 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         match self {
+            DnsUpdater::Regfish(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
             DnsUpdater::Rfc2136(provider) => {
                 provider
                     .remove_from_rrset(name, record_type, records, origin)
@@ -2109,6 +2130,7 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
         match self {
+            DnsUpdater::Regfish(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Rfc2136(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Cloudflare(provider) => {
                 provider.list_rrset(name, record_type, origin).await

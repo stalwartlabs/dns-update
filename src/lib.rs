@@ -40,10 +40,10 @@ use providers::{
     mythicbeasts::MythicBeastsProvider, namecheap::NamecheapProvider,
     namedotcom::NameDotComProvider, namesilo::NameSiloProvider, netcup::NetcupProvider,
     netcup_rest::NetcupRestProvider, netlify::NetlifyProvider, nifcloud::NifcloudProvider,
-    ns1::Ns1Provider, pdns::PdnsProvider, porkbun::PorkBunProvider, rfc2136::Rfc2136Provider,
-    route53::Route53Provider, scaleway::ScalewayProvider, spaceship::SpaceshipProvider,
-    tencentcloud::TencentCloudProvider, vercel::VercelProvider, vultr::VultrProvider,
-    websupport::WebSupportProvider,
+    ns1::Ns1Provider, pdns::PdnsProvider, porkbun::PorkBunProvider, regfish::RegfishProvider,
+    rfc2136::Rfc2136Provider, route53::Route53Provider, scaleway::ScalewayProvider,
+    spaceship::SpaceshipProvider, tencentcloud::TencentCloudProvider, vercel::VercelProvider,
+    vultr::VultrProvider, websupport::WebSupportProvider,
 };
 
 use providers::{
@@ -222,6 +222,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Clone)]
 #[non_exhaustive]
 pub enum DnsUpdater {
+    Regfish(RegfishProvider),
     Rfc2136(Rfc2136Provider),
     Cloudflare(CloudflareProvider),
     DigitalOcean(DigitalOceanProvider),

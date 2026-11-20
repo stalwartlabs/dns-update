@@ -75,6 +75,7 @@ pub mod ovh_tests;
 pub mod pdns_tests;
 pub mod plesk_tests;
 pub mod porkbun_tests;
+pub mod regfish_tests;
 #[cfg(test)]
 pub mod rfc2136_tests;
 #[cfg(test)]
