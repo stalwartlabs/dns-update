@@ -9,17 +9,26 @@
  * except according to those terms.
  */
 
-use crate::utils::{
-    decode_hex, parse_mx, parse_srv, parse_tlsa, split_caa_value, strip_trailing_dot,
-    tlsa_cert_usage_from_u8, tlsa_cert_usage_to_u8, tlsa_matching_from_u8, tlsa_matching_to_u8,
-    tlsa_selector_from_u8, tlsa_selector_to_u8, unquote_txt,
-};
 use crate::{
-    CAARecord, DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord, TLSARecord,
-    http::{HttpClient, HttpClientBuilder},
+    DnsRecord, DnsRecordType, Error, IntoFqdn, MXRecord, SRVRecord, TLSARecord, TlsaCertUsage,
+    TlsaMatching, TlsaSelector,
+    http::{HttpClient, HttpClientBuilder, HttpRequest},
+    utils::{
+        build_caa, decode_hex, strip_trailing_dot, tlsa_cert_usage_from_u8, tlsa_matching_from_u8,
+        tlsa_selector_from_u8, unquote_txt,
+    },
 };
-use serde::{Deserialize, Serialize, de::IgnoredAny};
-use std::{net::AddrParseError, time::Duration};
+use serde::{Deserialize, Serialize};
+use std::{borrow::Cow, net::AddrParseError, time::Duration};
+
+const DEFAULT_API_ENDPOINT: &str = "https://api.regfish.com";
+const RETRIES: u32 = 3;
+const APEX: &str = "@";
+const MIN_TTL: u32 = 60;
+const MAX_TTL: u32 = 86400;
+const MAX_MX_PRIORITY: u16 = 10000;
+const MAX_TXT_LEN: usize = 4096;
+const CAA_CRITICAL: u8 = 0x80;
 
 #[derive(Clone)]
 pub struct RegfishProvider {
@@ -27,46 +36,25 @@ pub struct RegfishProvider {
     endpoint: String,
 }
 
-#[derive(Serialize, Debug)]
-struct RecordBody {
-    #[serde(rename = "type")]
-    record_type: String,
-    name: String,
-    data: String,
-    ttl: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    priority: Option<u16>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    weight: Option<u16>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    port: Option<u16>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    flags: Option<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tag: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    usage: Option<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    selector: Option<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    matching_type: Option<u8>,
-}
-
-#[derive(Deserialize, Debug)]
-struct ApiEnvelope<T> {
+#[derive(Deserialize)]
+struct Envelope<T> {
+    #[serde(default)]
     success: bool,
     #[serde(default)]
     response: Option<T>,
     #[serde(default)]
     message: Option<String>,
+    #[serde(default)]
+    error: Option<String>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
-struct RegfishRecord {
+#[derive(Deserialize)]
+struct Record {
     id: u64,
     #[serde(rename = "type")]
     record_type: String,
     name: String,
+    #[serde(default)]
     data: String,
     #[serde(default)]
     ttl: Option<u32>,
@@ -88,8 +76,35 @@ struct RegfishRecord {
     matching_type: Option<u8>,
 }
 
-const DEFAULT_API_ENDPOINT: &str = "https://api.regfish.de";
-const RETRIES: u32 = 3;
+#[derive(Serialize)]
+struct RecordBody<'a> {
+    #[serde(rename = "type")]
+    record_type: &'static str,
+    name: &'a str,
+    data: Cow<'a, str>,
+    ttl: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    weight: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    flags: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tag: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usage: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    matching_type: Option<u8>,
+}
+
+struct RecordSet {
+    fqdn: String,
+    records: Vec<(u64, Option<u32>, Option<DnsRecord>)>,
+}
 
 impl RegfishProvider {
     pub(crate) fn new(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
@@ -110,7 +125,7 @@ impl RegfishProvider {
     #[cfg(test)]
     pub(crate) fn with_endpoint(self, endpoint: impl AsRef<str>) -> Self {
         Self {
-            endpoint: endpoint.as_ref().to_string(),
+            endpoint: endpoint.as_ref().trim_end_matches('/').to_string(),
             ..self
         }
     }
@@ -124,31 +139,50 @@ impl RegfishProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
-        reject_unsupported(record_type)?;
-        let name = name.into_name();
-        let domain = origin.into_name();
+        let ttl = ttl.clamp(MIN_TTL, MAX_TTL);
+        let set = self.record_set(name, record_type, origin).await?;
 
-        let mut pool = self.rrset_records(&name, record_type, &domain).await?;
-
-        let mut to_create: Vec<DnsRecord> = Vec::new();
-        for record in records {
-            match pool.iter().position(|r| records_match(r, &record)) {
-                Some(idx) => {
-                    let existing = pool.swap_remove(idx);
-                    if existing.ttl.is_some() && existing.ttl != Some(ttl) {
-                        self.update_record(existing.id, &name, record_type, ttl, &record)
-                            .await?;
-                    }
-                }
-                None => to_create.push(record),
+        let mut missing: Vec<(&DnsRecord, RecordBody<'_>)> = Vec::with_capacity(records.len());
+        for record in &records {
+            if !missing.iter().any(|(want, _)| *want == record) {
+                missing.push((record, RecordBody::new(&set.fqdn, ttl, record)?));
             }
         }
 
-        for stale in pool {
-            self.delete_record(stale.id).await?;
+        let mut patch = Vec::new();
+        let mut stale = Vec::new();
+        for (id, current_ttl, current) in &set.records {
+            let found = current
+                .as_ref()
+                .and_then(|current| missing.iter().position(|(want, _)| *want == current));
+            match found {
+                Some(idx) => {
+                    let (_, body) = missing.swap_remove(idx);
+                    if *current_ttl != Some(ttl) {
+                        patch.push((*id, body));
+                    }
+                }
+                None => stale.push(*id),
+            }
         }
-        for record in to_create {
-            self.create_record(&name, record_type, ttl, &record).await?;
+
+        let mut stale = stale.into_iter();
+        let mut create = Vec::new();
+        for (_, body) in missing {
+            match stale.next() {
+                Some(id) => patch.push((id, body)),
+                None => create.push(body),
+            }
+        }
+
+        for (id, body) in patch {
+            self.update_record(id, body).await?;
+        }
+        for body in create {
+            self.create_record(body).await?;
+        }
+        for id in stale {
+            self.delete_record(id).await?;
         }
         Ok(())
     }
@@ -162,20 +196,27 @@ impl RegfishProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
-        reject_unsupported(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
-        let name = name.into_name();
-        let domain = origin.into_name();
+        let ttl = ttl.clamp(MIN_TTL, MAX_TTL);
+        let set = self.record_set(name, record_type, origin).await?;
 
-        let pool = self.rrset_records(&name, record_type, &domain).await?;
-
-        for record in records {
-            if pool.iter().any(|r| records_match(r, &record)) {
-                continue;
+        let mut known = set
+            .records
+            .iter()
+            .filter_map(|(_, _, current)| current.as_ref())
+            .collect::<Vec<_>>();
+        let mut create = Vec::with_capacity(records.len());
+        for record in &records {
+            if !known.contains(&record) {
+                create.push(RecordBody::new(&set.fqdn, ttl, record)?);
+                known.push(record);
             }
-            self.create_record(&name, record_type, ttl, &record).await?;
+        }
+
+        for body in create {
+            self.create_record(body).await?;
         }
         Ok(())
     }
@@ -188,18 +229,17 @@ impl RegfishProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         check_record_types(record_type, &records)?;
-        reject_unsupported(record_type)?;
         if records.is_empty() {
             return Ok(());
         }
-        let name = name.into_name();
-        let domain = origin.into_name();
+        let set = self.record_set(name, record_type, origin).await?;
 
-        let pool = self.rrset_records(&name, record_type, &domain).await?;
-
-        for record in records {
-            if let Some(existing) = pool.iter().find(|r| records_match(r, &record)) {
-                self.delete_record(existing.id).await?;
+        for (id, _, current) in &set.records {
+            if current
+                .as_ref()
+                .is_some_and(|current| records.contains(current))
+            {
+                self.delete_record(*id).await?;
             }
         }
         Ok(())
@@ -212,86 +252,51 @@ impl RegfishProvider {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
         let name = name.into_name();
-        let domain = origin.into_name();
-        let zone = self.resolve_zone(domain.as_ref()).await?;
-
-        let records = match self.list_zone_records(&zone).await {
-            Ok(records) => records,
-            Err(Error::NotFound) => return Ok(Vec::new()),
-            Err(e) => return Err(e),
-        };
-
-        let mut out = Vec::new();
-        for r in records {
-            if normalize_record_name(&r.name, &zone) == name.as_ref()
-                && r.record_type.eq_ignore_ascii_case(record_type.as_str())
-            {
-                out.push(record_to_dns(r)?);
-            }
-        }
-        Ok(out)
-    }
-
-    async fn rrset_records(
-        &self,
-        name: &str,
-        record_type: DnsRecordType,
-        domain: &str,
-    ) -> crate::Result<Vec<RegfishRecord>> {
-        let zone = self.resolve_zone(domain).await?;
-        Ok(self
-            .list_zone_records(&zone)
+        let origin = origin.into_name();
+        self.list_records(&origin)
             .await?
-            .into_iter()
-            .filter(|r| {
-                normalize_record_name(&r.name, &zone) == name
-                    && r.record_type.eq_ignore_ascii_case(record_type.as_str())
-            })
-            .collect())
+            .iter()
+            .filter(|record| record.is(&name, record_type, &origin))
+            .map(|record| record.decode(record_type))
+            .collect()
     }
 
-    async fn resolve_zone(&self, domain: &str) -> crate::Result<String> {
-        let mut candidate = domain.to_string();
-        loop {
-            let url = format!("{}/dns/zones/{candidate}", self.endpoint);
-            match self
-                .client
-                .get(url)
-                .send_with_retry::<IgnoredAny>(RETRIES)
-                .await
-            {
-                Ok(_) => return Ok(candidate),
-                Err(Error::NotFound) => match candidate.split_once('.') {
-                    Some((_, parent)) => candidate = parent.to_string(),
-                    None => {
-                        return Err(Error::NotFound);
-                    }
-                },
-                Err(e) => return Err(e),
-            }
-        }
-    }
-
-    async fn list_zone_records(&self, domain: &str) -> crate::Result<Vec<RegfishRecord>> {
-        let url = format!("{}/dns/{domain}/rr", self.endpoint);
-        let envelope: ApiEnvelope<Vec<RegfishRecord>> =
-            self.client.get(url).send_with_retry(RETRIES).await?;
-        if !envelope.success {
-            return Err(Error::Api(envelope.message.unwrap_or_else(|| {
-                format!("Regfish API request for zone {domain} failed")
-            })));
-        }
-        Ok(envelope.response.unwrap_or_default())
-    }
-
-    async fn create_record(
+    async fn record_set(
         &self,
-        name: &str,
+        name: impl IntoFqdn<'_>,
         record_type: DnsRecordType,
-        ttl: u32,
-        record: &DnsRecord,
-    ) -> crate::Result<()> {
-        let body = build_record_body(name, record_type, ttl, record)?;
+        origin: impl IntoFqdn<'_>,
+    ) -> crate::Result<RecordSet> {
+        if record_type == DnsRecordType::NS {
+            return Err(Error::Unsupported(
+                "NS records are not supported by Regfish".to_string(),
+            ));
+        }
+        let name = name.into_name();
+        let origin = origin.into_name();
+        let records = self
+            .list_records(&origin)
+            .await?
+            .iter()
+            .filter(|record| record.is(&name, record_type, &origin))
+            .map(|record| (record.id, record.ttl, record.decode(record_type).ok()))
+            .collect();
+        Ok(RecordSet {
+            fqdn: format!("{name}."),
+            records,
+        })
+    }
+
+    async fn list_records(&self, origin: &str) -> crate::Result<Vec<Record>> {
+        self.client
+            .get(format!("{}/dns/{origin}/rr", self.endpoint))
+            .send_with_retry::<Envelope<Vec<Record>>>(RETRIES)
+            .await?
+            .into_result()
+            .map(Option::unwrap_or_default)
+    }
+
+    async fn create_record(&self, body: RecordBody<'_>) -> crate::Result<()> {
         self.send_write(
             self.client
                 .post(format!("{}/dns/rr", self.endpoint))
@@ -300,15 +305,7 @@ impl RegfishProvider {
         .await
     }
 
-    async fn update_record(
-        &self,
-        id: u64,
-        name: &str,
-        record_type: DnsRecordType,
-        ttl: u32,
-        record: &DnsRecord,
-    ) -> crate::Result<()> {
-        let body = build_record_body(name, record_type, ttl, record)?;
+    async fn update_record(&self, id: u64, body: RecordBody<'_>) -> crate::Result<()> {
         self.send_write(
             self.client
                 .patch(format!("{}/dns/rr/{id}", self.endpoint))
@@ -322,286 +319,176 @@ impl RegfishProvider {
             .send_write(self.client.delete(format!("{}/dns/rr/{id}", self.endpoint)))
             .await
         {
-            Ok(_) => Ok(()),
             Err(Error::NotFound) => Ok(()),
-            Err(e) => Err(e),
+            result => result,
         }
     }
 
-    async fn send_write(&self, request: crate::http::HttpRequest) -> crate::Result<()> {
-        let envelope: ApiEnvelope<serde_json::Value> = request.send_with_retry(RETRIES).await?;
-        if !envelope.success {
-            return Err(Error::Api(
-                envelope
-                    .message
-                    .unwrap_or_else(|| "Regfish API write request failed".to_string()),
-            ));
+    async fn send_write(&self, request: HttpRequest) -> crate::Result<()> {
+        request
+            .send_with_retry::<Envelope<serde_json::Value>>(RETRIES)
+            .await?
+            .into_result()
+            .map(|_| ())
+    }
+}
+
+impl<T> Envelope<T> {
+    fn into_result(self) -> crate::Result<Option<T>> {
+        if self.success {
+            return Ok(self.response);
         }
-        Ok(())
+        Err(Error::Api(match (self.message, self.error) {
+            (Some(message), Some(error)) if message != error => {
+                format!("Regfish API error: {message}: {error}")
+            }
+            (Some(text), _) | (None, Some(text)) => format!("Regfish API error: {text}"),
+            (None, None) => "Regfish API error".to_string(),
+        }))
+    }
+}
+
+impl Record {
+    fn is(&self, name: &str, record_type: DnsRecordType, origin: &str) -> bool {
+        self.record_type.eq_ignore_ascii_case(record_type.as_str())
+            && match strip_trailing_dot(&self.name) {
+                "" | APEX => name.eq_ignore_ascii_case(origin),
+                listed => listed.eq_ignore_ascii_case(name),
+            }
+    }
+
+    fn decode(&self, record_type: DnsRecordType) -> crate::Result<DnsRecord> {
+        let data = self.data.trim();
+        let missing = |field: &str| {
+            Error::Parse(format!(
+                "Regfish {} record {} is missing {field}",
+                record_type.as_str(),
+                self.id
+            ))
+        };
+        Ok(match record_type {
+            DnsRecordType::A => DnsRecord::A(data.parse().map_err(|e: AddrParseError| {
+                Error::Parse(format!("invalid Regfish A value '{data}': {e}"))
+            })?),
+            DnsRecordType::AAAA => DnsRecord::AAAA(data.parse().map_err(|e: AddrParseError| {
+                Error::Parse(format!("invalid Regfish AAAA value '{data}': {e}"))
+            })?),
+            DnsRecordType::CNAME => DnsRecord::CNAME(strip_trailing_dot(data).to_string()),
+            DnsRecordType::NS => DnsRecord::NS(strip_trailing_dot(data).to_string()),
+            DnsRecordType::MX => DnsRecord::MX(MXRecord {
+                exchange: strip_trailing_dot(data).to_string(),
+                priority: self.priority.ok_or_else(|| missing("priority"))?,
+            }),
+            DnsRecordType::TXT => DnsRecord::TXT(unquote_txt(&self.data)),
+            DnsRecordType::SRV => DnsRecord::SRV(SRVRecord {
+                target: strip_trailing_dot(data).to_string(),
+                priority: self.priority.ok_or_else(|| missing("priority"))?,
+                weight: self.weight.ok_or_else(|| missing("weight"))?,
+                port: self.port.ok_or_else(|| missing("port"))?,
+            }),
+            DnsRecordType::TLSA => DnsRecord::TLSA(TLSARecord {
+                cert_usage: tlsa_cert_usage_from_u8(self.usage.ok_or_else(|| missing("usage"))?)?,
+                selector: tlsa_selector_from_u8(self.selector.ok_or_else(|| missing("selector"))?)?,
+                matching: tlsa_matching_from_u8(
+                    self.matching_type.ok_or_else(|| missing("matching_type"))?,
+                )?,
+                cert_data: decode_hex(data)?,
+            }),
+            DnsRecordType::CAA => {
+                let flags = if self.flags.unwrap_or(0) != 0 {
+                    CAA_CRITICAL
+                } else {
+                    0
+                };
+                let tag = self.tag.as_deref().ok_or_else(|| missing("tag"))?;
+                DnsRecord::CAA(build_caa(flags, &tag.to_ascii_lowercase(), data)?)
+            }
+        })
+    }
+}
+
+impl<'a> RecordBody<'a> {
+    fn new(fqdn: &'a str, ttl: u32, record: &'a DnsRecord) -> crate::Result<Self> {
+        let mut body = RecordBody {
+            record_type: record.as_type().as_str(),
+            name: fqdn,
+            data: Cow::Borrowed(""),
+            ttl,
+            priority: None,
+            weight: None,
+            port: None,
+            flags: None,
+            tag: None,
+            usage: None,
+            selector: None,
+            matching_type: None,
+        };
+        match record {
+            DnsRecord::A(addr) => body.data = Cow::Owned(addr.to_string()),
+            DnsRecord::AAAA(addr) => body.data = Cow::Owned(addr.to_string()),
+            DnsRecord::CNAME(target) => body.data = target.into_fqdn(),
+            DnsRecord::NS(_) => {
+                return Err(Error::Unsupported(
+                    "NS records are not supported by Regfish".to_string(),
+                ));
+            }
+            DnsRecord::MX(mx) => {
+                if mx.priority > MAX_MX_PRIORITY {
+                    return Err(Error::Unsupported(format!(
+                        "Regfish MX priority must be 0 to {MAX_MX_PRIORITY}, got {}",
+                        mx.priority
+                    )));
+                }
+                body.data = (&mx.exchange).into_fqdn();
+                body.priority = Some(mx.priority);
+            }
+            DnsRecord::TXT(text) => {
+                if text.len() > MAX_TXT_LEN || text.chars().any(char::is_control) {
+                    return Err(Error::Unsupported(format!(
+                        "Regfish TXT values must be at most {MAX_TXT_LEN} characters without control characters"
+                    )));
+                }
+                body.data = Cow::Borrowed(text);
+            }
+            DnsRecord::SRV(srv) => {
+                body.data = (&srv.target).into_fqdn();
+                body.priority = Some(srv.priority);
+                body.weight = Some(srv.weight);
+                body.port = Some(srv.port);
+            }
+            DnsRecord::TLSA(tlsa) => {
+                if tlsa.cert_usage == TlsaCertUsage::Private
+                    || tlsa.selector == TlsaSelector::Private
+                    || tlsa.matching == TlsaMatching::Private
+                {
+                    return Err(Error::Unsupported(
+                        "Regfish does not accept private TLSA usage, selector or matching types"
+                            .to_string(),
+                    ));
+                }
+                body.data = Cow::Owned(hex::encode(&tlsa.cert_data));
+                body.usage = Some(tlsa.cert_usage.into());
+                body.selector = Some(tlsa.selector.into());
+                body.matching_type = Some(tlsa.matching.into());
+            }
+            DnsRecord::CAA(caa) => {
+                let (flags, tag, value) = caa.clone().decompose();
+                body.data = Cow::Owned(value);
+                body.flags = Some(u8::from(flags & CAA_CRITICAL != 0));
+                body.tag = Some(tag);
+            }
+        }
+        Ok(body)
     }
 }
 
 fn check_record_types(expected: DnsRecordType, records: &[DnsRecord]) -> crate::Result<()> {
-    for r in records {
-        if r.as_type() != expected {
-            return Err(Error::Api(format!(
-                "RRSet record type mismatch: expected {}, got {}",
-                expected.as_str(),
-                r.as_type().as_str(),
-            )));
-        }
+    match records.iter().find(|r| r.as_type() != expected) {
+        Some(r) => Err(Error::Api(format!(
+            "RRSet record type mismatch: expected {}, got {}",
+            expected.as_str(),
+            r.as_type().as_str(),
+        ))),
+        None => Ok(()),
     }
-    Ok(())
-}
-
-fn reject_unsupported(record_type: DnsRecordType) -> crate::Result<()> {
-    if matches!(record_type, DnsRecordType::NS) {
-        return Err(Error::Unsupported(format!(
-            "{} records are not supported by Regfish",
-            record_type.as_str()
-        )));
-    }
-    Ok(())
-}
-
-fn normalize_record_name(name: &str, domain: &str) -> String {
-    let trimmed = strip_trailing_dot(name);
-    if trimmed == "@" || trimmed.is_empty() {
-        strip_trailing_dot(domain).to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
-fn records_match(existing: &RegfishRecord, desired: &DnsRecord) -> bool {
-    record_to_dns(existing.clone())
-        .map(|parsed| parsed == *desired)
-        .unwrap_or(false)
-}
-
-fn build_record_body(
-    name: &str,
-    record_type: DnsRecordType,
-    ttl: u32,
-    record: &DnsRecord,
-) -> crate::Result<RecordBody> {
-    let fqdn = format!("{name}.");
-    let mut body = RecordBody {
-        record_type: record_type.as_str().to_string(),
-        name: fqdn,
-        data: String::new(),
-        ttl,
-        priority: None,
-        weight: None,
-        port: None,
-        flags: None,
-        tag: None,
-        usage: None,
-        selector: None,
-        matching_type: None,
-    };
-    match record {
-        DnsRecord::A(addr) => body.data = addr.to_string(),
-        DnsRecord::AAAA(addr) => body.data = addr.to_string(),
-        DnsRecord::CNAME(target) => body.data = target.as_str().into_fqdn().into_owned(),
-        DnsRecord::MX(mx) => {
-            body.data = mx.exchange.as_str().into_fqdn().into_owned();
-            body.priority = Some(mx.priority);
-        }
-        DnsRecord::TXT(content) => body.data = content.clone(),
-        DnsRecord::CAA(caa) => {
-            let (caa_flags, caa_tag, value) = caa.clone().decompose();
-            body.data = value;
-            body.flags = Some(if caa_flags & 0x80 != 0 { 1 } else { 0 });
-            body.tag = Some(caa_tag);
-        }
-        DnsRecord::NS(_) => {
-            return Err(Error::Unsupported(format!(
-                "{} records are not supported by Regfish",
-                record_type.as_str()
-            )));
-        }
-        DnsRecord::SRV(srv) => {
-            body.data = srv.target.as_str().into_fqdn().into_owned();
-            body.priority = Some(srv.priority);
-            body.weight = Some(srv.weight);
-            body.port = Some(srv.port);
-        }
-        DnsRecord::TLSA(tlsa) => {
-            body.data = hex::encode(&tlsa.cert_data);
-            body.usage = Some(tlsa_cert_usage_to_u8(tlsa.cert_usage));
-            body.selector = Some(tlsa_selector_to_u8(tlsa.selector));
-            body.matching_type = Some(tlsa_matching_to_u8(tlsa.matching));
-        }
-    }
-
-    Ok(body)
-}
-
-fn record_to_dns(record: RegfishRecord) -> crate::Result<DnsRecord> {
-    let data = record.data.trim();
-    let record_type = record
-        .record_type
-        .eq_ignore_ascii_case("A")
-        .then_some(DnsRecordType::A)
-        .or_else(|| {
-            record
-                .record_type
-                .eq_ignore_ascii_case("AAAA")
-                .then_some(DnsRecordType::AAAA)
-        })
-        .or_else(|| {
-            record
-                .record_type
-                .eq_ignore_ascii_case("CNAME")
-                .then_some(DnsRecordType::CNAME)
-        })
-        .or_else(|| {
-            record
-                .record_type
-                .eq_ignore_ascii_case("NS")
-                .then_some(DnsRecordType::NS)
-        })
-        .or_else(|| {
-            record
-                .record_type
-                .eq_ignore_ascii_case("MX")
-                .then_some(DnsRecordType::MX)
-        })
-        .or_else(|| {
-            record
-                .record_type
-                .eq_ignore_ascii_case("TXT")
-                .then_some(DnsRecordType::TXT)
-        })
-        .or_else(|| {
-            record
-                .record_type
-                .eq_ignore_ascii_case("SRV")
-                .then_some(DnsRecordType::SRV)
-        })
-        .or_else(|| {
-            record
-                .record_type
-                .eq_ignore_ascii_case("TLSA")
-                .then_some(DnsRecordType::TLSA)
-        })
-        .or_else(|| {
-            record
-                .record_type
-                .eq_ignore_ascii_case("CAA")
-                .then_some(DnsRecordType::CAA)
-        });
-
-    let Some(record_type) = record_type else {
-        return Err(Error::Unsupported(format!(
-            "unsupported Regfish record type: {}",
-            record.record_type
-        )));
-    };
-
-    Ok(match record_type {
-        DnsRecordType::A => DnsRecord::A(data.parse().map_err(|e: AddrParseError| {
-            Error::Parse(format!("invalid A value '{}': {e}", record.data))
-        })?),
-        DnsRecordType::AAAA => DnsRecord::AAAA(data.parse().map_err(|e: AddrParseError| {
-            Error::Parse(format!("invalid AAAA value '{}': {e}", record.data))
-        })?),
-        DnsRecordType::CNAME => DnsRecord::CNAME(strip_trailing_dot(data).to_string()),
-        DnsRecordType::NS => DnsRecord::NS(strip_trailing_dot(data).to_string()),
-        DnsRecordType::MX => {
-            let (priority, exchange) = match record.priority {
-                Some(priority) => (priority, strip_trailing_dot(data).to_string()),
-                None => match parse_mx(&record.data) {
-                    Ok(DnsRecord::MX(mx)) => (mx.priority, mx.exchange),
-                    _ => return Err(Error::Parse(format!("invalid MX value '{}'", record.data))),
-                },
-            };
-            DnsRecord::MX(MXRecord { exchange, priority })
-        }
-        DnsRecordType::TXT => DnsRecord::TXT(unquote_txt(data)),
-        DnsRecordType::SRV => {
-            let (priority, weight, port, target) =
-                match (record.priority, record.weight, record.port) {
-                    (Some(priority), Some(weight), Some(port)) => {
-                        (priority, weight, port, strip_trailing_dot(data).to_string())
-                    }
-                    _ => match parse_srv(&record.data) {
-                        Ok(DnsRecord::SRV(srv)) => (srv.priority, srv.weight, srv.port, srv.target),
-                        _ => {
-                            return Err(Error::Parse(format!(
-                                "invalid SRV value '{}'",
-                                record.data
-                            )));
-                        }
-                    },
-                };
-            DnsRecord::SRV(SRVRecord {
-                priority,
-                weight,
-                port,
-                target,
-            })
-        }
-        DnsRecordType::TLSA => {
-            let (usage, selector, matching, hex) =
-                match (record.usage, record.selector, record.matching_type) {
-                    (Some(usage), Some(selector), Some(matching)) => {
-                        (usage, selector, matching, data)
-                    }
-                    _ => match parse_tlsa(&record.data) {
-                        Ok(DnsRecord::TLSA(tlsa)) => {
-                            return Ok(DnsRecord::TLSA(tlsa));
-                        }
-                        _ => {
-                            return Err(Error::Parse(format!(
-                                "invalid TLSA value '{}'",
-                                record.data
-                            )));
-                        }
-                    },
-                };
-            DnsRecord::TLSA(TLSARecord {
-                cert_usage: tlsa_cert_usage_from_u8(usage)?,
-                selector: tlsa_selector_from_u8(selector)?,
-                matching: tlsa_matching_from_u8(matching)?,
-                cert_data: decode_hex(hex)?,
-            })
-        }
-        DnsRecordType::CAA => {
-            let flags = record.flags.unwrap_or(0);
-            let issuer_critical = flags & 0x80 != 0 || flags == 1;
-            let tag = record
-                .tag
-                .clone()
-                .unwrap_or_else(|| "issue".to_string())
-                .to_ascii_lowercase();
-            let value = data.to_string();
-            match tag.as_str() {
-                "issue" => {
-                    let (name, options) = split_caa_value(&value);
-                    DnsRecord::CAA(CAARecord::Issue {
-                        issuer_critical,
-                        name,
-                        options,
-                    })
-                }
-                "issuewild" => {
-                    let (name, options) = split_caa_value(&value);
-                    DnsRecord::CAA(CAARecord::IssueWild {
-                        issuer_critical,
-                        name,
-                        options,
-                    })
-                }
-                "iodef" => DnsRecord::CAA(CAARecord::Iodef {
-                    issuer_critical,
-                    url: value,
-                }),
-                other => {
-                    return Err(Error::Parse(format!("unknown CAA tag: {other}")));
-                }
-            }
-        }
-    })
 }

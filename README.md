@@ -71,7 +71,7 @@ and over 70 cloud, registrar, and self-hosted DNS provider APIs. It was designed
 | [Plesk](https://www.plesk.com/) | `new_plesk` | REST API, X-API-Key |
 | [Porkbun](https://porkbun.com/) | `new_porkbun` | |
 | [PowerDNS Authoritative](https://doc.powerdns.com/authoritative/http-api/index.html) | `new_pdns` | X-API-Key |
-| [Regfish](https://regfish.de/) | `new_regfish` | x-api-key header; no NS |
+| [Regfish](https://regfish.de/) | `new_regfish` | API key with `dns:read` and `dns:write`, exempted from any Domain Guardian rule on the domain; TTL clamped to 60 to 86400s; no NS |
 | [AWS Route 53](https://aws.amazon.com/route53/) | `new_route53` | AWS Sigv4 |
 | [ANS SafeDNS](https://www.ans.co.uk/) | `new_safedns` | |
 | [Scaleway](https://www.scaleway.com/) | `new_scaleway` | |

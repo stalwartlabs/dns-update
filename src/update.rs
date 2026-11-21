@@ -121,11 +121,6 @@ impl DnsUpdater {
         )?))
     }
 
-    /// Create a new DNS updater using the Regfish DNS API.
-    pub fn new_regfish(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
-        Ok(DnsUpdater::Regfish(RegfishProvider::new(api_key, timeout)?))
-    }
-
     /// Create a new DNS updater using the Cloudflare API.
     pub fn new_cloudflare(
         secret: impl AsRef<str>,
@@ -881,6 +876,11 @@ impl DnsUpdater {
         )))
     }
 
+    /// Create a new DNS updater using the Regfish DNS API.
+    pub fn new_regfish(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
+        Ok(DnsUpdater::Regfish(RegfishProvider::new(api_key, timeout)?))
+    }
+
     /// Create a new DNS updater using the Pebble Challenge Test Server.
     #[cfg(feature = "test_provider")]
     pub fn new_pebble(base_url: impl AsRef<str>, timeout: Option<Duration>) -> Self {
@@ -903,11 +903,6 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         match self {
-            DnsUpdater::Regfish(provider) => {
-                provider
-                    .set_rrset(name, record_type, ttl, records, origin)
-                    .await
-            }
             DnsUpdater::Rfc2136(provider) => {
                 provider
                     .set_rrset(name, record_type, ttl, records, origin)
@@ -1284,6 +1279,11 @@ impl DnsUpdater {
                     .await
             }
             DnsUpdater::ZoneEu(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Regfish(provider) => {
                 provider
                     .set_rrset(name, record_type, ttl, records, origin)
                     .await
@@ -1313,11 +1313,6 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         match self {
-            DnsUpdater::Regfish(provider) => {
-                provider
-                    .add_to_rrset(name, record_type, ttl, records, origin)
-                    .await
-            }
             DnsUpdater::Rfc2136(provider) => {
                 provider
                     .add_to_rrset(name, record_type, ttl, records, origin)
@@ -1694,6 +1689,11 @@ impl DnsUpdater {
                     .await
             }
             DnsUpdater::ZoneEu(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::Regfish(provider) => {
                 provider
                     .add_to_rrset(name, record_type, ttl, records, origin)
                     .await
@@ -1722,11 +1722,6 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
         match self {
-            DnsUpdater::Regfish(provider) => {
-                provider
-                    .remove_from_rrset(name, record_type, records, origin)
-                    .await
-            }
             DnsUpdater::Rfc2136(provider) => {
                 provider
                     .remove_from_rrset(name, record_type, records, origin)
@@ -2107,6 +2102,11 @@ impl DnsUpdater {
                     .remove_from_rrset(name, record_type, records, origin)
                     .await
             }
+            DnsUpdater::Regfish(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => {
                 provider
@@ -2130,7 +2130,6 @@ impl DnsUpdater {
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<Vec<DnsRecord>> {
         match self {
-            DnsUpdater::Regfish(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Rfc2136(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Cloudflare(provider) => {
                 provider.list_rrset(name, record_type, origin).await
@@ -2247,6 +2246,7 @@ impl DnsUpdater {
             DnsUpdater::UltraDns(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Infoblox(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::ZoneEu(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::Regfish(provider) => provider.list_rrset(name, record_type, origin).await,
             #[cfg(feature = "test_provider")]
             DnsUpdater::Pebble(provider) => provider.list_rrset(name, record_type, origin).await,
             #[cfg(feature = "test_provider")]

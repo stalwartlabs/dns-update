@@ -25,28 +25,7 @@ mod tests {
             .with_endpoint(endpoint)
     }
 
-    fn mock_zone_found(server: &mut ServerGuard, zone: &str) -> Mock {
-        server
-            .mock("GET", format!("/dns/zones/{zone}").as_str())
-            .match_header("x-api-key", "regfish-mock-api-key")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(r#"{"success":true,"code":0,"response":{"domain":"example.com"}}"#)
-            .create()
-    }
-
-    fn mock_zone_missing(server: &mut ServerGuard, zone: &str) -> Mock {
-        server
-            .mock("GET", format!("/dns/zones/{zone}").as_str())
-            .match_header("x-api-key", "regfish-mock-api-key")
-            .with_status(404)
-            .with_header("content-type", "application/json")
-            .with_body(r#"{"success":false,"code":13001,"message":"zone not found"}"#)
-            .create()
-    }
-
     fn mock_list_records(server: &mut ServerGuard, zone: &str, records: serde_json::Value) -> Mock {
-        mock_zone_found(server, zone);
         let body = json!({
             "success": true,
             "code": 0,
@@ -142,7 +121,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_set_rrset_deletes_stale_creates_new_and_updates_ttl() {
+    async fn test_set_rrset_patches_stale_records_in_place() {
         let mut server = mockito::Server::new_async().await;
         let list = mock_list_records(
             &mut server,
@@ -153,19 +132,6 @@ mod tests {
                 {"id": 33, "type": "A", "name": "host.example.com.", "data": "8.8.8.8", "ttl": 60},
             ]),
         );
-
-        let delete_stale = server
-            .mock("DELETE", "/dns/rr/22")
-            .match_header("x-api-key", "regfish-mock-api-key")
-            .with_status(200)
-            .with_body(r#"{"success":true,"code":0,"response":null}"#)
-            .create();
-        let delete_stale_2 = server
-            .mock("DELETE", "/dns/rr/11")
-            .match_header("x-api-key", "regfish-mock-api-key")
-            .with_status(200)
-            .with_body(r#"{"success":true,"code":0,"response":null}"#)
-            .create();
 
         let patch_ttl = server
             .mock("PATCH", "/dns/rr/33")
@@ -178,16 +144,24 @@ mod tests {
             .with_status(200)
             .with_body(r#"{"success":true,"code":0,"response":{"id":33}}"#)
             .create();
-
-        let create_new = mock_create_record(
-            &mut server,
-            json!({
+        let patch_value = server
+            .mock("PATCH", "/dns/rr/11")
+            .match_body(Matcher::Json(json!({
                 "type": "A",
                 "name": "host.example.com.",
                 "data": "7.7.7.7",
                 "ttl": 300,
-            }),
-        );
+            })))
+            .with_status(200)
+            .with_body(r#"{"success":true,"code":0,"response":{"id":11}}"#)
+            .create();
+        let delete_surplus = server
+            .mock("DELETE", "/dns/rr/22")
+            .match_header("x-api-key", "regfish-mock-api-key")
+            .with_status(200)
+            .with_body(r#"{"success":true,"code":0}"#)
+            .create();
+        let no_create = server.mock("POST", "/dns/rr").expect(0).create();
 
         let provider = setup_provider(server.url());
         let result = provider
@@ -205,10 +179,10 @@ mod tests {
 
         assert!(result.is_ok(), "set_rrset returned: {result:?}");
         list.assert();
-        delete_stale.assert();
-        delete_stale_2.assert();
         patch_ttl.assert();
-        create_new.assert();
+        patch_value.assert();
+        delete_surplus.assert();
+        no_create.assert();
     }
 
     #[tokio::test]
@@ -225,7 +199,7 @@ mod tests {
         let delete = server
             .mock("DELETE", "/dns/rr/1")
             .with_status(200)
-            .with_body(r#"{"success":true,"code":0,"response":null}"#)
+            .with_body(r#"{"success":true,"code":0}"#)
             .create();
         let no_create = server.mock("POST", "/dns/rr").expect(0).create();
 
@@ -304,7 +278,7 @@ mod tests {
         let delete = server
             .mock("DELETE", "/dns/rr/1")
             .with_status(200)
-            .with_body(r#"{"success":true,"code":0,"response":null}"#)
+            .with_body(r#"{"success":true,"code":0}"#)
             .create();
 
         let provider = setup_provider(server.url());
@@ -712,43 +686,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_origin_subdomain_walks_up_to_hosted_zone() {
-        let mut server = mockito::Server::new_async().await;
-        let zone_miss = mock_zone_missing(&mut server, "sub.example.com");
-        let list = mock_list_records(&mut server, "example.com", json!([]));
-        let create = mock_create_record(
-            &mut server,
-            json!({
-                "type": "A",
-                "name": "host.sub.example.com.",
-                "data": "1.2.3.4",
-                "ttl": 300,
-            }),
-        );
-
-        let provider = setup_provider(server.url());
-        let result = provider
-            .set_rrset(
-                "host.sub.example.com",
-                DnsRecordType::A,
-                300,
-                vec![DnsRecord::A("1.2.3.4".parse().unwrap())],
-                "sub.example.com",
-            )
-            .await;
-
-        assert!(result.is_ok(), "set_rrset returned: {result:?}");
-        zone_miss.assert();
-        list.assert();
-        create.assert();
-    }
-
-    #[tokio::test]
     async fn test_unhosted_origin_returns_not_found() {
         let mut server = mockito::Server::new_async().await;
-        mock_zone_missing(&mut server, "ghost.example.com");
-        mock_zone_missing(&mut server, "example.com");
-        mock_zone_missing(&mut server, "com");
+        let list = server
+            .mock("GET", "/dns/ghost.example.com/rr")
+            .with_status(404)
+            .with_body(
+                r#"{"success":false,"code":13001,"message":"DNS zone or records not found"}"#,
+            )
+            .create();
         let no_create = server.mock("POST", "/dns/rr").expect(0).create();
 
         let provider = setup_provider(server.url());
@@ -766,14 +712,90 @@ mod tests {
             matches!(result, Err(Error::NotFound)),
             "expected NotFound, got {result:?}"
         );
+        list.assert();
         no_create.assert();
+    }
+
+    #[tokio::test]
+    async fn test_ttl_is_clamped_to_api_range() {
+        let mut server = mockito::Server::new_async().await;
+        let list = mock_list_records(&mut server, "example.com", json!([]));
+        let create = mock_create_record(
+            &mut server,
+            json!({
+                "type": "TXT",
+                "name": "_acme-challenge.example.com.",
+                "data": "token",
+                "ttl": 60,
+            }),
+        );
+
+        let provider = setup_provider(server.url());
+        let result = provider
+            .add_to_rrset(
+                "_acme-challenge.example.com",
+                DnsRecordType::TXT,
+                10,
+                vec![DnsRecord::TXT("token".to_string())],
+                "example.com",
+            )
+            .await;
+
+        assert!(result.is_ok(), "add_to_rrset returned: {result:?}");
+        list.assert();
+        create.assert();
+    }
+
+    #[tokio::test]
+    async fn test_invalid_values_fail_before_any_write() {
+        let mut server = mockito::Server::new_async().await;
+        let records = json!([
+            {"id": 1, "type": "MX", "name": "@", "data": "old.example.com.", "priority": 10, "ttl": 300},
+            {"id": 2, "type": "TLSA", "name": "_25._tcp.example.com.", "data": "ab", "usage": 3, "selector": 1, "matching_type": 0, "ttl": 300},
+        ]);
+        let list = mock_list_records(&mut server, "example.com", records).expect(2);
+        for method in ["POST", "PATCH", "DELETE"] {
+            server.mock(method, Matcher::Any).expect(0).create();
+        }
+
+        let provider = setup_provider(server.url());
+        let mx = provider
+            .set_rrset(
+                "example.com",
+                DnsRecordType::MX,
+                300,
+                vec![DnsRecord::MX(MXRecord {
+                    exchange: "mx.example.com".to_string(),
+                    priority: 20000,
+                })],
+                "example.com",
+            )
+            .await;
+        assert!(matches!(mx, Err(Error::Unsupported(_))), "got {mx:?}");
+
+        let tlsa = provider
+            .set_rrset(
+                "_25._tcp.example.com",
+                DnsRecordType::TLSA,
+                300,
+                vec![DnsRecord::TLSA(TLSARecord {
+                    cert_usage: TlsaCertUsage::Private,
+                    selector: TlsaSelector::Spki,
+                    matching: TlsaMatching::Sha256,
+                    cert_data: vec![0xab; 32],
+                })],
+                "example.com",
+            )
+            .await;
+        assert!(matches!(tlsa, Err(Error::Unsupported(_))), "got {tlsa:?}");
+        list.assert();
     }
 
     #[tokio::test]
     async fn test_unauthorized_maps_to_error() {
         let mut server = mockito::Server::new_async().await;
         let unauth = server
-            .mock("GET", "/dns/zones/example.com")
+            .mock("GET", "/dns/example.com/rr")
             .match_header("x-api-key", "regfish-mock-api-key")
             .with_status(401)
             .with_body(r#"{"success":false,"message":"Unauthorized","error":"Unauthorized"}"#)
@@ -800,12 +822,11 @@ mod tests {
     #[tokio::test]
     async fn test_api_error_envelope_maps_to_error() {
         let mut server = mockito::Server::new_async().await;
-        mock_zone_found(&mut server, "example.com");
         let list = server
             .mock("GET", "/dns/example.com/rr")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"success":false,"message":"zone not found","error":"zone not found"}"#)
+            .with_body(r#"{"success":false,"code":15004,"message":"Forbidden","error":"Record not allowed"}"#)
             .create();
 
         let provider = setup_provider(server.url());
@@ -814,7 +835,7 @@ mod tests {
             .await;
 
         assert!(
-            matches!(result, Err(Error::Api(_))),
+            matches!(&result, Err(Error::Api(message)) if message == "Regfish API error: Forbidden: Record not allowed"),
             "expected Api error, got {result:?}"
         );
         list.assert();

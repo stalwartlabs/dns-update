@@ -222,7 +222,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Clone)]
 #[non_exhaustive]
 pub enum DnsUpdater {
-    Regfish(RegfishProvider),
     Rfc2136(Rfc2136Provider),
     Cloudflare(CloudflareProvider),
     DigitalOcean(DigitalOceanProvider),
@@ -307,6 +306,7 @@ pub enum DnsUpdater {
     UltraDns(UltraDnsProvider),
     Infoblox(InfobloxProvider),
     ZoneEu(ZoneEuProvider),
+    Regfish(RegfishProvider),
 }
 
 pub trait IntoFqdn<'x> {
