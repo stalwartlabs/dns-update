@@ -75,6 +75,7 @@ pub mod pdns;
 pub mod pebble;
 pub mod plesk;
 pub mod porkbun;
+pub mod regfish;
 pub mod rfc2136;
 pub mod route53;
 pub mod safedns;
