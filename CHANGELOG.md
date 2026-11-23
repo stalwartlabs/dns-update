@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.6.3] - Unreleased
+## [0.6.3] - 2026-11-23
 
 ### Added
 - Regfish DNS support via `new_regfish`.
