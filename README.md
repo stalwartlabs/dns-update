@@ -52,6 +52,7 @@ and over 70 cloud, registrar, and self-hosted DNS provider APIs. It was designed
 | [Infomaniak](https://www.infomaniak.com/) | `new_infomaniak` | |
 | [INWX](https://www.inwx.com/) | `new_inwx` | JSON-RPC |
 | [IONOS](https://www.ionos.com/) | `new_ionos` | |
+| [IONOS Cloud DNS](https://docs.ionos.com/cloud/network-services/cloud-dns) | `new_ionos_cloud` | |
 | [IPv64](https://ipv64.net/) | `new_ipv64` | TXT only |
 | [Joker](https://joker.com/) | `new_joker` | DMAPI, API key or username/password |
 | [AWS Lightsail](https://aws.amazon.com/lightsail/) | `new_lightsail` | AWS Sigv4 |

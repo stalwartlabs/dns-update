@@ -53,6 +53,7 @@ pub mod infoblox;
 pub mod infomaniak;
 pub mod inwx;
 pub mod ionos;
+pub mod ionos_cloud;
 pub mod ipv64;
 pub mod joker;
 pub mod lightsail;
