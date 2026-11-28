@@ -49,6 +49,7 @@ pub mod ibmcloud_tests;
 pub mod infoblox_tests;
 pub mod infomaniak_tests;
 pub mod inwx_tests;
+pub mod ionos_cloud_tests;
 pub mod ionos_tests;
 pub mod ipv64_tests;
 pub mod joker_tests;

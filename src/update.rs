@@ -68,6 +68,7 @@ use crate::{
         infomaniak::InfomaniakProvider,
         inwx::InwxProvider,
         ionos::IonosProvider,
+        ionos_cloud::IonosCloudProvider,
         ipv64::Ipv64Provider,
         joker::{JokerAuth, JokerProvider},
         lightsail::{LightsailConfig, LightsailProvider},
@@ -437,6 +438,16 @@ impl DnsUpdater {
     /// Create a new DNS updater using the IONOS DNS API.
     pub fn new_ionos(api_key: impl AsRef<str>, timeout: Option<Duration>) -> crate::Result<Self> {
         Ok(DnsUpdater::Ionos(IonosProvider::new(api_key, timeout)))
+    }
+
+    /// Create a new DNS updater using the IONOS Cloud DNS API.
+    pub fn new_ionos_cloud(
+        api_token: impl AsRef<str>,
+        timeout: Option<Duration>,
+    ) -> crate::Result<Self> {
+        Ok(DnsUpdater::IonosCloud(IonosCloudProvider::new(
+            api_token, timeout,
+        )))
     }
 
     /// Create a new DNS updater using the hosting.de API.
@@ -1080,6 +1091,11 @@ impl DnsUpdater {
                     .set_rrset(name, record_type, ttl, records, origin)
                     .await
             }
+            DnsUpdater::IonosCloud(provider) => {
+                provider
+                    .set_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
             DnsUpdater::HostingDe(provider) => {
                 provider
                     .set_rrset(name, record_type, ttl, records, origin)
@@ -1486,6 +1502,11 @@ impl DnsUpdater {
                     .await
             }
             DnsUpdater::Ionos(provider) => {
+                provider
+                    .add_to_rrset(name, record_type, ttl, records, origin)
+                    .await
+            }
+            DnsUpdater::IonosCloud(provider) => {
                 provider
                     .add_to_rrset(name, record_type, ttl, records, origin)
                     .await
@@ -1899,6 +1920,11 @@ impl DnsUpdater {
                     .remove_from_rrset(name, record_type, records, origin)
                     .await
             }
+            DnsUpdater::IonosCloud(provider) => {
+                provider
+                    .remove_from_rrset(name, record_type, records, origin)
+                    .await
+            }
             DnsUpdater::HostingDe(provider) => {
                 provider
                     .remove_from_rrset(name, record_type, records, origin)
@@ -2183,6 +2209,9 @@ impl DnsUpdater {
             DnsUpdater::Gcore(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Vercel(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Ionos(provider) => provider.list_rrset(name, record_type, origin).await,
+            DnsUpdater::IonosCloud(provider) => {
+                provider.list_rrset(name, record_type, origin).await
+            }
             DnsUpdater::HostingDe(provider) => provider.list_rrset(name, record_type, origin).await,
             DnsUpdater::Domeneshop(provider) => {
                 provider.list_rrset(name, record_type, origin).await

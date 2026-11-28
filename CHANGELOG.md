@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- IONOS Cloud DNS support via `new_ionos_cloud`.
+
 ## [0.6.3] - 2026-11-23
 
 ### Added
